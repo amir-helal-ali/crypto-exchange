@@ -55,6 +55,10 @@ func main() {
 	rl := handlers.NewRateLimiter(120, time.Minute)
 	r.Use(rl.Middleware())
 
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok", "name": "EgMoney API", "version": "1.0.0"})
+	})
+
 	r.GET("/api/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "message": "EgMoney Go Backend is running"})
 	})
