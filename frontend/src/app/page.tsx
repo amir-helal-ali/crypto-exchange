@@ -31,41 +31,59 @@ export default function LandingPage() {
   const [prices, setPrices] = useState<Record<string, { price: number; high: number; low: number; volume: string; change: string }>>({});
 
   useEffect(() => {
-    const ws = new WebSocket("wss://stream.binance.com:9443/ws/!miniTicker@arr");
-    wsRef.current = ws;
+    let ws: WebSocket;
+    let reconnectTimer: number;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (Array.isArray(data)) {
-        data.forEach((t: any) => {
-          const s = t.s;
-          const price = parseFloat(t.c);
-          if (COINS.some(c => c.symbol === s)) {
-            setPrices(prev => {
-              const next = { ...prev };
-              next[s] = {
-                price,
-                high: parseFloat(t.h),
-                low: parseFloat(t.l),
-                volume: t.v,
-                change: t.P,
-              };
-              return next;
-            });
-            if (!historyRef.current[s]) historyRef.current[s] = [];
-            const hist = historyRef.current[s];
-            const last = hist[hist.length - 1];
-            if (!last || Math.abs(price - last) / last > 0.0001) {
-              hist.push(price);
-              if (hist.length > 50) hist.shift();
-              drawSparkline(s);
+    const connect = () => {
+      ws = new WebSocket("wss://stream.binance.com:9443/ws/!miniTicker@arr");
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (Array.isArray(data)) {
+          data.forEach((t: any) => {
+            const s = t.s;
+            const price = parseFloat(t.c);
+            if (COINS.some(c => c.symbol === s)) {
+              setPrices(prev => {
+                const next = { ...prev };
+                next[s] = {
+                  price,
+                  high: parseFloat(t.h),
+                  low: parseFloat(t.l),
+                  volume: t.v,
+                  change: t.P,
+                };
+                return next;
+              });
+              if (!historyRef.current[s]) historyRef.current[s] = [];
+              const hist = historyRef.current[s];
+              const last = hist[hist.length - 1];
+              if (!last || Math.abs(price - last) / last > 0.0001) {
+                hist.push(price);
+                if (hist.length > 50) hist.shift();
+                drawSparkline(s);
+              }
             }
-          }
-        });
-      }
+          });
+        }
+      };
+
+      ws.onclose = () => {
+        reconnectTimer = window.setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
     };
 
-    return () => ws.close();
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      ws.close();
+    };
   }, []);
 
   const drawSparkline = (symbol: string) => {
