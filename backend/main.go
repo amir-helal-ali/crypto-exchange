@@ -52,6 +52,8 @@ func main() {
 
 	r := gin.Default()
 
+	r.Use(handlers.CORSMiddleware())
+
 	rl := handlers.NewRateLimiter(120, time.Minute)
 	r.Use(rl.Middleware())
 
