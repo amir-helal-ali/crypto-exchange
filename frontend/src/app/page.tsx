@@ -29,7 +29,6 @@ export default function LandingPage() {
   const historyRef = useRef<Record<string, number[]>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const pricesRef = useRef<Record<string, { price: number; high: number; low: number; volume: string; change: string }>>({});
-  const [, forceRender] = useEffect as any as () => void;
 
   useEffect(() => {
     const ws = new WebSocket("wss://stream.binance.com:9443/ws/!miniTicker@arr");
