@@ -35,6 +35,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "https://api.eg-money.local"
     container_name: crypto-exchange-web
     restart: always
     ports:
@@ -48,6 +50,8 @@ services:
     build:
       context: ./admin
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "https://api.eg-money.local"
     container_name: crypto-exchange-admin
     restart: always
     ports:
