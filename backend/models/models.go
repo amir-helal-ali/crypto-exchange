@@ -72,13 +72,15 @@ type Transaction struct {
 }
 
 type Ad struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Title     string    `gorm:"not null" json:"title"`
-	Link      string    `json:"link"`
-	ImageURL  string    `json:"image_url"`
-	Position  string    `gorm:"default:'hero'" json:"position"`
-	Active    bool      `gorm:"default:true" json:"active"`
-	SortOrder int       `gorm:"default:0" json:"sort_order"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	Title      string    `gorm:"not null" json:"title"`
+	Link       string    `json:"link"`
+	ImageURL   string    `json:"image_url"`
+	ButtonText string    `json:"button_text"`
+	ButtonLink string    `json:"button_link"`
+	Position   string    `gorm:"default:'hero'" json:"position"`
+	Active     bool      `gorm:"default:true" json:"active"`
+	SortOrder  int       `gorm:"default:0" json:"sort_order"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }

@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BarChart3, Shield, Globe, HeadphonesIcon, Cpu, TrendingUp, Wallet, Users, Menu, X } from "lucide-react";
+import { ArrowLeft, BarChart3, Shield, Globe, HeadphonesIcon, Cpu, TrendingUp, Wallet, Users, Menu, X, XCircle } from "lucide-react";
 
 interface Ad {
   id: number;
   title: string;
   link: string;
   image_url: string;
+  button_text: string;
+  button_link: string;
   position: string;
   active: boolean;
   sort_order: number;
@@ -48,15 +50,27 @@ function AdBanner({ ads }: { ads: Ad[] }) {
     <div className="relative overflow-hidden rounded-2xl">
       <div className="flex transition-transform duration-700 ease-in-out" style={{ transform: `translateX(${current * 100}%)` }}>
         {ads.map(ad => (
-          <div key={ad.id} className="min-w-full">
+          <div key={ad.id} className="min-w-full relative">
             {ad.image_url ? (
               <a href={ad.link || "#"} target="_blank" rel="noopener noreferrer" className="block">
                 <img src={ad.image_url} alt={ad.title} className="w-full h-40 sm:h-48 md:h-64 object-cover rounded-2xl" />
               </a>
             ) : (
-              <a href={ad.link || "#"} target="_blank" rel="noopener noreferrer" className="block glass-panel rounded-2xl p-8 md:p-12 text-center">
-                <h3 className="text-xl md:text-2xl font-bold gradient-text">{ad.title}</h3>
-              </a>
+              <div className="glass-panel rounded-2xl p-6 md:p-10 text-center">
+                <h3 className="text-lg md:text-2xl font-bold gradient-text mb-3">{ad.title}</h3>
+                {ad.button_text && (
+                  <a href={ad.button_link || "#"} target="_blank" rel="noopener noreferrer" className="btn-primary gap-2 inline-flex">
+                    {ad.button_text} <ArrowLeft className="h-4 w-4" />
+                  </a>
+                )}
+              </div>
+            )}
+            {ad.button_text && ad.image_url && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+                <a href={ad.button_link || "#"} target="_blank" rel="noopener noreferrer" className="btn-primary text-sm gap-1">
+                  {ad.button_text} <ArrowLeft className="h-3.5 w-3.5" />
+                </a>
+              </div>
             )}
           </div>
         ))}
@@ -72,6 +86,38 @@ function AdBanner({ ads }: { ads: Ad[] }) {
   );
 }
 
+function FloatingAd({ ad, onClose }: { ad: Ad; onClose: () => void }) {
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-lg animate-slide-up">
+      <div className="glass-panel-strong rounded-2xl p-4 shadow-2xl border-primary/20 relative">
+        <button onClick={onClose} className="absolute -top-2 -right-2 bg-red-500 rounded-full p-0.5 shadow-lg hover:bg-red-600 transition-colors">
+          <XCircle className="h-5 w-5 text-white" />
+        </button>
+        <div className="flex items-center gap-4">
+          {ad.image_url ? (
+            <img src={ad.image_url} alt="" className="h-16 w-24 rounded-xl object-cover shrink-0" />
+          ) : null}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold mb-1">{ad.title}</p>
+            {ad.button_text && (
+              <a href={ad.button_link || "#"} target="_blank" rel="noopener noreferrer" className="btn-primary text-xs gap-1 inline-flex">
+                {ad.button_text}
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+      <style jsx>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateX(-50%) translateY(100%); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        .animate-slide-up { animation: slideUp 0.5s ease-out; }
+      `}</style>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const canvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const historyRef = useRef<Record<string, number[]>>({});
@@ -81,6 +127,15 @@ export default function LandingPage() {
   const [heroAds, setHeroAds] = useState<Ad[]>([]);
   const [sectionAds, setSectionAds] = useState<Ad[]>([]);
   const [bottomAds, setBottomAds] = useState<Ad[]>([]);
+  const [floatingAds, setFloatingAds] = useState<Ad[]>([]);
+  const [dismissedFloating, setDismissedFloating] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const dismissed = localStorage.getItem("dismissed_ads");
+    if (dismissed) {
+      try { setDismissedFloating(new Set(JSON.parse(dismissed))); } catch {}
+    }
+  }, []);
 
   useEffect(() => {
     fetch("https://api.eg-money.local/api/ads")
@@ -89,9 +144,17 @@ export default function LandingPage() {
         setHeroAds(data.filter(a => a.active && a.position === "hero"));
         setSectionAds(data.filter(a => a.active && a.position === "section"));
         setBottomAds(data.filter(a => a.active && a.position === "bottom"));
+        setFloatingAds(data.filter(a => a.active && a.position === "floating"));
       })
       .catch(() => {});
   }, []);
+
+  const dismissFloatingAd = (id: number) => {
+    const next = new Set(dismissedFloating);
+    next.add(id);
+    setDismissedFloating(next);
+    localStorage.setItem("dismissed_ads", JSON.stringify([...next]));
+  };
 
   useEffect(() => {
     let ws: WebSocket;
@@ -381,6 +444,13 @@ export default function LandingPage() {
           </Link>
         </div>
       </section>
+
+      {floatingAds.length > 0 && floatingAds
+        .filter(ad => !dismissedFloating.has(ad.id))
+        .slice(0, 1)
+        .map(ad => (
+          <FloatingAd key={ad.id} ad={ad} onClose={() => dismissFloatingAd(ad.id)} />
+        ))}
 
       <footer className="border-t border-border/50 py-6 sm:py-8 px-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">

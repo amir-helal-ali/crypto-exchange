@@ -28,6 +28,8 @@ services:
       PORT: "3000"
     depends_on:
       - postgres
+    volumes:
+      - uploads:/root/uploads
     networks:
       - backend
 
@@ -84,3 +86,4 @@ networks:
 
 volumes:
   pgdata:
+  uploads:

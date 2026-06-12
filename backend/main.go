@@ -113,10 +113,14 @@ func main() {
 		admin.POST("/ads", handlers.CreateAd)
 		admin.PUT("/ads/:id", handlers.UpdateAd)
 		admin.DELETE("/ads/:id", handlers.DeleteAd)
+		admin.POST("/ads/upload", handlers.UploadAdImage)
+		admin.POST("/ads/suggest", handlers.SuggestAd)
 	}
 
 	r.GET("/api/ads", handlers.GetActiveAds)
 	r.GET("/ws/market", websocket.HandleMarketWebSocket)
+
+	r.Static("/uploads", "./uploads")
 
 	port := os.Getenv("PORT")
 	if port == "" {
