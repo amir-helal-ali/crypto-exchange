@@ -109,8 +109,13 @@ func main() {
 		admin.PUT("/user/:id/role", handlers.UpdateUserRole)
 		admin.GET("/transactions", handlers.GetAllTransactions)
 		admin.PUT("/transactions/:id/review", handlers.ReviewTransaction)
+		admin.GET("/ads", handlers.GetAllAds)
+		admin.POST("/ads", handlers.CreateAd)
+		admin.PUT("/ads/:id", handlers.UpdateAd)
+		admin.DELETE("/ads/:id", handlers.DeleteAd)
 	}
 
+	r.GET("/api/ads", handlers.GetActiveAds)
 	r.GET("/ws/market", websocket.HandleMarketWebSocket)
 
 	port := os.Getenv("PORT")
