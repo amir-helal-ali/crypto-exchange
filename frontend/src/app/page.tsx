@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BarChart3, Shield, Globe, HeadphonesIcon, Cpu, TrendingUp, Wallet, Users } from "lucide-react";
 
@@ -28,7 +28,7 @@ export default function LandingPage() {
   const canvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const historyRef = useRef<Record<string, number[]>>({});
   const wsRef = useRef<WebSocket | null>(null);
-  const pricesRef = useRef<Record<string, { price: number; high: number; low: number; volume: string; change: string }>>({});
+  const [prices, setPrices] = useState<Record<string, { price: number; high: number; low: number; volume: string; change: string }>>({});
 
   useEffect(() => {
     const ws = new WebSocket("wss://stream.binance.com:9443/ws/!miniTicker@arr");
@@ -41,13 +41,17 @@ export default function LandingPage() {
           const s = t.s;
           const price = parseFloat(t.c);
           if (COINS.some(c => c.symbol === s)) {
-            pricesRef.current[s] = {
-              price,
-              high: parseFloat(t.h),
-              low: parseFloat(t.l),
-              volume: t.v,
-              change: t.P,
-            };
+            setPrices(prev => {
+              const next = { ...prev };
+              next[s] = {
+                price,
+                high: parseFloat(t.h),
+                low: parseFloat(t.l),
+                volume: t.v,
+                change: t.P,
+              };
+              return next;
+            });
             if (!historyRef.current[s]) historyRef.current[s] = [];
             const hist = historyRef.current[s];
             const last = hist[hist.length - 1];
@@ -108,7 +112,6 @@ export default function LandingPage() {
     ctx.fill();
   };
 
-  const t = (pricesRef.current as any)?.BTCUSDT?.price;
 
   return (
     <div className="min-h-screen bg-background overflow-hidden">
@@ -157,7 +160,7 @@ export default function LandingPage() {
           <div className="glass-panel rounded-3xl p-6 md:p-8">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
               {COINS.map((coin) => {
-                const p = pricesRef.current[coin.symbol];
+                const p = prices[coin.symbol];
                 return (
                   <div key={coin.symbol} className="p-4 rounded-2xl bg-muted/20 card-hover">
                     <div className="flex items-center justify-between mb-3">
