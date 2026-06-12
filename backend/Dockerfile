@@ -1,7 +1,11 @@
 FROM golang:1.23-alpine AS builder
 WORKDIR /app
+ENV GONOSUMCHECK=*
+ENV GONOSUMDB=*
+ENV GOFLAGS=-mod=mod
+ENV GOTOOLCHAIN=local
 COPY . .
-RUN GONOSUMCHECK=* GONOSUMDB=* GOFLAGS="-mod=mod" CGO_ENABLED=0 GOOS=linux go build -o main .
+RUN go build -o main .
 
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates wget

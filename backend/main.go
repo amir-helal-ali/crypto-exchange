@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +20,44 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type jsonLogger struct {
+	*log.Logger
+}
+
+func newJSONLogger() *jsonLogger {
+	return &jsonLogger{log.New(os.Stdout, "", 0)}
+}
+
+func (l *jsonLogger) Info(msg string, fields map[string]interface{}) {
+	entry := map[string]interface{}{"level": "info", "time": time.Now().UTC().Format(time.RFC3339), "message": msg}
+	for k, v := range fields {
+		entry[k] = v
+	}
+	b, _ := json.Marshal(entry)
+	l.Println(string(b))
+}
+
+func (l *jsonLogger) Error(msg string, fields map[string]interface{}) {
+	entry := map[string]interface{}{"level": "error", "time": time.Now().UTC().Format(time.RFC3339), "message": msg}
+	for k, v := range fields {
+		entry[k] = v
+	}
+	b, _ := json.Marshal(entry)
+	l.Println(string(b))
+}
+
+func (l *jsonLogger) Fatal(msg string, fields map[string]interface{}) {
+	entry := map[string]interface{}{"level": "fatal", "time": time.Now().UTC().Format(time.RFC3339), "message": msg}
+	for k, v := range fields {
+		entry[k] = v
+	}
+	b, _ := json.Marshal(entry)
+	l.Println(string(b))
+	os.Exit(1)
+}
+
+var logg = newJSONLogger()
+
 func seedAdmin() {
 	var count int64
 	database.DB.Model(&models.User{}).Where("role = ?", "ADMIN").Count(&count)
@@ -34,15 +73,15 @@ func seedAdmin() {
 		Role:         "ADMIN",
 	}
 	if err := database.DB.Create(&admin).Error; err != nil {
-		log.Printf("Failed to seed admin: %v", err)
+		logg.Error("Failed to seed admin", map[string]interface{}{"error": err.Error()})
 	} else {
-		log.Println("Admin user created: admin@eg-money.com / Admin@123456")
+		logg.Info("Admin user created", map[string]interface{}{"email": "admin@eg-money.com"})
 	}
 }
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+		logg.Info("No .env file found, using environment variables", nil)
 	}
 
 	gin.SetMode(gin.ReleaseMode)
@@ -51,6 +90,20 @@ func main() {
 	seedAdmin()
 
 	r := gin.Default()
+	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
+		entry := map[string]interface{}{
+			"level":      "info",
+			"time":       param.TimeStamp.Format(time.RFC3339),
+			"method":     param.Method,
+			"path":       param.Path,
+			"status":     param.StatusCode,
+			"latency":    param.Latency.String(),
+			"client_ip":  param.ClientIP,
+			"user_agent": param.Request.UserAgent(),
+		}
+		b, _ := json.Marshal(entry)
+		return string(b) + "\n"
+	}))
 
 	r.Use(handlers.CORSMiddleware())
 
@@ -94,6 +147,7 @@ func main() {
 		wallet.GET("/user/info", handlers.GetUserInfo)
 		wallet.PUT("/user/profile", handlers.UpdateProfile)
 		wallet.POST("/user/change-password", handlers.ChangePassword)
+		wallet.POST("/wallet/deposit", handlers.DepositCurrency)
 		wallet.POST("/wallet/withdraw", handlers.WithdrawCurrency)
 		wallet.GET("/wallet/transactions", handlers.GetTransactions)
 	}
@@ -136,22 +190,22 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("EgMoney Go Backend starting on port %s", port)
+		logg.Info("EgMoney Go Backend starting", map[string]interface{}{"port": port})
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %s", err)
+			logg.Fatal("listen error", map[string]interface{}{"error": err.Error()})
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
+	logg.Info("Shutting down server...", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %s", err)
+		logg.Fatal("Server forced to shutdown", map[string]interface{}{"error": err.Error()})
 	}
 
-	log.Println("Server exited gracefully")
+	logg.Info("Server exited gracefully", nil)
 }

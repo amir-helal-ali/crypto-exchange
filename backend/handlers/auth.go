@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"os"
 	"time"
 
 	"crypto-exchange-backend/database"
@@ -12,7 +13,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte("eg-money-super-secret-jwt-key-2024")
+var jwtSecret = func() []byte {
+	s := os.Getenv("JWT_SECRET")
+	if s == "" {
+		panic("CRITICAL: JWT_SECRET environment variable is not set")
+	}
+	return []byte(s)
+}()
 
 type Claims struct {
 	UserID uint   `json:"user_id"`
@@ -46,11 +53,26 @@ func ValidateJWT(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
+var supportedCurrencies = []string{"BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "ADA", "DOGE", "DOT"}
+
+func createUserWallets(userID uint) {
+	for _, currency := range supportedCurrencies {
+		database.DB.Create(&models.Wallet{
+			UserID:   userID,
+			Currency: currency,
+			Balance:  0,
+		})
+	}
+}
+
 func Register(c *gin.Context) {
 	var input struct {
 		Email    string `json:"email" binding:"required,email"`
 		Username string `json:"username" binding:"required,min=3"`
 		Password string `json:"password" binding:"required,min=6"`
+		FullName string `json:"full_name"`
+		Country  string `json:"country"`
+		Phone    string `json:"phone"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -67,6 +89,9 @@ func Register(c *gin.Context) {
 		Email:        input.Email,
 		Username:     input.Username,
 		PasswordHash: string(hash),
+		FullName:     input.FullName,
+		Country:      input.Country,
+		Phone:        input.Phone,
 		Role:         "USER",
 	}
 
@@ -74,6 +99,8 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Email or username already registered"})
 		return
 	}
+
+	createUserWallets(user.ID)
 
 	database.DB.Create(&models.AuditLog{
 		UserID:    user.ID,

@@ -10,7 +10,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ username: "", email: "", password: "" });
+  const [form, setForm] = useState({ username: "", email: "", password: "", full_name: "", country: "", phone: "" });
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -57,6 +57,20 @@ export default function RegisterPage() {
             <div>
               <label className="block text-sm font-medium mb-1.5">البريد الإلكتروني</label>
               <input type="email" className="input-field" placeholder="ahmed@email.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">الاسم الكامل</label>
+              <input type="text" className="input-field" placeholder="محمد أحمد" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1.5">الدولة</label>
+                <input type="text" className="input-field" placeholder="مصر" value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">رقم الهاتف</label>
+                <input type="tel" className="input-field" placeholder="+20 100 000 0000" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">كلمة المرور</label>

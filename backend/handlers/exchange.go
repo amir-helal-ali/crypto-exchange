@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,32 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-func GetPrices(c *gin.Context) {
-	res, err := http.Get("https://api.binance.com/api/v3/ticker/24hr?symbols=[\"BTCUSDT\",\"ETHUSDT\",\"SOLUSDT\",\"BNBUSDT\",\"XRPUSDT\",\"ADAUSDT\",\"DOGEUSDT\",\"DOTUSDT\"]")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prices from Binance"})
-		return
-	}
-	defer res.Body.Close()
-
-	var raw []struct {
-		Symbol string `json:"symbol"`
-		Price  string `json:"lastPrice"`
-		Change string `json:"priceChangePercent"`
-		Volume string `json:"volume"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&raw); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Binance response"})
-		return
-	}
-
-	data := make([]gin.H, 0, len(raw))
-	for _, t := range raw {
-		data = append(data, gin.H{"pair": t.Symbol, "price": t.Price, "change24h": t.Change, "volume24h": t.Volume})
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
-}
 
 func PlaceOrder(c *gin.Context) {
 	userID := c.GetUint("user_id")

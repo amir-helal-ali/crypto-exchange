@@ -30,11 +30,14 @@ func GetUserInfo(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
-		"id":        user.ID,
-		"email":     user.Email,
-		"username":  user.Username,
-		"role":      user.Role,
-		"createdAt": user.CreatedAt,
+		"id":         user.ID,
+		"email":      user.Email,
+		"username":   user.Username,
+		"full_name":  user.FullName,
+		"country":    user.Country,
+		"phone":      user.Phone,
+		"role":       user.Role,
+		"created_at": user.CreatedAt,
 	}})
 }
 
@@ -43,6 +46,9 @@ func UpdateProfile(c *gin.Context) {
 	var input struct {
 		Username string `json:"username"`
 		Email    string `json:"email"`
+		FullName string `json:"full_name"`
+		Country  string `json:"country"`
+		Phone    string `json:"phone"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -55,6 +61,15 @@ func UpdateProfile(c *gin.Context) {
 	}
 	if input.Email != "" {
 		updates["email"] = input.Email
+	}
+	if input.FullName != "" {
+		updates["full_name"] = input.FullName
+	}
+	if input.Country != "" {
+		updates["country"] = input.Country
+	}
+	if input.Phone != "" {
+		updates["phone"] = input.Phone
 	}
 
 	if err := database.DB.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
@@ -109,6 +124,40 @@ func GetTransactions(c *gin.Context) {
 	var transactions []models.Transaction
 	database.DB.Where("user_id = ?", userID).Order("created_at DESC").Limit(50).Find(&transactions)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": transactions})
+}
+
+func DepositCurrency(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var input struct {
+		Currency string  `json:"currency" binding:"required"`
+		Amount   float64 `json:"amount" binding:"required,gt=0"`
+		TxID     string  `json:"tx_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var wallet models.Wallet
+	if err := database.DB.Where("user_id = ? AND currency = ?", userID, input.Currency).First(&wallet).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Wallet not found for this currency"})
+		return
+	}
+
+	wallet.Balance += input.Amount
+	database.DB.Save(&wallet)
+
+	tx := models.Transaction{
+		UserID:   userID,
+		Type:     "deposit",
+		Currency: input.Currency,
+		Amount:   input.Amount,
+		Status:   "COMPLETED",
+		TxID:     input.TxID,
+	}
+	database.DB.Create(&tx)
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Deposit successful", "data": tx})
 }
 
 func ChangePassword(c *gin.Context) {
