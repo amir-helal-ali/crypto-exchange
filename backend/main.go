@@ -13,6 +13,7 @@ import (
 	"crypto-exchange-backend/database"
 	"crypto-exchange-backend/email"
 	"crypto-exchange-backend/handlers"
+	"crypto-exchange-backend/matching"
 	"crypto-exchange-backend/models"
 	"crypto-exchange-backend/websocket"
 
@@ -95,6 +96,8 @@ func main() {
 
 	database.Connect()
 	seedAdmin()
+
+	matching.Start(10 * time.Second)
 
 	r := gin.Default()
 	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
