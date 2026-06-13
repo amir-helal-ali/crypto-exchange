@@ -16,6 +16,8 @@ interface Ad {
   sort_order: number;
 }
 
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+
 const COINS = [
   { symbol: "BTCUSDT", name: "Bitcoin", arName: "بيتكوين", color: "#f7931a", desc: "أول وأكبر عملة رقمية في العالم، المخزن الرقمي الآمن للقيمة." },
   { symbol: "ETHUSDT", name: "Ethereum", arName: "إيثريوم", color: "#627eea", desc: "منصة العقود الذكية الرائدة، تدعم التطبيقات اللامركزية و DeFi." },
@@ -37,7 +39,6 @@ const FEATURES = [
 ];
 
 function AdBanner({ ads }: { ads: Ad[] }) {
-  if (ads.length === 0) return null;
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -46,9 +47,11 @@ function AdBanner({ ads }: { ads: Ad[] }) {
     return () => clearInterval(timer);
   }, [ads.length]);
 
+  if (ads.length === 0) return null;
+
   return (
     <div className="relative overflow-hidden rounded-2xl">
-      <div className="flex transition-transform duration-700 ease-in-out" style={{ transform: `translateX(${current * 100}%)` }}>
+      <div className="flex transition-transform duration-700 ease-in-out" style={{ transform: `translateX(-${current * 100}%)` }}>
         {ads.map(ad => (
           <div key={ad.id} className="min-w-full relative">
             {ad.image_url ? (
@@ -138,7 +141,7 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    fetch("https://api.eg-money.local/api/ads")
+    fetch(`${API}/api/ads`)
       .then(res => res.json())
       .then((data: Ad[]) => {
         setHeroAds(data.filter(a => a.active && a.position === "hero"));

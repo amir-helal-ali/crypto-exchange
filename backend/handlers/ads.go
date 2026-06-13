@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"crypto-exchange-backend/database"
@@ -17,13 +18,13 @@ import (
 func GetActiveAds(c *gin.Context) {
 	var ads []models.Ad
 	database.DB.Where("active = ?", true).Order("sort_order asc, created_at desc").Find(&ads)
-	c.JSON(http.StatusOK, ads)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": ads})
 }
 
 func GetAllAds(c *gin.Context) {
 	var ads []models.Ad
 	database.DB.Order("created_at desc").Find(&ads)
-	c.JSON(http.StatusOK, ads)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": ads})
 }
 
 func CreateAd(c *gin.Context) {
@@ -40,7 +41,7 @@ func CreateAd(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create ad"})
 		return
 	}
-	c.JSON(http.StatusCreated, ad)
+	c.JSON(http.StatusCreated, gin.H{"success": true, "data": ad})
 }
 
 func UpdateAd(c *gin.Context) {
@@ -65,7 +66,7 @@ func UpdateAd(c *gin.Context) {
 		"active":      input.Active,
 		"sort_order":  input.SortOrder,
 	})
-	c.JSON(http.StatusOK, ad)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": ad})
 }
 
 func DeleteAd(c *gin.Context) {
@@ -74,7 +75,7 @@ func DeleteAd(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Ad not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Ad deleted"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Ad deleted"})
 }
 
 func UploadAdImage(c *gin.Context) {
@@ -84,8 +85,14 @@ func UploadAdImage(c *gin.Context) {
 		return
 	}
 
-	ext := filepath.Ext(file.Filename)
-	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" && ext != ".webp" && ext != ".svg" {
+	if file.Size > 5*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File too large. Maximum size is 5MB"})
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowedExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".svg": true}
+	if !allowedExts[ext] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Allowed: jpg, jpeg, png, gif, webp, svg"})
 		return
 	}
@@ -108,14 +115,14 @@ func UploadAdImage(c *gin.Context) {
 }
 
 var suggestionTemplates = []models.Ad{
-	{Title: "🔥 عرض خاص: تداول بدون عمولات لمدة شهر", ButtonText: "استفد الآن", ButtonLink: "/register", Position: "floating"},
-	{Title: "🚀 انضم إلى EgMoney اليوم واحصل على 10 USDT هدية", ButtonText: "سجل الآن", ButtonLink: "/register", Position: "hero"},
-	{Title: "💎 أقوى منصة تداول في الشرق الأوسط", ButtonText: "ابدأ التداول", ButtonLink: "/register", Position: "floating"},
-	{Title: "⚡ تداول بأسرع محرك في المنطقة", ButtonText: "جرب مجاناً", ButtonLink: "/register", Position: "section"},
-	{Title: "💰 استثمر في مستقبل العملات الرقمية", ButtonText: "اكتشف المزيد", ButtonLink: "/register", Position: "bottom"},
-	{Title: "🛡️ منصة آمنة ومرخصة 100%", ButtonText: "تداول بأمان", ButtonLink: "/register", Position: "floating"},
-	{Title: "📊 تحليلات متقدمة ورسوم بيانية مباشرة من Binance", ButtonText: "شاهد التحليلات", ButtonLink: "/dashboard/exchange", Position: "section"},
-	{Title: "🎯 حقق أرباحك مع EgMoney", ButtonText: "ابدأ الآن", ButtonLink: "/register", Position: "hero"},
+	{Title: "عرض خاص: تداول بدون عمولات لمدة شهر", ButtonText: "استفد الآن", ButtonLink: "/register", Position: "floating"},
+	{Title: "انضم إلى EgMoney اليوم واحصل على 10 USDT هدية", ButtonText: "سجل الآن", ButtonLink: "/register", Position: "hero"},
+	{Title: "أقوى منصة تداول في الشرق الأوسط", ButtonText: "ابدأ التداول", ButtonLink: "/register", Position: "floating"},
+	{Title: "تداول بأسرع محرك في المنطقة", ButtonText: "جرب مجاناً", ButtonLink: "/register", Position: "section"},
+	{Title: "استثمر في مستقبل العملات الرقمية", ButtonText: "اكتشف المزيد", ButtonLink: "/register", Position: "bottom"},
+	{Title: "منصة آمنة ومرخصة 100%", ButtonText: "تداول بأمان", ButtonLink: "/register", Position: "floating"},
+	{Title: "تحليلات متقدمة ورسوم بيانية مباشرة من Binance", ButtonText: "شاهد التحليلات", ButtonLink: "/dashboard/exchange", Position: "section"},
+	{Title: "حقق أرباحك مع EgMoney", ButtonText: "ابدأ الآن", ButtonLink: "/register", Position: "hero"},
 }
 
 func SuggestAd(c *gin.Context) {
@@ -133,7 +140,7 @@ func SuggestAd(c *gin.Context) {
 
 	if req.Topic != "" {
 		s := models.Ad{
-			Title:      fmt.Sprintf("✨ %s - عرض حصري من EgMoney", req.Topic),
+			Title:      fmt.Sprintf("%s - عرض حصري من EgMoney", req.Topic),
 			ButtonText: "عرض حصري",
 			ButtonLink: "/register",
 			Position:   "floating",
@@ -143,21 +150,14 @@ func SuggestAd(c *gin.Context) {
 	}
 
 	indices := rng.Perm(len(suggestionTemplates))
-	maxSuggest := 3
-	if len(suggestionTemplates) < maxSuggest+len(suggestions) {
-		maxSuggest = len(suggestionTemplates) - len(suggestions)
-	}
 
-	for i := 0; i < maxSuggest && i < len(indices); i++ {
+	for i := 0; i < len(indices) && len(suggestions) < 4; i++ {
 		s := suggestionTemplates[indices[i]]
 		if req.Position != "" && s.Position != req.Position {
 			continue
 		}
 		suggestions = append(suggestions, s)
-		if len(suggestions) >= 4 {
-			break
-		}
 	}
 
-	c.JSON(http.StatusOK, suggestions)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": suggestions})
 }

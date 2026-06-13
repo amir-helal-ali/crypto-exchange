@@ -9,6 +9,7 @@ import (
 	"crypto-exchange-backend/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func GetAdminStats(c *gin.Context) {
@@ -16,18 +17,21 @@ func GetAdminStats(c *gin.Context) {
 	var totalOrders int64
 	var totalTransactions int64
 	var pendingWithdrawals int64
+	var pendingKYC int64
 	database.DB.Model(&models.User{}).Count(&totalUsers)
 	database.DB.Model(&models.Order{}).Count(&totalOrders)
 	database.DB.Model(&models.Transaction{}).Count(&totalTransactions)
 	database.DB.Model(&models.Transaction{}).Where("type = ? AND status = ?", "withdraw", "PENDING").Count(&pendingWithdrawals)
+	database.DB.Model(&models.KYCRequest{}).Where("status = ?", "PENDING").Count(&pendingKYC)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
 			"totalUsers":         totalUsers,
-			"totalOrders":        totalOrders,
-			"totalTransactions":  totalTransactions,
+			"totalOrders":       totalOrders,
+			"totalTransactions": totalTransactions,
 			"pendingWithdrawals": pendingWithdrawals,
+			"pendingKYC":        pendingKYC,
 		},
 	})
 }
@@ -38,7 +42,8 @@ func GetAllUsers(c *gin.Context) {
 	var total int64
 	database.DB.Model(&models.User{}).Count(&total)
 	var users []models.User
-	database.DB.Select("id", "email", "username", "role", "created_at").Limit(limit).Offset(offset).Find(&users)
+	database.DB.Select("id", "email", "username", "role", "created_at").Order("created_at DESC").Limit(limit).Offset(offset).Find(&users)
+
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": users, "total": total, "page": page, "limit": limit})
 }
 
@@ -118,6 +123,7 @@ func GetAllTransactions(c *gin.Context) {
 			"id":        t.ID,
 			"user_id":   t.UserID,
 			"username":  user.Username,
+			"email":     user.Email,
 			"type":      t.Type,
 			"currency":  t.Currency,
 			"amount":    t.Amount,
@@ -155,19 +161,30 @@ func ReviewTransaction(c *gin.Context) {
 		return
 	}
 
-	if input.Action == "approve" {
-		txn.Status = "COMPLETED"
-		txn.TxID = input.TxID
-	} else {
-		txn.Status = "FAILED"
-		var wallet models.Wallet
-		if err := database.DB.Where("user_id = ? AND currency = ?", txn.UserID, txn.Currency).First(&wallet).Error; err == nil {
-			wallet.Balance += txn.Amount
-			database.DB.Save(&wallet)
+	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
+		if input.Action == "approve" {
+			txn.Status = "COMPLETED"
+			txn.TxID = input.TxID
+		} else {
+			txn.Status = "REJECTED"
+			var wallet models.Wallet
+			if err := dbTx.Where("user_id = ? AND currency = ?", txn.UserID, txn.Currency).First(&wallet).Error; err == nil {
+				wallet.Balance += txn.Amount
+				if err := dbTx.Save(&wallet).Error; err != nil {
+					return err
+				}
+			}
 		}
-	}
+		if err := dbTx.Save(&txn).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 
-	database.DB.Save(&txn)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process transaction"})
+		return
+	}
 
 	database.DB.Create(&models.AuditLog{
 		UserID:    adminID.(uint),

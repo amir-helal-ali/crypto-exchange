@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -14,8 +15,8 @@ func SubmitKYC(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var input struct {
 		FullName       string `json:"full_name" binding:"required"`
-		DocumentType   string `json:"document_type" binding:"required"`
-		DocumentNumber string `json:"document_number" binding:"required"`
+		DocumentType   string `json:"document_type" binding:"required,oneof=passport national_id driving_license"`
+		DocumentNumber string `json:"document_number" binding:"required,min=5"`
 		DocumentURL    string `json:"document_url" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -82,19 +83,23 @@ func ReviewKYC(c *gin.Context) {
 		return
 	}
 
+	if kyc.Status != "PENDING" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "KYC request already reviewed"})
+		return
+	}
+
 	kyc.Status = input.Status
 	kyc.RejectionReason = input.RejectionReason
 	database.DB.Save(&kyc)
 
-	role := "VERIFIED_USER"
 	if input.Status == "APPROVED" {
-		database.DB.Model(&models.User{}).Where("id = ?", kyc.UserID).Update("role", role)
+		database.DB.Model(&models.User{}).Where("id = ?", kyc.UserID).Update("role", "VERIFIED_USER")
 	}
 
 	database.DB.Create(&models.AuditLog{
 		UserID:    adminID.(uint),
 		Action:    "REVIEW_KYC",
-		Details:   input.Status + " KYC request for user #" + string(rune(kyc.UserID)),
+		Details:   fmt.Sprintf("%s KYC request for user #%d", input.Status, kyc.UserID),
 		IPAddress: c.ClientIP(),
 		CreatedAt: time.Now(),
 	})

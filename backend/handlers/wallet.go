@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"crypto-exchange-backend/database"
 	"crypto-exchange-backend/models"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 func GetWalletBalances(c *gin.Context) {
@@ -57,9 +60,15 @@ func UpdateProfile(c *gin.Context) {
 
 	updates := map[string]interface{}{}
 	if input.Username != "" {
+		input.Username = strings.TrimSpace(input.Username)
+		if len(input.Username) < 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Username must be at least 3 characters"})
+			return
+		}
 		updates["username"] = input.Username
 	}
 	if input.Email != "" {
+		input.Email = strings.TrimSpace(strings.ToLower(input.Email))
 		updates["email"] = input.Email
 	}
 	if input.FullName != "" {
@@ -72,12 +81,20 @@ func UpdateProfile(c *gin.Context) {
 		updates["phone"] = input.Phone
 	}
 
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
+		return
+	}
+
 	if err := database.DB.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Username or email already taken"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Profile updated successfully"})
+	var updatedUser models.User
+	database.DB.First(&updatedUser, userID)
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Profile updated successfully", "data": updatedUser})
 }
 
 func WithdrawCurrency(c *gin.Context) {
@@ -85,10 +102,18 @@ func WithdrawCurrency(c *gin.Context) {
 	var input struct {
 		Currency string  `json:"currency" binding:"required"`
 		Amount   float64 `json:"amount" binding:"required,gt=0"`
-		Address  string  `json:"address" binding:"required"`
+		Address  string  `json:"address" binding:"required,min=10"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	input.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
+	input.Address = strings.TrimSpace(input.Address)
+
+	if input.Amount < 0.001 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Minimum withdrawal amount is 0.001"})
 		return
 	}
 
@@ -103,27 +128,54 @@ func WithdrawCurrency(c *gin.Context) {
 		return
 	}
 
-	tx := models.Transaction{
-		UserID:   userID,
-		Type:     "withdraw",
-		Currency: input.Currency,
-		Amount:   input.Amount,
-		Status:   "PENDING",
-		Address:  input.Address,
+	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
+		var lockedWallet models.Wallet
+		if err := dbTx.Where("user_id = ? AND currency = ?", userID, input.Currency).First(&lockedWallet).Error; err != nil {
+			return err
+		}
+		if lockedWallet.Balance < input.Amount {
+			return fmt.Errorf("insufficient balance")
+		}
+
+		lockedWallet.Balance -= input.Amount
+		if err := dbTx.Save(&lockedWallet).Error; err != nil {
+			return err
+		}
+
+		tx := models.Transaction{
+			UserID:   userID,
+			Type:     "withdraw",
+			Currency: input.Currency,
+			Amount:   input.Amount,
+			Status:   "PENDING",
+			Address:  input.Address,
+		}
+		if err := dbTx.Create(&tx).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-	database.DB.Create(&tx)
 
-	wallet.Balance -= input.Amount
-	database.DB.Save(&wallet)
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Withdrawal request submitted", "data": tx})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Withdrawal request submitted"})
 }
 
 func GetTransactions(c *gin.Context) {
 	userID := c.GetUint("user_id")
+	page, limit := getPagination(c)
+	offset := (page - 1) * limit
+
+	var total int64
+	database.DB.Model(&models.Transaction{}).Where("user_id = ?", userID).Count(&total)
+
 	var transactions []models.Transaction
-	database.DB.Where("user_id = ?", userID).Order("created_at DESC").Limit(50).Find(&transactions)
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": transactions})
+	database.DB.Where("user_id = ?", userID).Order("created_at DESC").Limit(limit).Offset(offset).Find(&transactions)
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": transactions, "total": total, "page": page, "limit": limit})
 }
 
 func DepositCurrency(c *gin.Context) {
@@ -182,7 +234,11 @@ func ChangePassword(c *gin.Context) {
 		return
 	}
 
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
 	database.DB.Model(&user).Update("password_hash", string(hashedPassword))
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password changed successfully"})

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 
 type RateLimiter struct {
 	visitors map[string]*visitor
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	rate     int
 	window   time.Duration
 }
@@ -23,11 +24,26 @@ type visitor struct {
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-		if origin != "" {
+		allowed := []string{
+			"https://eg-money.local",
+			"https://admin.eg-money.local",
+			"https://api.eg-money.local",
+		}
+
+		isAllowed := origin == ""
+		for _, o := range allowed {
+			if origin == o {
+				isAllowed = true
+				break
+			}
+		}
+
+		if isAllowed && origin != "" {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Header("Access-Control-Max-Age", "86400")
 		}
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -93,15 +109,16 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := c.GetHeader("Authorization")
-		if token == "" {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
 			c.Abort()
 			return
 		}
 
-		if len(token) > 7 && token[:7] == "Bearer " {
-			token = token[7:]
+		token := authHeader
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 
 		claims, err := ValidateJWT(token)

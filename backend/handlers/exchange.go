@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"crypto-exchange-backend/database"
@@ -27,6 +28,8 @@ func PlaceOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	input.Symbol = strings.ToUpper(strings.TrimSpace(input.Symbol))
 
 	if (input.Type == "LIMIT" || input.Type == "STOP_LIMIT" || input.Type == "TAKE_PROFIT") && input.Price <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Price is required for limit/stop orders"})
@@ -120,6 +123,14 @@ func CancelOrder(c *gin.Context) {
 
 	order.Status = "CANCELLED"
 	database.DB.Save(&order)
+
+	database.DB.Create(&models.AuditLog{
+		UserID:    userID,
+		Action:    "CANCEL_ORDER",
+		Details:   fmt.Sprintf("Cancelled order #%d for %s", order.ID, order.Symbol),
+		IPAddress: c.ClientIP(),
+		CreatedAt: time.Now(),
+	})
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Order cancelled successfully"})
 }

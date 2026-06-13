@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"crypto-exchange-backend/database"
+	"crypto-exchange-backend/email"
 	"crypto-exchange-backend/handlers"
 	"crypto-exchange-backend/models"
 	"crypto-exchange-backend/websocket"
@@ -65,7 +66,11 @@ func seedAdmin() {
 		return
 	}
 
-	hash, _ := bcrypt.GenerateFromPassword([]byte("Admin@123456"), bcrypt.DefaultCost)
+	adminPass := os.Getenv("ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = "Admin@123456"
+	}
+	hash, _ := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
 	admin := models.User{
 		Email:        "admin@eg-money.com",
 		Username:     "admin",
@@ -83,6 +88,8 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		logg.Info("No .env file found, using environment variables", nil)
 	}
+
+	email.LoadConfig()
 
 	gin.SetMode(gin.ReleaseMode)
 
@@ -110,6 +117,8 @@ func main() {
 	rl := handlers.NewRateLimiter(120, time.Minute)
 	r.Use(rl.Middleware())
 
+	r.MaxMultipartMemory = 5 << 20
+
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "name": "EgMoney API", "version": "1.0.0"})
 	})
@@ -124,6 +133,7 @@ func main() {
 	r.POST("/api/auth/register", handlers.Register)
 	r.POST("/api/auth/login", handlers.Login)
 	r.POST("/api/auth/forgot-password", handlers.ForgotPassword)
+	r.POST("/api/auth/reset-password", handlers.ResetPassword)
 
 	userKYC := r.Group("/api/kyc")
 	userKYC.Use(handlers.AuthMiddleware())

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,16 +27,31 @@ type BinanceTicker struct {
 }
 
 type StreamResponse struct {
-	Stream string       `json:"stream"`
+	Stream string        `json:"stream"`
 	Data   BinanceTicker `json:"data"`
 }
 
-var clients = make(map[*gorillaws.Conn]bool)
-var broadcast = make(chan StreamResponse)
+var (
+	clients   = make(map[*gorillaws.Conn]bool)
+	clientsMu sync.RWMutex
+	broadcast = make(chan StreamResponse, 256)
+)
 
 func init() {
 	go handleBinanceConnection()
 	go broadcaster()
+}
+
+func addClient(conn *gorillaws.Conn) {
+	clientsMu.Lock()
+	clients[conn] = true
+	clientsMu.Unlock()
+}
+
+func removeClient(conn *gorillaws.Conn) {
+	clientsMu.Lock()
+	delete(clients, conn)
+	clientsMu.Unlock()
 }
 
 func handleBinanceConnection() {
@@ -70,7 +86,10 @@ func handleBinanceConnection() {
 
 			var response StreamResponse
 			if err := json.Unmarshal(message, &response); err == nil {
-				broadcast <- response
+				select {
+				case broadcast <- response:
+				default:
+				}
 			}
 		}
 	}
@@ -79,14 +98,17 @@ func handleBinanceConnection() {
 func broadcaster() {
 	for {
 		msg := <-broadcast
+		clientsMu.RLock()
 		for client := range clients {
 			err := client.WriteJSON(msg)
 			if err != nil {
-				log.Printf("WS write error: %v", err)
+				clientsMu.RUnlock()
+				removeClient(client)
 				client.Close()
-				delete(clients, client)
+				clientsMu.RLock()
 			}
 		}
+		clientsMu.RUnlock()
 	}
 }
 
@@ -98,13 +120,13 @@ func HandleMarketWebSocket(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	clients[conn] = true
+	addClient(conn)
 	log.Println("New client connected to market WS")
 
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
-			delete(clients, conn)
+			removeClient(conn)
 			log.Println("Client disconnected from market WS")
 			break
 		}
