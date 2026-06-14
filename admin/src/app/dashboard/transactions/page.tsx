@@ -22,19 +22,20 @@ export default function AdminTransactionsPage() {
     setLoading(true);
     fetch(`${API}/api/admin/transactions?page=${page}&limit=20`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(d => {
-        setTransactions(Array.isArray(d) ? d : Array.isArray(d.transactions) ? d.transactions : []);
+        const data = d.data;
+        setTransactions(Array.isArray(data) ? data : []);
         if (d.total) setTotalPages(Math.ceil(d.total / 20));
       }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => { fetchTransactions(); }, [page]);
 
-  const handleReview = async (id: number, status: string) => {
+  const handleReview = async (id: number, action: "approve" | "reject") => {
     const token = localStorage.getItem("token");
     setReviewingId(id);
     try {
-      const body: any = { status };
-      if (status === "COMPLETED" && txInputs[id]) body.tx_id = txInputs[id];
+      const body: any = { action };
+      if (action === "approve" && txInputs[id]) body.tx_id = txInputs[id];
       const res = await fetch(`${API}/api/admin/transactions/${id}/review`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -42,7 +43,7 @@ export default function AdminTransactionsPage() {
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل المراجعة"); return; }
-      toast.success(status === "COMPLETED" ? "تمت الموافقة على المعاملة" : "تم رفض المعاملة والمبلغ مسترد");
+      toast.success(action === "approve" ? "تمت الموافقة على المعاملة" : "تم رفض المعاملة والمبلغ مسترد");
       fetchTransactions();
     } catch { toast.error("حدث خطأ في الاتصال"); }
     finally { setReviewingId(null); }
@@ -92,8 +93,8 @@ export default function AdminTransactionsPage() {
                     </div>
                   </td>
                   <td className="p-4">
-                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${tx.type === "DEPOSIT" ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}>
-                      {tx.type === "DEPOSIT" ? "إيداع" : "سحب"}
+                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${tx.type === "deposit" ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}>
+                      {tx.type === "deposit" ? "إيداع" : "سحب"}
                     </span>
                   </td>
                   <td className="p-4 font-medium">{tx.currency}</td>
@@ -129,7 +130,7 @@ export default function AdminTransactionsPage() {
                   </td>
                   <td className="p-4 text-muted-foreground text-xs">{tx.created_at ? new Date(tx.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
                   <td className="p-4">
-                    {tx.status === "PENDING" && tx.type === "WITHDRAWAL" && (
+                    {tx.status === "PENDING" && tx.type === "withdraw" && (
                       <div className="flex items-center gap-2">
                         <div className="flex flex-col gap-1">
                           <input
@@ -140,10 +141,10 @@ export default function AdminTransactionsPage() {
                             onChange={e => setTxInputs(prev => ({ ...prev, [tx.id]: e.target.value }))}
                           />
                           <div className="flex gap-1">
-                            <button onClick={() => handleReview(tx.id, "COMPLETED")} disabled={reviewingId === tx.id} className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all disabled:opacity-50" title="موافقة">
+                            <button onClick={() => handleReview(tx.id, "approve")} disabled={reviewingId === tx.id} className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all disabled:opacity-50" title="موافقة">
                               {reviewingId === tx.id ? <span className="spinner h-3 w-3" /> : <Check className="h-3.5 w-3.5" />}
                             </button>
-                            <button onClick={() => handleReview(tx.id, "REJECTED")} disabled={reviewingId === tx.id} className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all disabled:opacity-50" title="رفض">
+                            <button onClick={() => handleReview(tx.id, "reject")} disabled={reviewingId === tx.id} className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all disabled:opacity-50" title="رفض">
                               <X className="h-3.5 w-3.5" />
                             </button>
                           </div>

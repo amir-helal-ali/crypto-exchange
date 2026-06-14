@@ -16,23 +16,30 @@ export default function AdminKYCPage() {
     if (!token) return;
     setLoading(true);
     fetch(`${API}/api/admin/kyc`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => setRequests(Array.isArray(d) ? d : Array.isArray(d.requests) ? d.requests : [])).catch(() => {})
+      .then(r => r.json()).then(d => {
+        const data = d.data;
+        setRequests(Array.isArray(data) ? data : []);
+      }).catch(() => {})
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { fetchKYC(); }, []);
 
-  const handleReview = async (id: number, status: string, notes = "") => {
+  const handleReview = async (id: number, status: string, rejectionReason = "") => {
     const token = localStorage.getItem("token");
     try {
+      const body: any = { status };
+      if (status === "REJECTED" && rejectionReason) {
+        body.rejection_reason = rejectionReason;
+      }
       const res = await fetch(`${API}/api/admin/kyc/${id}/review`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status, notes }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل المراجعة"); return; }
-      toast.success(status === "VERIFIED" ? "تم توثيق المستخدم" : "تم رفض الطلب");
+      toast.success(status === "APPROVED" ? "تم توثيق المستخدم" : "تم رفض الطلب");
       fetchKYC();
     } catch { toast.error("حدث خطأ في الاتصال"); }
   };
@@ -75,11 +82,11 @@ export default function AdminKYCPage() {
                   <td className="p-4">{req.document_type || "—"}</td>
                   <td className="p-4">
                     <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
-                      req.status === "VERIFIED" ? "bg-emerald-500/10 text-emerald-500" :
+                      req.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-500" :
                       req.status === "PENDING" ? "bg-yellow-500/10 text-yellow-500" :
                       "bg-red-500/10 text-red-500"
                     }`}>
-                      {req.status === "VERIFIED" ? "موثق" : req.status === "PENDING" ? "قيد المراجعة" : "مرفوض"}
+                      {req.status === "APPROVED" ? "موثق" : req.status === "PENDING" ? "قيد المراجعة" : "مرفوض"}
                     </span>
                   </td>
                   <td className="p-4 text-muted-foreground text-xs">{req.created_at ? new Date(req.created_at).toLocaleDateString("ar-EG") : "—"}</td>
@@ -87,8 +94,11 @@ export default function AdminKYCPage() {
                     <div className="flex items-center gap-2">
                       {req.status === "PENDING" && (
                         <>
-                          <button onClick={() => handleReview(req.id, "VERIFIED")} className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all" title="موافقة"><Check className="h-4 w-4" /></button>
-                          <button onClick={() => handleReview(req.id, "REJECTED")} className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all" title="رفض"><X className="h-4 w-4" /></button>
+                          <button onClick={() => handleReview(req.id, "APPROVED")} className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all" title="موافقة"><Check className="h-4 w-4" /></button>
+                          <button onClick={() => {
+                            const reason = prompt("سبب الرفض (اختياري):");
+                            if (reason !== null) handleReview(req.id, "REJECTED", reason);
+                          }} className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all" title="رفض"><X className="h-4 w-4" /></button>
                         </>
                       )}
                     </div>
