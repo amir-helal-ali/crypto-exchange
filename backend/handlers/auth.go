@@ -41,11 +41,33 @@ func GenerateJWT(userID uint, role string) (string, error) {
                 UserID: userID,
                 Role:   role,
                 RegisteredClaims: jwt.RegisteredClaims{
-                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
                 },
         }
         token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
         return token.SignedString(jwtSecret)
+}
+
+// GenerateRefreshToken creates a cryptographically secure refresh token and saves it to DB
+func GenerateRefreshToken(userID uint, userAgent string, ipAddress string) (string, error) {
+        tokenBytes := make([]byte, 32)
+        if _, err := rand.Read(tokenBytes); err != nil {
+                return "", err
+        }
+        token := hex.EncodeToString(tokenBytes)
+
+        refreshToken := models.RefreshToken{
+                UserID:    userID,
+                Token:     token,
+                UserAgent: userAgent,
+                IPAddress: ipAddress,
+                ExpiresAt: time.Now().Add(7 * 24 * time.Hour), // 7 days
+        }
+        if err := database.DB.Create(&refreshToken).Error; err != nil {
+                return "", err
+        }
+
+        return token, nil
 }
 
 func ValidateJWT(tokenString string) (*Claims, error) {
@@ -233,6 +255,7 @@ func Login(c *gin.Context) {
         }
 
         token, _ := GenerateJWT(user.ID, user.Role)
+        refreshToken, _ := GenerateRefreshToken(user.ID, c.Request.UserAgent(), c.ClientIP())
 
         database.DB.Create(&models.AuditLog{
                 UserID:    user.ID,
@@ -243,9 +266,10 @@ func Login(c *gin.Context) {
         })
 
         c.JSON(http.StatusOK, gin.H{
-                "success": true,
-                "token":   token,
-                "user":    user,
+                "success":       true,
+                "token":         token,
+                "refresh_token": refreshToken,
+                "user":          user,
         })
 }
 
@@ -399,6 +423,7 @@ func Verify2FA(c *gin.Context) {
         // Valid - generate JWT and clean up
         temp2FATokens.Delete(input.TempToken)
         token, _ := GenerateJWT(user.ID, user.Role)
+        refreshToken, _ := GenerateRefreshToken(user.ID, c.Request.UserAgent(), c.ClientIP())
 
         database.DB.Create(&models.AuditLog{
                 UserID:    user.ID,
@@ -409,9 +434,10 @@ func Verify2FA(c *gin.Context) {
         })
 
         c.JSON(http.StatusOK, gin.H{
-                "success": true,
-                "token":   token,
-                "user":    user,
+                "success":       true,
+                "token":         token,
+                "refresh_token": refreshToken,
+                "user":          user,
         })
 }
 
@@ -802,5 +828,120 @@ func Disable2FA(c *gin.Context) {
         c.JSON(http.StatusOK, gin.H{
                 "success": true,
                 "message": "تم تعطيل المصادقة الثنائية بنجاح",
+        })
+}
+
+// RefreshAccessToken handles POST /api/auth/refresh
+// Exchanges a valid refresh token for a new JWT + new refresh token (rotation)
+func RefreshAccessToken(c *gin.Context) {
+        var input struct {
+                RefreshToken string `json:"refresh_token" binding:"required"`
+        }
+        if err := c.ShouldBindJSON(&input); err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }
+
+        // Find the refresh token
+        var storedToken models.RefreshToken
+        if err := database.DB.Where("token = ? AND revoked = ? AND expires_at > ?", input.RefreshToken, false, time.Now()).First(&storedToken).Error; err != nil {
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز التحديث غير صالح أو منتهي الصلاحية"})
+                return
+        }
+
+        // Get the user
+        var user models.User
+        if err := database.DB.First(&user, storedToken.UserID).Error; err != nil {
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "المستخدم غير موجود"})
+                return
+        }
+
+        // Revoke the old refresh token (rotation: each refresh token is single-use)
+        database.DB.Model(&storedToken).Update("revoked", true)
+
+        // Generate new JWT and refresh token
+        token, _ := GenerateJWT(user.ID, user.Role)
+        newRefreshToken, _ := GenerateRefreshToken(user.ID, c.Request.UserAgent(), c.ClientIP())
+
+        c.JSON(http.StatusOK, gin.H{
+                "success":       true,
+                "token":         token,
+                "refresh_token": newRefreshToken,
+                "user":          user,
+        })
+}
+
+// Logout handles POST /api/auth/logout
+// Revokes the refresh token and effectively ends the session
+func Logout(c *gin.Context) {
+        var input struct {
+                RefreshToken string `json:"refresh_token"`
+        }
+        if err := c.ShouldBindJSON(&input); err == nil && input.RefreshToken != "" {
+                // Revoke the specific refresh token
+                database.DB.Model(&models.RefreshToken{}).Where("token = ?", input.RefreshToken).Update("revoked", true)
+        }
+
+        userID := c.GetUint("user_id")
+        database.DB.Create(&models.AuditLog{
+                UserID:    userID,
+                Action:    "LOGOUT",
+                Details:   "User logged out",
+                IPAddress: c.ClientIP(),
+                CreatedAt: time.Now(),
+        })
+
+        c.JSON(http.StatusOK, gin.H{
+                "success": true,
+                "message": "تم تسجيل الخروج بنجاح",
+        })
+}
+
+// GetSessions handles GET /api/auth/sessions
+// Returns all active (non-revoked, non-expired) sessions for the current user
+func GetSessions(c *gin.Context) {
+        userID := c.GetUint("user_id")
+
+        var sessions []models.RefreshToken
+        database.DB.Where("user_id = ? AND revoked = ? AND expires_at > ?", userID, false, time.Now()).
+                Order("created_at DESC").
+                Find(&sessions)
+
+        c.JSON(http.StatusOK, gin.H{
+                "success": true,
+                "data":    sessions,
+        })
+}
+
+// RevokeSession handles POST /api/auth/sessions/:id/revoke
+// Revokes a specific session by ID (useful for "logout from other devices")
+func RevokeSession(c *gin.Context) {
+        userID := c.GetUint("user_id")
+        sessionID := c.Param("id")
+
+        var session models.RefreshToken
+        if err := database.DB.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+                c.JSON(http.StatusNotFound, gin.H{"error": "الجلسة غير موجودة"})
+                return
+        }
+
+        if session.Revoked {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "الجلسة منتهية بالفعل"})
+                return
+        }
+
+        database.DB.Model(&session).Update("revoked", true)
+
+        database.DB.Create(&models.AuditLog{
+                UserID:    userID,
+                Action:    "SESSION_REVOKED",
+                Details:   fmt.Sprintf("Session revoked: ID #%s from %s", sessionID, session.IPAddress),
+                IPAddress: c.ClientIP(),
+                CreatedAt: time.Now(),
+        })
+
+        c.JSON(http.StatusOK, gin.H{
+                "success": true,
+                "message": "تم إنهاء الجلسة بنجاح",
         })
 }

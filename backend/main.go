@@ -141,14 +141,18 @@ func main() {
         r.GET("/api/auth/verify-email", handlers.VerifyEmail)
         r.POST("/api/auth/resend-verification", handlers.ResendVerification)
         r.POST("/api/auth/verify-2fa", handlers.Verify2FA)
+        r.POST("/api/auth/refresh", handlers.RefreshAccessToken)
 
-        // 2FA management routes (require authentication)
-        twofa := r.Group("/api/auth")
-        twofa.Use(handlers.AuthMiddleware())
+        // Authenticated auth routes
+        authProtected := r.Group("/api/auth")
+        authProtected.Use(handlers.AuthMiddleware())
         {
-                twofa.POST("/setup-2fa", handlers.Setup2FA)
-                twofa.POST("/enable-2fa", handlers.Enable2FA)
-                twofa.POST("/disable-2fa", handlers.Disable2FA)
+                authProtected.POST("/setup-2fa", handlers.Setup2FA)
+                authProtected.POST("/enable-2fa", handlers.Enable2FA)
+                authProtected.POST("/disable-2fa", handlers.Disable2FA)
+                authProtected.POST("/logout", handlers.Logout)
+                authProtected.GET("/sessions", handlers.GetSessions)
+                authProtected.POST("/sessions/:id/revoke", handlers.RevokeSession)
         }
 
         userKYC := r.Group("/api/kyc")

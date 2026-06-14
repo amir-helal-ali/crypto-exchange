@@ -14,6 +14,9 @@ import {
   AlertTriangle,
   CheckCircle,
   Loader2,
+  Monitor,
+  Smartphone,
+  Trash2,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -47,6 +50,10 @@ export default function SecurityPage() {
   const [disableCode, setDisableCode] = useState("");
   const [disableLoading, setDisableLoading] = useState(false);
 
+  // Sessions State
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -64,7 +71,43 @@ export default function SecurityPage() {
       }
     }
     setLoading(false);
+    fetchSessions();
   }, [router]);
+
+  const fetchSessions = async () => {
+    setSessionsLoading(true);
+    try {
+      const res = await fetch(`${API}/api/auth/sessions`, {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data.data || []);
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const handleRevokeSession = async (sessionId: number) => {
+    try {
+      const res = await fetch(`${API}/api/auth/sessions/${sessionId}/revoke`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "فشل إنهاء الجلسة");
+        return;
+      }
+      toast.success(data.message || "تم إنهاء الجلسة");
+      fetchSessions();
+    } catch {
+      toast.error("حدث خطأ في الاتصال");
+    }
+  };
 
   const authHeaders = () => ({
     "Content-Type": "application/json",
@@ -505,6 +548,68 @@ export default function SecurityPage() {
                 تعطيل المصادقة الثنائية
               </button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Active Sessions */}
+      <div className="glass-panel rounded-2xl p-6">
+        <h3 className="font-semibold mb-3 flex items-center gap-2">
+          <Monitor className="h-5 w-5 text-emerald-500" />
+          الجلسات النشطة
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          الأجهزة التي سجلت الدخول منها. يمكنك إنهاء أي جلسة مشبوهة.
+        </p>
+
+        {sessionsLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-emerald-500" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">لا توجد جلسات نشطة</p>
+        ) : (
+          <div className="space-y-2">
+            {sessions.map((session: any) => {
+              const isMobile = /mobile|android|iphone/i.test(session.user_agent || "");
+              const deviceIcon = isMobile ? Smartphone : Monitor;
+              const DeviceIcon = deviceIcon;
+              const browser = session.user_agent?.includes("Chrome") ? "Chrome" :
+                session.user_agent?.includes("Firefox") ? "Firefox" :
+                session.user_agent?.includes("Safari") ? "Safari" : "متصفح";
+              const isCurrent = session.ip_address === "current"; // simplified check
+
+              return (
+                <div
+                  key={session.id}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-background/50 border border-border/50"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                    <DeviceIcon className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{browser}</p>
+                      {isCurrent && (
+                        <span className="text-xs bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full">
+                          الحالية
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate" dir="ltr">
+                      {session.ip_address} · {new Date(session.created_at).toLocaleDateString("ar-EG")}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleRevokeSession(session.id)}
+                    className="text-muted-foreground hover:text-red-500 shrink-0 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                    title="إنهاء الجلسة"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

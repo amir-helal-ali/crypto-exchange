@@ -61,6 +61,7 @@ export default function LoginPage() {
       }
 
       localStorage.setItem("token", data.token);
+      localStorage.setItem("refresh_token", data.refresh_token || "");
       localStorage.setItem("user", JSON.stringify(data.user));
       toast.success("تم تسجيل الدخول بنجاح");
       router.push(data.user.role === "ADMIN" ? "/dashboard" : "/dashboard");
@@ -91,6 +92,7 @@ export default function LoginPage() {
         return;
       }
       localStorage.setItem("token", data.token);
+      localStorage.setItem("refresh_token", data.refresh_token || "");
       localStorage.setItem("user", JSON.stringify(data.user));
       toast.success("تم تسجيل الدخول بنجاح");
       router.push(data.user.role === "ADMIN" ? "/dashboard" : "/dashboard");
