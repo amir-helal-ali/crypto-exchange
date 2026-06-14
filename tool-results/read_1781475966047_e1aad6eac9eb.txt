@@ -1,0 +1,602 @@
+   700→  <div class="file-card">
+   701→    <div class="file-card-title">handlers/auth.go</div>
+   702→    <ul class="spec-list">
+   703→      <li><strong>Register:</strong> بعد إنشاء المستخدم بنجاح، توليد رمز تحقق عشوائي 64 بايت وحفظه في EmailVerificationToken، ثم إرسال بريد يحتوي على رابط التحقق (مثال: <span class="code-inline">https://eg-money.local/verify-email?token=xxx</span>). المستخدم يُنشأ بحالة <span class="code-inline">EmailVerified=false</span>. لا يتم تسجيل الدخول تلقائياً بعد التسجيل.</li>
+   704→      <li><strong>VerifyEmail (مسار جديد GET /api/auth/verify-email):</strong> مسار عام يستقبل token من query parameter. يبحث عن الرمز في قاعدة البيانات، يتحقق من عدم انتهاء الصلاحية وعدم الاستخدام السابق. إذا صالح: يحدّث <span class="code-inline">User.EmailVerified=true</span> ويحذف الرمز. يُرجع رسالة نجاح أو خطأ مناسب.</li>
+   705→      <li><strong>ResendVerification (مسار جديد POST /api/auth/resend-verification):</strong> يستقبل البريد الإلكتروني، يبحث عن المستخدم، إذا لم يكن مؤكدًا يُنشئ رمزًا جديدًا ويرسله. معدل محدود: طلب واحد كل 60 ثانية.</li>
+   706→      <li><strong>Login:</strong> إضافة تحقق: إذا <span class="code-inline">user.EmailVerified == false</span> يُرجع خطأ 403 مع رسالة "يرجى تأكيد بريدك الإلكتروني أولاً".</li>
+   707→    </ul>
+   708→  </div>
+   709→
+   710→  <div class="file-card">
+   711→    <div class="file-card-title">email/email.go</div>
+   712→    <ul class="spec-list">
+   713→      <li>إضافة دالة <span class="code-inline">SendVerificationEmail(to, token string)</span> بقوالب HTML احترافية تحمل شعار EgMoney وزر تأكيد واضح.</li>
+   714→    </ul>
+   715→  </div>
+   716→
+   717→  <div class="file-card">
+   718→    <div class="file-card-title">main.go</div>
+   719→    <ul class="spec-list">
+   720→      <li>إضافة المسارات العامة الجديدة: <span class="code-inline">GET /api/auth/verify-email</span> و <span class="code-inline">POST /api/auth/resend-verification</span></li>
+   721→    </ul>
+   722→  </div>
+   723→
+   724→  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+   725→  <div class="file-card">
+   726→    <div class="file-card-title">register/page.tsx</div>
+   727→    <ul class="spec-list">
+   728→      <li>بعد التسجيل الناجح، عرض رسالة "تم إرسال رابط التأكيد إلى بريدك" بدلاً من تسجيل الدخول التلقائي.</li>
+   729→      <li>إضافة رابط "إعادة إرسال رابط التأكيد" يعمل بعد 60 ثانية.</li>
+   730→    </ul>
+   731→  </div>
+   732→
+   733→  <div class="file-card">
+   734→    <div class="file-card-title">verify-email/page.tsx (صفحة جديدة)</div>
+   735→    <ul class="spec-list">
+   736→      <li>يستقبل token من URL، يستدعي <span class="code-inline">GET /api/auth/verify-email?token=xxx</span>.</li>
+   737→      <li>عرض حالة النجاح مع زر "تسجيل الدخول" أو حالة الخطأ مع خيار إعادة الإرسال.</li>
+   738→    </ul>
+   739→  </div>
+   740→
+   741→  <div class="file-card">
+   742→    <div class="file-card-title">login/page.tsx</div>
+   743→    <ul class="spec-list">
+   744→      <li>إذا أرجع الخادم خطأ 403 (بريد غير مؤكد)، عرض رسالة واضحة مع زر "إعادة إرسال رابط التأكيد".</li>
+   745→    </ul>
+   746→  </div>
+   747→
+   748→  <div class="warning-box">
+   749→    <div class="warning-box-title">تنبيه أمني</div>
+   750→    <p style="margin:0; font-size:10pt;">رمز التحقق يجب أن يكون عشوائياً بتشفير آمن (crypto/rand) وليس رياضياً (math/rand). مدة الصلاحية 24 ساعة كحد أقصى. لا يجوز كشف ما إذا كان البريد مسجلاً أم لا في API إعادة الإرسال (نفس الرسالة دائماً).</p>
+   751→  </div>
+   752→</div>
+   753→
+   754→<!-- ==================== 4.2 2FA ==================== -->
+   755→<div class="page">
+   756→  <div class="feature-title">4.2 المصادقة الثنائية (2FA/TOTP)</div>
+   757→  <p>
+   758→    توفر المصادقة الثنائية طبقة حماية إضافية ضد اختراق كلمات المرور. نستخدم معيار TOTP (Time-based One-Time Password) المتوافق مع تطبيقات Google Authenticator و Authy. المصادقة الثنائية اختيارية للمستخدمين ولكنها إلزامية للإدارة عند سحب الأموال.
+   759→  </p>
+   760→
+   761→  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+   762→  <div class="info-card">
+   763→    <ul class="spec-list">
+   764→      <li><strong>إضافة حقول لنموذج User:</strong> <span class="code-inline">TwoFASecret string `gorm:"size:100" json:"-"`</span> و <span class="code-inline">TwoFAEnabled bool `gorm:"default:false" json:"two_fa_enabled"`</span> و <span class="code-inline">TwoFABackupCodes string `gorm:"type:text" json:"-"`</span> (رموز طوارئ مشفرة JSON)</li>
+   765→    </ul>
+   766→  </div>
+   767→
+   768→  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+   769→  <div class="file-card">
+   770→    <div class="file-card-title">go.mod</div>
+   771→    <ul class="spec-list">
+   772→      <li>إضافة مكتبة: <span class="code-inline">github.com/pquerna/otp</span> (مكتبة TOTP القياسية في Go)</li>
+   773→    </ul>
+   774→  </div>
+   775→
+   776→  <div class="file-card">
+   777→    <div class="file-card-title">handlers/auth.go - التعديلات</div>
+   778→    <ul class="spec-list">
+   779→      <li><strong>Login:</strong> بعد التحقق من كلمة المرور، إذا <span class="code-inline">TwoFAEnabled=true</span>: لا يُرجع الرمز المميز (JWT) مباشرة. بل يُرجع <span class="code-inline">{success: true, requires_2fa: true, temp_token: "xxx"}</span> حيث temp_token صالح لمدة 5 دقائق فقط.</li>
+   780→      <li><strong>Verify2FA (مسار جديد POST /api/auth/verify-2fa):</strong> يستقبل temp_token ورمز TOTP (6 أرقام). يتحقق من صحة temp_token ثم يتحقق من رمز TOTP باستخدام المكتبة. إذا صحيح: يُرجع الرمز المميز (JWT) الكامل. يتحقق أيضاً من رموز الطوارئ الاحتياطية.</li>
+   781→    </ul>
+   782→  </div>
+   783→
+   784→  <div class="file-card">
+   785→    <div class="file-card-title">handlers/twofa.go (ملف جديد)</div>
+   786→    <ul class="spec-list">
+   787→      <li><strong>Setup2FA (POST /api/user/2fa/setup):</strong> يولد سر TOTP فريد للمستخدم باستخدام <span class="code-inline">totp.Generate()</span>، يحفظه في User.TwoFASecret (بدون تفعيل بعد)، يُرجع QR code URL (otpauth://totp/...) لعرضه في الواجهة.</li>
+   788→      <li><strong>Enable2FA (POST /api/user/2fa/enable):</strong> يستقبل رمز TOTP للتأكيد. إذا صحيح: يفعّل <span class="code-inline">TwoFAEnabled=true</span> ويولد 10 رموز طوارئ أحادية الاستخدام ويحفظها مشفرة. يُرجع الرموز الاحتياطية مرة واحدة فقط.</li>
+   789→      <li><strong>Disable2FA (POST /api/user/2fa/disable):</strong> يتطلب كلمة المرور الحالية + رمز TOTP. يوقف <span class="code-inline">TwoFAEnabled=false</span> ويمسح السر والرموز الاحتياطية.</li>
+   790→      <li><strong>GenerateBackupCodes (POST /api/user/2fa/backup-codes):</strong> يتطلب كلمة المرور + رمز TOTP. يولد مجموعة جديدة من رموز الطوارئ (يبطل القديمة).</li>
+   791→    </ul>
+   792→  </div>
+   793→
+   794→  <div class="file-card">
+   795→    <div class="file-card-title">handlers/wallet.go - التعديلات</div>
+   796→    <ul class="spec-list">
+   797→      <li><strong>WithdrawCurrency:</strong> إذا <span class="code-inline">TwoFAEnabled=true</span>، يتطلب رمز TOTP إضافي في الطلب <span class="code-inline">two_fa_code</span>. التحقق منه قبل معالجة السحب.</li>
+   798→    </ul>
+   799→  </div>
+   800→
+   801→  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+   802→  <div class="file-card">
+   803→    <div class="file-card-title">login/page.tsx - التعديلات</div>
+   804→    <ul class="spec-list">
+   805→      <li>إذا أرجع الخادم <span class="code-inline">requires_2fa: true</span>، عرض حقل إدخال رمز TOTP بدلاً من إكمال تسجيل الدخول.</li>
+   806→    </ul>
+   807→  </div>
+   808→
+   809→  <div class="file-card">
+   810→    <div class="file-card-title">dashboard/profile/page.tsx - التعديلات</div>
+   811→    <ul class="spec-list">
+   812→      <li>إضافة قسم "المصادقة الثنائية": زر "تفعيل" يعرض QR code + حقل تأكيد الرمز. إذا مفعّل: عرض حالة "مفعّل" مع زر "تعطيل" وزر "إعادة إنشاء رموز الطوارئ".</li>
+   813→      <li>حفظ رموز الطوارئ عند التفعيل الأول وعرض تحذير "احفظ هذه الرموز في مكان آمن".</li>
+   814→    </ul>
+   815→  </div>
+   816→
+   817→  <div class="file-card">
+   818→    <div class="file-card-title">dashboard/wallet/page.tsx - التعديلات</div>
+   819→    <ul class="spec-list">
+   820→      <li>نافذة السحب: إذا المستخدم فعّل 2FA، إضافة حقل إلزامي لرمز TOTP قبل تأكيد السحب.</li>
+   821→    </ul>
+   822→  </div>
+   823→
+   824→  <div class="info-box">
+   825→    <div class="info-box-title">ملاحظة تقنية</div>
+   826→    <p style="margin:0; font-size:10pt;">temp_token المستخدم في تسجيل الدخول مع 2FA يجب أن يُخزن في Redis (أو قاعدة بيانات) مع TTL = 5 دقائق لمنع إعادة الاستخدام. في المرحلة الحالية يمكن تخزينه مؤقتاً في الذاكرة مع mutex حتى يتم إضافة Redis في المرحلة 8.</p>
+   827→  </div>
+   828→
+   829→  <div class="divider"></div>
+   830→
+   831→  <!-- 4.3 KYC File Upload -->
+   832→  <div class="feature-title">4.3 رفع ملفات KYC الفعلية</div>
+   833→  <p>
+   834→    حالياً يقبل الخادم فقط نص URL للوثيقة (<span class="code-inline">document_url</span> كنص) دون رفع ملف فعلي. يجب توفير مسار رفع ملفات حقيقي يقبل صور الوثائق (جواز سفر، بطاقة هوية) ويحفظها بأمان.
+   835→  </p>
+   836→
+   837→  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+   838→  <div class="file-card">
+   839→    <div class="file-card-title">handlers/kyc.go - التعديلات</div>
+   840→    <ul class="spec-list">
+   841→      <li><strong>UploadKYCDocument (مسار جديد POST /api/kyc/upload):</strong> يستقبل ملف multipart/form-data. التحقق من: نوع الملف (jpg, png, pdf فقط)، الحجم الأقصى (10MB). يحفظ الملف في <span class="code-inline">./uploads/kyc/{user_id}_{timestamp}.{ext}</span>. يُرجع URL الملف النسبي.</li>
+   842→      <li><strong>SubmitKYC:</strong> تعديل ليستقبل document_url كـ URL الملف المرفوع (من المسار السابق) وليس نصاً حراً. التحقق من أن URL يبدأ بـ <span class="code-inline">/uploads/kyc/</span>.</li>
+   843→    </ul>
+   844→  </div>
+   845→
+   846→  <div class="file-card">
+   847→    <div class="file-card-title">main.go</div>
+   848→    <ul class="spec-list">
+   849→      <li>إضافة المسار: <span class="code-inline">POST /api/kyc/upload</span> (محمي بـ AuthMiddleware)</li>
+   850→    </ul>
+   851→  </div>
+   852→
+   853→  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+   854→  <div class="file-card">
+   855→    <div class="file-card-title">dashboard/kyc/page.tsx (صفحة جديدة - تفصيل في 7.1)</div>
+   856→    <ul class="spec-list">
+   857→      <li>مكون رفع ملف مع معاينة الصورة قبل الإرسال. استدعاء <span class="code-inline">POST /api/kyc/upload</span> أولاً ثم <span class="code-inline">POST /api/kyc/submit</span> مع URL المسترجع.</li>
+   858→    </ul>
+   859→  </div>
+   860→
+   861→  <div class="sub-feature-title">التغييرات في لوحة الإدارة (Admin)</div>
+   862→  <div class="file-card">
+   863→    <div class="file-card-title">dashboard/kyc/page.tsx - التعديلات</div>
+   864→    <ul class="spec-list">
+   865→      <li>عرض صورة/ملف الوثيقة المرفوعة كرابط قابل للتحميل أو معاينة مباشرة (img tag أو iframe للـ PDF).</li>
+   866→    </ul>
+   867→  </div>
+   868→</div>
+   869→
+   870→<!-- ==================== 4.4 Session Management ==================== -->
+   871→<div class="page">
+   872→  <div class="feature-title">4.4 إدارة الجلسات وتجديد الرمز المميز</div>
+   873→  <p>
+   874→    حالياً الرمز المميز (JWT) صالح لمدة 24 ساعة بدون آلية تجديد. عند انتهاء الصلاحية يفقد المستخدم كل سياقه ويجب إعادة تسجيل الدخول. هذا سيئ للتجربة ويخلق ثغرة أمنية لأن الرمز المسروق يظل صالحاً لمدة طويلة.
+   875→  </p>
+   876→
+   877→  <div class="sub-feature-title">الاستراتيجية: Access Token + Refresh Token</div>
+   878→  <div class="info-card">
+   879→    <table class="data-table">
+   880→      <tr>
+   881→        <th>النوع</th>
+   882→        <th>المدة</th>
+   883→        <th>التخزين</th>
+   884→        <th>الاستخدام</th>
+   885→      </tr>
+   886→      <tr>
+   887→        <td><strong>Access Token</strong></td>
+   888→        <td>15 دقيقة</td>
+   889→        <td>localStorage</td>
+   890→        <td>جميع طلبات API</td>
+   891→      </tr>
+   892→      <tr>
+   893→        <td><strong>Refresh Token</strong></td>
+   894→        <td>7 أيام</td>
+   895→        <td>قاعدة البيانات + httpOnly cookie</td>
+   896→        <td>تجديد Access Token فقط</td>
+   897→      </tr>
+   898→    </table>
+   899→  </div>
+   900→
+   901→  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+   902→  <div class="info-card">
+   903→    <ul class="spec-list">
+   904→      <li><strong>نموذج جديد RefreshToken:</strong> ID, UserID (فهرس), Token (فهرس فريد, 64 حرف), UserAgent, IPAddress, ExpiresAt, Revoked (bool), CreatedAt</li>
+   905→    </ul>
+   906→  </div>
+   907→
+   908→  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+   909→  <div class="file-card">
+   910→    <div class="file-card-title">handlers/auth.go - التعديلات</div>
+   911→    <ul class="spec-list">
+   912→      <li><strong>Login/Verify2FA:</strong> بالإضافة إلى Access Token (15 دقيقة)، توليد Refresh Token (64 بايت عشوائي) وحفظه في قاعدة البيانات. إرجاع Access Token في JSON و Refresh Token كـ httpOnly cookie آمن.</li>
+   913→      <li><strong>RefreshToken (مسار جديد POST /api/auth/refresh):</strong> يقرأ Refresh Token من الـ cookie. يبحث عنه في قاعدة البيانات. يتحقق من عدم إلغائه وعدم انتهاء الصلاحية. إذا صالح: يولد Access Token جديد (15 دقيقة) ويُرجعه.</li>
+   914→      <li><strong>Logout (مسار جديد POST /api/auth/logout):</strong> يلغي Refresh Token الحالي في قاعدة البيانات ويمسح الـ cookie.</li>
+   915→      <li><strong>JWT Access Token:</strong> تغيير المدة من 24 ساعة إلى 15 دقيقة في دالة توليد الرمز.</li>
+   916→    </ul>
+   917→  </div>
+   918→
+   919→  <div class="file-card">
+   920→    <div class="file-card-title">handlers/middleware.go - التعديلات</div>
+   921→    <ul class="spec-list">
+   922→      <li><strong>AuthMiddleware:</strong> إذا انتهت صلاحية Access Token، يُرجع <span class="code-inline">401 {success: false, message: "انتهت صلاحية الرمز", code: "TOKEN_EXPIRED"}</span>. الكود المميز <span class="code-inline">TOKEN_EXPIRED</span> يسمح للواجهة بالتمييز بين انتهاء الصلاحية والرمز غير الصالح.</li>
+   923→    </ul>
+   924→  </div>
+   925→
+   926→  <div class="sub-feature-title">التغييرات في الواجهة (Frontend + Admin)</div>
+   927→  <div class="file-card">
+   928→    <div class="file-card-title">lib/api.ts (ملف جديد - سيتم تفصيله في 5.1)</div>
+   929→    <ul class="spec-list">
+   930→      <li>معترض HTTP (interceptor): عند استلام خطأ 401 مع <span class="code-inline">code: "TOKEN_EXPIRED"</span>، يستدعي تلقائياً <span class="code-inline">POST /api/auth/refresh</span> ثم يعيد الطلب الأصلي بالرمز الجديد. إذا فشل التجديد أيضاً: توجيه إلى صفحة تسجيل الدخول.</li>
+   931→      <li>تحديث <span class="code-inline">localStorage</span> بالرمز الجديد بعد كل تجديد ناجح.</li>
+   932→    </ul>
+   933→  </div>
+   934→
+   935→  <div class="warning-box">
+   936→    <div class="warning-box-title">قواعد أمنية إلزامية</div>
+   937→    <ul class="spec-list" style="margin:0;">
+   938→      <li>Refresh Token يجب أن يكون httpOnly + Secure + SameSite=Strict cookie فقط. لا يجوز تخزينه في localStorage.</li>
+   939→      <li>كل تجديد ناجح للرمز يُلغي Refresh Token القديم ويولد واحداً جديداً (Rotation). هذا يمنع إعادة الاستخدام إذا سُرق الرمز.</li>
+   940→      <li>تسجيل الخروج من جميع الأجهزة: مسار <span class="code-inline">POST /api/auth/logout-all</span> يلغي جميع Refresh Tokens للمستخدم.</li>
+   941→    </ul>
+   942→  </div>
+   943→</div>
+   944→
+   945→<!-- ==================== PHASE 5: INFRASTRUCTURE ==================== -->
+   946→<div class="page">
+   947→  <div class="phase-badge phase-5">
+   948→    <span class="phase-number">5</span>
+   949→    المرحلة الخامسة: البنية التحتية وجودة الكود
+   950→  </div>
+   951→  <p class="mb-md">
+   952→    هذه المرحلة تعالج المشاكل الهيكلية في الكود الحالي: تكرار استدعاءات API في كل صفحة، غياب مكتبة مكونات مشتركة، ضعف التحقق من المدخلات، وغياب الإشعارات الفورية. إصلاح هذه المشاكل سيُحسّن إنتاجية التطوير بشكل كبير ويمنع أخطاء مستقبلية.
+   953→  </p>
+   954→
+   955→  <div class="divider"></div>
+   956→
+   957→  <!-- 5.1 Centralized API Layer -->
+   958→  <div class="feature-title">5.1 طبقة API المركزية</div>
+   959→  <p>
+   960→    حالياً كل صفحة في الواجهة ولوحة الإدارة تكرر نفس كود <span class="code-inline">fetch</span> مع إضافة الرمز المميز ومعالجة الأخطاء. يجب إنشاء طبقة API مركزية تُوحّد جميع الاستدعاءات وتتعامل تلقائياً مع تجديد الرمز المميز ومعالجة الأخطاء.
+   961→  </p>
+   962→
+   963→  <div class="sub-feature-title">الملفات الجديدة</div>
+   964→  <div class="file-card">
+   965→    <div class="file-card-title">frontend/src/lib/api.ts + admin/src/lib/api.ts</div>
+   966→    <ul class="spec-list">
+   967→      <li><strong>فئة ApiClient:</strong> singleton يحتوي على baseURL, token getter/setter, و refresh mechanism.</li>
+   968→      <li><strong>الدوال الأساسية:</strong> <span class="code-inline">get(path, params?)</span>, <span class="code-inline">post(path, body)</span>, <span class="code-inline">put(path, body)</span>, <span class="code-inline">del(path)</span></li>
+   969→      <li><strong>معترض تلقائي:</strong> يضيف <span class="code-inline">Authorization: Bearer {token}</span> لكل طلب. عند 401 مع TOKEN_EXPIRED: يحاول التجديد ثم يعيد الطلب. عند فشل التجديد: يمسح الرمز ويُوجّه لتسجيل الدخول.</li>
+   970→      <li><strong>معالجة الأخطاء الموحدة:</strong> تحويل جميع الاستجابات إلى <span class="code-inline">{success, data, message}</span> بشكل متسق.</li>
+   971→    </ul>
+   972→  </div>
+   973→
+   974→  <div class="file-card">
+   975→    <div class="file-card-title">frontend/src/lib/endpoints.ts + admin/src/lib/endpoints.ts</div>
+   976→    <ul class="spec-list">
+   977→      <li><strong>تصدير دوال مُسمّى لكل مسار API:</strong> <span class="code-inline">auth.login()</span>, <span class="code-inline">auth.register()</span>, <span class="code-inline">exchange.placeOrder()</span>, <span class="code-inline">wallet.getBalances()</span>, <span class="code-inline">admin.getUsers()</span> ... إلخ</li>
+   978→      <li><strong>أنواع TypeScript:</strong> تحديد واجهات (interfaces) لكل طلب واستجابة مع أنواع دقيقة.</li>
+   979→    </ul>
+   980→  </div>
+   981→
+   982→  <div class="sub-feature-title">مثال على البنية</div>
+   983→  <div class="info-card" style="direction: ltr; text-align: left; font-family: 'Courier New', monospace; font-size: 9pt; line-height: 1.6; color: var(--text-secondary);">
+   984→    <pre style="margin:0; white-space: pre-wrap;">
+   985→// lib/api.ts
+   986→class ApiClient {
+   987→  private baseUrl: string;
+   988→  async get&lt;T&gt;(path: string): Promise&lt;ApiResponse&lt;T&gt;&gt;
+   989→  async post&lt;T&gt;(path: string, body: any): Promise&lt;ApiResponse&lt;T&gt;&gt;
+   990→  private async refreshToken(): Promise&lt;boolean&gt;
+   991→}
+   992→export const api = new ApiClient();
+   993→
+   994→// lib/endpoints.ts
+   995→export const auth = {
+   996→  login: (data: LoginReq) =&gt; api.post&lt;LoginRes&gt;('/auth/login', data),
+   997→  register: (data: RegisterReq) =&gt; api.post&lt;RegisterRes&gt;('/auth/register', data),
+   998→}
+   999→export const exchange = {
+  1000→  placeOrder: (data: OrderReq) =&gt; api.post&lt;Order&gt;('/exchange/order', data),
+  1001→  getOrders: (params?: OrderParams) =&gt; api.get&lt;Order[]&gt;('/exchange/orders'),
+  1002→}</pre>
+  1003→  </div>
+  1004→
+  1005→  <div class="divider"></div>
+  1006→
+  1007→  <!-- 5.2 Shared Components -->
+  1008→  <div class="feature-title">5.2 مكتبة المكونات المشتركة</div>
+  1009→  <p>
+  1010→    الواجهة ولوحة الإدارة تكرران نفس أنماط CSS (glass-panel, btn-primary, input-field) دون مكونات React قابلة لإعادة الاستخدام. هذا يُصعّب الصيانة ويؤدي إلى تناقضات بصرية.
+  1011→  </p>
+  1012→
+  1013→  <div class="sub-feature-title">المكونات المطلوبة</div>
+  1014→  <div class="info-card">
+  1015→    <table class="data-table">
+  1016→      <tr>
+  1017→        <th>المكون</th>
+  1018→        <th>الاستخدام</th>
+  1019→        <th>الخصائص</th>
+  1020→      </tr>
+  1021→      <tr>
+  1022→        <td><strong>GlassCard</strong></td>
+  1023→        <td>حاوية شفافة أساسية</td>
+  1024→        <td>title?, children, className?, actions?</td>
+  1025→      </tr>
+  1026→      <tr>
+  1027→        <td><strong>DataTable</strong></td>
+  1028→        <td>جدول بيانات مع ترقيم صفحات</td>
+  1029→        <td>columns, data, pagination?, loading?, onRowClick?</td>
+  1030→      </tr>
+  1031→      <tr>
+  1032→        <td><strong>Modal</strong></td>
+  1033→        <td>نافذة منبثقة (بديل prompt)</td>
+  1034→        <td>isOpen, onClose, title, children, footer?</td>
+  1035→      </tr>
+  1036→      <tr>
+  1037→        <td><strong>InputField</strong></td>
+  1038→        <td>حقل إدخال مع تسمية وخطأ</td>
+  1039→        <td>label, error?, type?, icon?, ...inputProps</td>
+  1040→      </tr>
+  1041→      <tr>
+  1042→        <td><strong>Button</strong></td>
+  1043→        <td>زر موحد (primary/danger/ghost)</td>
+  1044→        <td>variant, loading?, disabled?, onClick, children</td>
+  1045→      </tr>
+  1046→      <tr>
+  1047→        <td><strong>StatusBadge</strong></td>
+  1048→        <td>شارة حالة ملونة</td>
+  1049→        <td>status, label?</td>
+  1050→      </tr>
+  1051→      <tr>
+  1052→        <td><strong>ConfirmDialog</strong></td>
+  1053→        <td>حوار تأكيد (بديل confirm)</td>
+  1054→        <td>isOpen, onConfirm, onCancel, message, variant?</td>
+  1055→      </tr>
+  1056→      <tr>
+  1057→        <td><strong>EmptyState</strong></td>
+  1058→        <td>حالة فارغة مع أيقونة</td>
+  1059→        <td>icon, title, description?</td>
+  1060→      </tr>
+  1061→      <tr>
+  1062→        <td><strong>Loader</strong></td>
+  1063→        <td>مؤشر تحميل</td>
+  1064→        <td>size?, text?</td>
+  1065→      </tr>
+  1066→    </table>
+  1067→  </div>
+  1068→
+  1069→  <div class="file-card">
+  1070→    <div class="file-card-title">frontend/src/components/ui/ + admin/src/components/ui/</div>
+  1071→    <ul class="spec-list">
+  1072→      <li>كل مكون في ملف منفصل مع أنواع TypeScript كاملة.</li>
+  1073→      <li>بعد الإنشاء، استبدال جميع استخدامات <span class="code-inline">prompt()</span> و <span class="code-inline">confirm()</span> بـ Modal و ConfirmDialog.</li>
+  1074→      <li>استبدال جميع الجداول المكررة بـ DataTable.</li>
+  1075→    </ul>
+  1076→  </div>
+  1077→</div>
+  1078→
+  1079→<!-- ==================== 5.3 + 5.4 ==================== -->
+  1080→<div class="page">
+  1081→  <!-- 5.3 Input Validation -->
+  1082→  <div class="feature-title">5.3 التحقق من المدخلات (Backend + Frontend)</div>
+  1083→  <p>
+  1084→    حالياً الخادم يعتمد على تحقق بسيط جداً (مثل طول العنوان الأدنى 10 أحرف للسحب). هذا غير كافٍ لمنصة مالية. يجب تطبيق تحقق شامل على كلا الجانبين.
+  1085→  </p>
+  1086→
+  1087→  <div class="sub-feature-title">قواعد التحقق المطلوبة</div>
+  1088→  <div class="info-card">
+  1089→    <table class="data-table">
+  1090→      <tr>
+  1091→        <th>الحقل</th>
+  1092→        <th>القاعدة</th>
+  1093→        <th>المسار</th>
+  1094→      </tr>
+  1095→      <tr>
+  1096→        <td>البريد الإلكتروني</td>
+  1097→        <td>صيغة صالحة + طول 3-255 + نطاق موجود</td>
+  1098→        <td>Register, ForgotPassword</td>
+  1099→      </tr>
+  1100→      <tr>
+  1101→        <td>اسم المستخدم</td>
+  1102→        <td>3-30 حرف، أحرف إنجليزية + أرقام + _ فقط</td>
+  1103→        <td>Register</td>
+  1104→      </tr>
+  1105→      <tr>
+  1106→        <td>كلمة المرور</td>
+  1107→        <td>8+ حرف، حرف كبير + صغير + رقم + رمز</td>
+  1108→        <td>Register, ChangePassword, ResetPassword</td>
+  1109→      </tr>
+  1110→      <tr>
+  1111→        <td>الكمية (Order)</td>
+  1112→        <td>رقم موجب، دقة 8 خانات عشرية كحد أقصى، حد أدنى حسب الزوج</td>
+  1113→        <td>PlaceOrder</td>
+  1114→      </tr>
+  1115→      <tr>
+  1116→        <td>السعر (Limit)</td>
+  1117→        <td>رقم موجب، دقة 8 خانات عشرية كحد أقصى</td>
+  1118→        <td>PlaceOrder (LIMIT/STOP_LIMIT)</td>
+  1119→      </tr>
+  1120→      <tr>
+  1121→        <td>رمز الزوج (Symbol)</td>
+  1122→        <td>يجب أن يكون من القائمة المعتمدة (8 أزواج)</td>
+  1123→        <td>PlaceOrder</td>
+  1124→      </tr>
+  1125→      <tr>
+  1126→        <td>عنوان السحب</td>
+  1127→        <td>طول 20-500، تحقق تنسيق حسب العملة (مستقبل: تحقق blockchain)</td>
+  1128→        <td>WithdrawCurrency</td>
+  1129→      </tr>
+  1130→      <tr>
+  1131→        <td>مبلغ السحب</td>
+  1132→        <td>موجب، لا يتجاوز الرصيد المتاح (المحجوز محسوب)، حد أدنى حسب العملة</td>
+  1133→        <td>WithdrawCurrency</td>
+  1134→      </tr>
+  1135→    </table>
+  1136→  </div>
+  1137→
+  1138→  <div class="sub-feature-title">التنفيذ في الخادم</div>
+  1139→  <div class="file-card">
+  1140→    <div class="file-card-title">handlers/validation.go (ملف جديد)</div>
+  1141→    <ul class="spec-list">
+  1142→      <li><strong>دوال التحقق:</strong> <span class="code-inline">ValidateEmail()</span>, <span class="code-inline">ValidateUsername()</span>, <span class="code-inline">ValidatePassword()</span>, <span class="code-inline">ValidateOrderInput()</span>, <span class="code-inline">ValidateWithdrawal()</span></li>
+  1143→      <li>كل دالة تُرجع قاموس أخطاء مفصل: <span class="code-inline">map[string]string</span> (اسم الحقل =&gt; رسالة الخطأ)</li>
+  1144→      <li>دمجها في كل handler قبل معالجة الطلب</li>
+  1145→    </ul>
+  1146→  </div>
+  1147→
+  1148→  <div class="sub-feature-title">التنفيذ في الواجهة</div>
+  1149→  <div class="file-card">
+  1150→    <div class="file-card-title">frontend/src/lib/validation.ts + admin/src/lib/validation.ts</div>
+  1151→    <ul class="spec-list">
+  1152→      <li>نفس قواعد التحقق مكتوبة بـ TypeScript لتعمل في المتصفح قبل إرسال الطلب.</li>
+  1153→      <li>تكامل مع مكون <span class="code-inline">InputField</span> لعرض أخطاء فورية أثناء الكتابة.</li>
+  1154→    </ul>
+  1155→  </div>
+  1156→
+  1157→  <div class="divider"></div>
+  1158→
+  1159→  <!-- 5.4 WebSocket Order Notifications -->
+  1160→  <div class="feature-title">5.4 إشعارات WebSocket الفورية للأوردرات</div>
+  1161→  <p>
+  1162→    حالياً عندما يتم تنفيذ أوردر في محرك المطابقة (matching engine)، لا يتلقى المستخدم أي إشعار فوري. يجب عليه تحديث الصفحة يدوياً. هذا غير مقبول في منصة تداول حقيقية حيث الثواني تهم.
+  1163→  </p>
+  1164→
+  1165→  <div class="sub-feature-title">التصميم: WebSocket خاص بالمستخدم</div>
+  1166→  <div class="info-card">
+  1167→    <div class="flow-container">
+  1168→      <div class="flow-step">محرك المطابقة</div>
+  1169→      <span class="flow-arrow">&larr;</span>
+  1170→      <div class="flow-step">تنفيذ الأوردر</div>
+  1171→      <span class="flow-arrow">&larr;</span>
+  1172→      <div class="flow-step">بث عبر Hub</div>
+  1173→      <span class="flow-arrow">&larr;</span>
+  1174→      <div class="flow-step">WS للمستخدم</div>
+  1175→      <span class="flow-arrow">&larr;</span>
+  1176→      <div class="flow-step">تحديث الواجهة</div>
+  1177→    </div>
+  1178→  </div>
+  1179→
+  1180→  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  1181→  <div class="file-card">
+  1182→    <div class="file-card-title">websocket/hub.go (ملف جديد)</div>
+  1183→    <ul class="spec-list">
+  1184→      <li><strong>UserHub:</strong> مركز اتصالات مركزي يدير اتصالات WebSocket للمستخدمين. يحتوي على خريطة <span class="code-inline">map[uint][]*UserClient</span> (UserID =&gt; قائمة العملاء).</li>
+  1185→      <li><strong>UserClient:</strong> يحتوي على معرف المستخدم وقناة إرسال (channel).</li>
+  1186→      <li><strong>NotifyUser(userID, event):</strong> دالة عامة تنشر حدثاً لجميع اتصالات المستخدم. الحدث يحتوي على: <span class="code-inline">{type: "order_fill"|"order_trigger"|"deposit_approved"|"withdrawal_processed", data: {...}}</span></li>
+  1187→    </ul>
+  1188→  </div>
+  1189→
+  1190→  <div class="file-card">
+  1191→    <div class="file-card-title">websocket/user_ws.go (ملف جديد)</div>
+  1192→    <ul class="spec-list">
+  1193→      <li><strong>HandleUserWebSocket:</strong> مسار <span class="code-inline">GET /ws/user</span> محمي بـ AuthMiddleware. يصادق المستخدم من query parameter token. يُسجّل الاتصال في UserHub. يقرأ من قناة الإرسال ويُرسل الرسائل كـ JSON. ينظف عند قطع الاتصال.</li>
+  1194→    </ul>
+  1195→  </div>
+  1196→
+  1197→  <div class="file-card">
+  1198→    <div class="file-card-title">matching/execution.go - التعديلات</div>
+  1199→    <ul class="spec-list">
+  1200→      <li>بعد كل <span class="code-inline">ExecuteFill()</span> ناجح، استدعاء <span class="code-inline">websocket.NotifyUser(order.UserID, OrderFillEvent{...})</span></li>
+  1201→      <li>بعد كل <span class="code-inline">processTriggerOrder()</span> ناجح، إشعار المستخدم بتفعيل الأوردر الشرطي.</li>
+  1202→    </ul>
+  1203→  </div>
+  1204→
+  1205→  <div class="file-card">
+  1206→    <div class="file-card-title">handlers/admin.go - التعديلات</div>
+  1207→    <ul class="spec-list">
+  1208→      <li>بعد <span class="code-inline">ReviewTransaction()</span>، إشعار المستخدم: <span class="code-inline">NotifyUser(tx.UserID, DepositApprovedEvent{...})</span> أو <span class="code-inline">WithdrawalProcessedEvent{...}</span></li>
+  1209→      <li>بعد <span class="code-inline">ReviewKYC()</span>، إشعار المستخدم بحالة KYC.</li>
+  1210→    </ul>
+  1211→  </div>
+  1212→
+  1213→  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+  1214→  <div class="file-card">
+  1215→    <div class="file-card-title">dashboard/layout.tsx - التعديلات</div>
+  1216→    <ul class="spec-list">
+  1217→      <li>الاتصال بـ <span class="code-inline">wss://api.eg-money.local/ws/user?token=xxx</span> عند تسجيل الدخول.</li>
+  1218→      <li>عند استلام إشعار: عرض toast إشعار مع صوت تنبيه اختياري.</li>
+  1219→      <li>تحديث بيانات الصفحة تلقائياً (أرصدة، أوامر) عند استلام أحداث ذات صلة.</li>
+  1220→    </ul>
+  1221→  </div>
+  1222→</div>
+  1223→
+  1224→<!-- ==================== PHASE 6: TRADING ENHANCEMENTS ==================== -->
+  1225→<div class="page">
+  1226→  <div class="phase-badge phase-6">
+  1227→    <span class="phase-number">6</span>
+  1228→    المرحلة السادسة: تحسينات التداول
+  1229→  </div>
+  1230→  <p class="mb-md">
+  1231→    هذه المرحلة تضيف الميزات المالية والتداولية الأساسية الناقصة: رسوم العمولة، رسوم بيانية احترافية، واجهة الإيداع، وترقيم الصفحات. بدون رسوم تداول لا توجد إيرادات للمنصة. بدون واجهة إيداع لا يمكن للمستخدم إضافة أموال.
+  1232→  </p>
+  1233→
+  1234→  <div class="divider"></div>
+  1235→
+  1236→  <!-- 6.1 Trading Fees -->
+  1237→  <div class="feature-title">6.1 رسوم التداول والعمولات</div>
+  1238→  <p>
+  1239→    المنصة حالياً لا تخصم أي رسوم على التداول. هذا يعني عدم وجود نموذج إيرادات. يجب تطبيق نظام رسوم شامل مع دعم رسوم مختلفة حسب نوع الأوردر ومستوى المستخدم.
+  1240→  </p>
+  1241→
+  1242→  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+  1243→  <div class="info-card">
+  1244→    <ul class="spec-list">
+  1245→      <li><strong>إضافة حقول لنموذج Order:</strong> <span class="code-inline">Fee float64 `gorm:"default:0;type:decimal(36,18)" json:"fee"`</span> و <span class="code-inline">FeeCurrency string `gorm:"size:20" json:"fee_currency"`</span></li>
+  1246→      <li><strong>نموذج جديد FeeSchedule:</strong> ID, UserType (USER/VERIFIED_USER), OrderType (MARKET/LIMIT/STOP_LIMIT/TAKE_PROFIT), MakerFee (float64), TakerFee (float64), MinFee (float64), CreatedAt, UpdatedAt</li>
+  1247→    </ul>
+  1248→  </div>
+  1249→
+  1250→  <div class="sub-feature-title">هيكل الرسوم</div>
+  1251→  <div class="info-card">
+  1252→    <table class="data-table">
+  1253→      <tr>
+  1254→        <th>نوع المستخدم</th>
+  1255→        <th>نوع الأوردر</th>
+  1256→        <th>رسوم الصانع (Maker)</th>
+  1257→        <th>رسوم الآخذ (Taker)</th>
+  1258→      </tr>
+  1259→      <tr>
+  1260→        <td>USER</td>
+  1261→        <td>MARKET</td>
+  1262→        <td>-</td>
+  1263→        <td>0.25%</td>
+  1264→      </tr>
+  1265→      <tr>
+  1266→        <td>USER</td>
+  1267→        <td>LIMIT (fill)</td>
+  1268→        <td>0.15%</td>
+  1269→        <td>0.20%</td>
+  1270→      </tr>
+  1271→      <tr>
+  1272→        <td>VERIFIED_USER</td>
+  1273→        <td>MARKET</td>
+  1274→        <td>-</td>
+  1275→        <td>0.15%</td>
+  1276→      </tr>
+  1277→      <tr>
+  1278→        <td>VERIFIED_USER</td>
+  1279→        <td>LIMIT (fill)</td>
+  1280→        <td>0.10%</td>
+  1281→        <td>0.12%</td>
+  1282→      </tr>
+  1283→    </table>
+  1284→  </div>
+  1285→
+  1286→  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  1287→  <div class="file-card">
+  1288→    <div class="file-card-title">matching/execution.go - التعديلات</div>
+  1289→    <ul class="spec-list">
+  1290→      <li><strong>ExecuteFill:</strong> حساب الرسوم بعد التنفيذ: <span class="code-inline">fee = fillAmount * fillPrice * feeRate</span>. خصم الرسوم من العملة المتلقاة. مثال: شراء BTC بسعر 50000 بكمية 0.1 = 5000 USDT. رسوم 0.25% = 12.5 USDT. بدلاً من تلقي 0.1 BTC كاملة، يتلقى 0.099975 BTC والـ 12.5 USDT تُخصم من محفظة USDT أو تُضاف لمحفظة الرسوم.</li>
+  1291→      <li><strong>ReserveFunds:</strong> يجب أن يحجز مبلغاً إضافياً لتغطية الرسوم المتوقعة: <span class="code-inline">reservedAmount = orderCost + estimatedFee</span></li>
+  1292→      <li>تحديث Order.Fee و Order.FeeCurrency عند التنفيذ.</li>
+  1293→    </ul>
+  1294→  </div>
+  1295→
+  1296→  <div class="file-card">
+  1297→    <div class="file-card-title">handlers/admin.go - إضافات</div>
+  1298→    <ul class="spec-list">
+  1299→      <li><strong>مسارات إدارة الرسوم:</strong> <span class="code-inline">GET /api/admin/fees</span> (عرض جدول الرسوم)، <span class="code-inline">PUT /api/admin/fees/:id</span> (تعديل نسبة الرسوم).</li>
+
+[showing lines 700-1299 of 1956; use offset=1300 with limit to continue reading]

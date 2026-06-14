@@ -1,0 +1,955 @@
+     1→package handlers
+     2→
+     3→import (
+     4→        "crypto/rand"
+     5→        "encoding/hex"
+     6→        "encoding/json"
+     7→        "fmt"
+     8→        "net/http"
+     9→        "os"
+    10→        "strings"
+    11→        "sync"
+    12→        "time"
+    13→
+    14→        totpauth "crypto-exchange-backend/auth"
+    15→        "crypto-exchange-backend/database"
+    16→        "crypto-exchange-backend/email"
+    17→        "crypto-exchange-backend/models"
+    18→
+    19→        "github.com/gin-gonic/gin"
+    20→        "github.com/golang-jwt/jwt/v5"
+    21→        "gorm.io/gorm"
+    22→        "golang.org/x/crypto/bcrypt"
+    23→)
+    24→
+    25→var jwtSecret = func() []byte {
+    26→        s := os.Getenv("JWT_SECRET")
+    27→        if s == "" {
+    28→                panic("CRITICAL: JWT_SECRET environment variable is not set")
+    29→        }
+    30→        return []byte(s)
+    31→}()
+    32→
+    33→type Claims struct {
+    34→        UserID uint   `json:"user_id"`
+    35→        Role   string `json:"role"`
+    36→        jwt.RegisteredClaims
+    37→}
+    38→
+    39→func GenerateJWT(userID uint, role string) (string, error) {
+    40→        claims := Claims{
+    41→                UserID: userID,
+    42→                Role:   role,
+    43→                RegisteredClaims: jwt.RegisteredClaims{
+    44→                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+    45→                },
+    46→        }
+    47→        token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    48→        return token.SignedString(jwtSecret)
+    49→}
+    50→
+    51→// GenerateRefreshToken creates a cryptographically secure refresh token and saves it to DB
+    52→func GenerateRefreshToken(userID uint, userAgent string, ipAddress string) (string, error) {
+    53→        tokenBytes := make([]byte, 32)
+    54→        if _, err := rand.Read(tokenBytes); err != nil {
+    55→                return "", err
+    56→        }
+    57→        token := hex.EncodeToString(tokenBytes)
+    58→
+    59→        refreshToken := models.RefreshToken{
+    60→                UserID:    userID,
+    61→                Token:     token,
+    62→                UserAgent: userAgent,
+    63→                IPAddress: ipAddress,
+    64→                ExpiresAt: time.Now().Add(7 * 24 * time.Hour), // 7 days
+    65→        }
+    66→        if err := database.DB.Create(&refreshToken).Error; err != nil {
+    67→                return "", err
+    68→        }
+    69→
+    70→        return token, nil
+    71→}
+    72→
+    73→func ValidateJWT(tokenString string) (*Claims, error) {
+    74→        token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+    75→                return jwtSecret, nil
+    76→        })
+    77→        if err != nil {
+    78→                return nil, err
+    79→        }
+    80→        claims, ok := token.Claims.(*Claims)
+    81→        if !ok || !token.Valid {
+    82→                return nil, jwt.ErrSignatureInvalid
+    83→        }
+    84→        return claims, nil
+    85→}
+    86→
+    87→var supportedCurrencies = []string{"BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "ADA", "DOGE", "DOT"}
+    88→
+    89→func createUserWallets(userID uint) {
+    90→        for _, currency := range supportedCurrencies {
+    91→                database.DB.Create(&models.Wallet{
+    92→                        UserID:   userID,
+    93→                        Currency: currency,
+    94→                        Balance:  0,
+    95→                })
+    96→        }
+    97→}
+    98→
+    99→// generateVerificationToken creates a cryptographically secure 64-byte hex token
+   100→func generateVerificationToken() (string, error) {
+   101→        tokenBytes := make([]byte, 32)
+   102→        if _, err := rand.Read(tokenBytes); err != nil {
+   103→                return "", err
+   104→        }
+   105→        return hex.EncodeToString(tokenBytes), nil
+   106→}
+   107→
+   108→// sendVerificationEmailToUser creates a verification token and sends the email
+   109→func sendVerificationEmailToUser(userID uint, userEmail string) error {
+   110→        token, err := generateVerificationToken()
+   111→        if err != nil {
+   112→                return fmt.Errorf("failed to generate token: %w", err)
+   113→        }
+   114→
+   115→        verificationToken := models.EmailVerificationToken{
+   116→                UserID:    userID,
+   117→                Token:     token,
+   118→                ExpiresAt: time.Now().Add(24 * time.Hour),
+   119→        }
+   120→        if err := database.DB.Create(&verificationToken).Error; err != nil {
+   121→                return fmt.Errorf("failed to save token: %w", err)
+   122→        }
+   123→
+   124→        baseURL := os.Getenv("FRONTEND_URL")
+   125→        if baseURL == "" {
+   126→                baseURL = "https://eg-money.local"
+   127→        }
+   128→        verificationLink := fmt.Sprintf("%s/verify-email?token=%s", baseURL, token)
+   129→
+   130→        if email.IsConfigured() {
+   131→                if err := email.SendVerificationEmail(userEmail, verificationLink); err != nil {
+   132→                        return fmt.Errorf("failed to send email: %w", err)
+   133→                }
+   134→        } else {
+   135→                fmt.Printf("[DEV] Email verification link for %s: %s\n", userEmail, verificationLink)
+   136→        }
+   137→
+   138→        return nil
+   139→}
+   140→
+   141→func Register(c *gin.Context) {
+   142→        var input struct {
+   143→                Email    string `json:"email" binding:"required,email"`
+   144→                Username string `json:"username" binding:"required,min=3,max=50"`
+   145→                Password string `json:"password" binding:"required,min=8"`
+   146→                FullName string `json:"full_name"`
+   147→                Country  string `json:"country"`
+   148→                Phone    string `json:"phone"`
+   149→        }
+   150→        if err := c.ShouldBindJSON(&input); err != nil {
+   151→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   152→                return
+   153→        }
+   154→
+   155→        input.Username = strings.TrimSpace(input.Username)
+   156→        input.Email = strings.TrimSpace(strings.ToLower(input.Email))
+   157→
+   158→        // Enforce strong password for crypto exchange
+   159→        if err := ValidatePasswordStrength(input.Password); err != nil {
+   160→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   161→                return
+   162→        }
+   163→
+   164→        hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+   165→        if err != nil {
+   166→                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+   167→                return
+   168→        }
+   169→
+   170→        user := models.User{
+   171→                Email:         input.Email,
+   172→                Username:      input.Username,
+   173→                PasswordHash:  string(hash),
+   174→                FullName:      input.FullName,
+   175→                Country:       input.Country,
+   176→                Phone:         input.Phone,
+   177→                Role:          "USER",
+   178→                EmailVerified: false,
+   179→        }
+   180→
+   181→        if err := database.DB.Create(&user).Error; err != nil {
+   182→                c.JSON(http.StatusConflict, gin.H{"error": "Email or username already registered"})
+   183→                return
+   184→        }
+   185→
+   186→        createUserWallets(user.ID)
+   187→
+   188→        // Send verification email (non-blocking: log error but don't fail registration)
+   189→        if err := sendVerificationEmailToUser(user.ID, user.Email); err != nil {
+   190→                fmt.Printf("[WARN] Failed to send verification email to %s: %v\n", user.Email, err)
+   191→        }
+   192→
+   193→        database.DB.Create(&models.AuditLog{
+   194→                UserID:    user.ID,
+   195→                Action:    "REGISTER",
+   196→                Details:   "New user registered - pending email verification",
+   197→                IPAddress: c.ClientIP(),
+   198→                CreatedAt: time.Now(),
+   199→        })
+   200→
+   201→        // Do NOT auto-login: user must verify email first
+   202→        c.JSON(http.StatusCreated, gin.H{
+   203→                "success": true,
+   204→                "message": "تم إنشاء الحساب بنجاح. يرجى التحقق من بريدك الإلكتروني لتفعيل حسابك.",
+   205→                "email":   user.Email,
+   206→        })
+   207→}
+   208→
+   209→func Login(c *gin.Context) {
+   210→        var input struct {
+   211→                Email    string `json:"email" binding:"required,email"`
+   212→                Password string `json:"password" binding:"required"`
+   213→        }
+   214→        if err := c.ShouldBindJSON(&input); err != nil {
+   215→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   216→                return
+   217→        }
+   218→
+   219→        input.Email = strings.TrimSpace(strings.ToLower(input.Email))
+   220→
+   221→        var user models.User
+   222→        if err := database.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+   223→                c.JSON(http.StatusUnauthorized, gin.H{"error": "بيانات الدخول غير صحيحة"})
+   224→                return
+   225→        }
+   226→
+   227→        if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+   228→                c.JSON(http.StatusUnauthorized, gin.H{"error": "بيانات الدخول غير صحيحة"})
+   229→                return
+   230→        }
+   231→
+   232→        // Check email verification (skip for ADMIN users)
+   233→        if user.Role != "ADMIN" && !user.EmailVerified {
+   234→                c.JSON(http.StatusForbidden, gin.H{
+   235→                        "error":           "يرجى تأكيد بريدك الإلكتروني أولاً",
+   236→                        "code":            "EMAIL_NOT_VERIFIED",
+   237→                        "email":           user.Email,
+   238→                        "requires_verify": true,
+   239→                })
+   240→                return
+   241→        }
+   242→
+   243→        // Check 2FA
+   244→        if user.TwoFAEnabled {
+   245→                tempToken, err := generateVerificationToken()
+   246→                if err != nil {
+   247→                        c.JSON(http.StatusInternalServerError, gin.H{"error": "حدث خطأ غير متوقع"})
+   248→                        return
+   249→                }
+   250→                temp2FATokens.Store(tempToken, twoFASession{
+   251→                        UserID:    user.ID,
+   252→                        ExpiresAt: time.Now().Add(5 * time.Minute),
+   253→                })
+   254→                c.JSON(http.StatusOK, gin.H{
+   255→                        "success":       true,
+   256→                        "requires_2fa":  true,
+   257→                        "temp_token":    tempToken,
+   258→                        "message":       "يرجى إدخال رمز المصادقة الثنائية",
+   259→                })
+   260→                return
+   261→        }
+   262→
+   263→        token, _ := GenerateJWT(user.ID, user.Role)
+   264→        refreshToken, _ := GenerateRefreshToken(user.ID, c.Request.UserAgent(), c.ClientIP())
+   265→
+   266→        database.DB.Create(&models.AuditLog{
+   267→                UserID:    user.ID,
+   268→                Action:    "LOGIN",
+   269→                Details:   "User logged in",
+   270→                IPAddress: c.ClientIP(),
+   271→                CreatedAt: time.Now(),
+   272→        })
+   273→
+   274→        c.JSON(http.StatusOK, gin.H{
+   275→                "success":       true,
+   276→                "token":         token,
+   277→                "refresh_token": refreshToken,
+   278→                "user":          user,
+   279→        })
+   280→}
+   281→
+   282→// --- 2FA temp session storage (in-memory until Redis) ---
+   283→type twoFASession struct {
+   284→        UserID    uint
+   285→        ExpiresAt time.Time
+   286→}
+   287→
+   288→var temp2FATokens sync.Map
+   289→
+   290→// VerifyEmail handles GET /api/auth/verify-email?token=xxx
+   291→func VerifyEmail(c *gin.Context) {
+   292→        token := c.Query("token")
+   293→        if token == "" {
+   294→                c.JSON(http.StatusBadRequest, gin.H{"error": "رمز التحقق مفقود"})
+   295→                return
+   296→        }
+   297→
+   298→        var verificationToken models.EmailVerificationToken
+   299→        if err := database.DB.Where("token = ? AND used = ? AND expires_at > ?", token, false, time.Now()).First(&verificationToken).Error; err != nil {
+   300→                c.JSON(http.StatusBadRequest, gin.H{"error": "رمز التحقق غير صالح أو منتهي الصلاحية"})
+   301→                return
+   302→        }
+   303→
+   304→        // Mark email as verified and invalidate the token in a transaction
+   305→        err := database.DB.Transaction(func(tx *gorm.DB) error {
+   306→                if err := tx.Model(&models.User{}).Where("id = ?", verificationToken.UserID).Update("email_verified", true).Error; err != nil {
+   307→                        return err
+   308→                }
+   309→                if err := tx.Model(&verificationToken).Update("used", true).Error; err != nil {
+   310→                        return err
+   311→                }
+   312→                return nil
+   313→        })
+   314→
+   315→        if err != nil {
+   316→                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل تحديث حالة التحقق"})
+   317→                return
+   318→        }
+   319→
+   320→        database.DB.Create(&models.AuditLog{
+   321→                UserID:    verificationToken.UserID,
+   322→                Action:    "EMAIL_VERIFIED",
+   323→                Details:   "Email verified successfully",
+   324→                IPAddress: c.ClientIP(),
+   325→                CreatedAt: time.Now(),
+   326→        })
+   327→
+   328→        c.JSON(http.StatusOK, gin.H{
+   329→                "success": true,
+   330→                "message": "تم تأكيد بريدك الإلكتروني بنجاح. يمكنك الآن تسجيل الدخول.",
+   331→        })
+   332→
+   333→        // Send welcome email after successful verification
+   334→        var verifiedUser models.User
+   335→        if err := database.DB.First(&verifiedUser, verificationToken.UserID).Error; err == nil {
+   336→                if email.IsConfigured() {
+   337→                        if err := email.SendWelcomeEmail(verifiedUser.Email, verifiedUser.Username); err != nil {
+   338→                                fmt.Printf("Welcome email send error: %v\n", err)
+   339→                        }
+   340→                }
+   341→        }
+   342→}
+   343→
+   344→// ResendVerification handles POST /api/auth/resend-verification
+   345→func ResendVerification(c *gin.Context) {
+   346→        var input struct {
+   347→                Email string `json:"email" binding:"required,email"`
+   348→        }
+   349→        if err := c.ShouldBindJSON(&input); err != nil {
+   350→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   351→                return
+   352→        }
+   353→
+   354→        input.Email = strings.TrimSpace(strings.ToLower(input.Email))
+   355→
+   356→        var user models.User
+   357→        if err := database.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+   358→                // Don't reveal whether email exists (security best practice)
+   359→                c.JSON(http.StatusOK, gin.H{
+   360→                        "success": true,
+   361→                        "message": "إذا كان البريد مسجلاً وغير مؤكد، سيتم إرسال رابط التحقق",
+   362→                })
+   363→                return
+   364→        }
+   365→
+   366→        // Already verified
+   367→        if user.EmailVerified {
+   368→                c.JSON(http.StatusOK, gin.H{
+   369→                        "success": true,
+   370→                        "message": "إذا كان البريد مسجلاً وغير مؤكد، سيتم إرسال رابط التحقق",
+   371→                })
+   372→                return
+   373→        }
+   374→
+   375→        // Rate limit: check if a token was created in the last 60 seconds
+   376→        var recentToken models.EmailVerificationToken
+   377→        oneMinuteAgo := time.Now().Add(-1 * time.Minute)
+   378→        if err := database.DB.Where("user_id = ? AND created_at > ?", user.ID, oneMinuteAgo).First(&recentToken).Error; err == nil {
+   379→                c.JSON(http.StatusTooManyRequests, gin.H{
+   380→                        "error":   "يرجى الانتظار 60 ثانية قبل طلب رابط جديد",
+   381→                        "code":    "RATE_LIMITED",
+   382→                        "retry_after": 60,
+   383→                })
+   384→                return
+   385→        }
+   386→
+   387→        if err := sendVerificationEmailToUser(user.ID, user.Email); err != nil {
+   388→                fmt.Printf("[WARN] Failed to resend verification email to %s: %v\n", user.Email, err)
+   389→        }
+   390→
+   391→        c.JSON(http.StatusOK, gin.H{
+   392→                "success": true,
+   393→                "message": "إذا كان البريد مسجلاً وغير مؤكد، سيتم إرسال رابط التحقق",
+   394→        })
+   395→}
+   396→
+   397→// Verify2FA handles POST /api/auth/verify-2fa
+   398→func Verify2FA(c *gin.Context) {
+   399→        var input struct {
+   400→                TempToken string `json:"temp_token" binding:"required"`
+   401→                Code      string `json:"code" binding:"required"`
+   402→        }
+   403→        if err := c.ShouldBindJSON(&input); err != nil {
+   404→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   405→                return
+   406→        }
+   407→
+   408→        // Validate temp token
+   409→        sessionVal, ok := temp2FATokens.Load(input.TempToken)
+   410→        if !ok {
+   411→                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز مؤقت غير صالح"})
+   412→                return
+   413→        }
+   414→
+   415→        session := sessionVal.(twoFASession)
+   416→        if time.Now().After(session.ExpiresAt) {
+   417→                temp2FATokens.Delete(input.TempToken)
+   418→                c.JSON(http.StatusUnauthorized, gin.H{"error": "انتهت صلاحية الرمز المؤقت"})
+   419→                return
+   420→        }
+   421→
+   422→        var user models.User
+   423→        if err := database.DB.First(&user, session.UserID).Error; err != nil {
+   424→                c.JSON(http.StatusInternalServerError, gin.H{"error": "حدث خطأ غير متوقع"})
+   425→                return
+   426→        }
+   427→
+   428→        // Verify TOTP code or backup code
+   429→        isTOTP := validateTOTP(user.TwoFASecret, input.Code)
+   430→        isBackup := false
+   431→        if !isTOTP {
+   432→                isBackup = consumeBackupCode(user.ID, input.Code)
+   433→        }
+   434→        if !isTOTP && !isBackup {
+   435→                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز المصادقة الثنائية غير صحيح"})
+   436→                return
+   437→        }
+   438→
+   439→        // Valid - generate JWT and clean up
+   440→        temp2FATokens.Delete(input.TempToken)
+   441→        token, _ := GenerateJWT(user.ID, user.Role)
+   442→        refreshToken, _ := GenerateRefreshToken(user.ID, c.Request.UserAgent(), c.ClientIP())
+   443→
+   444→        database.DB.Create(&models.AuditLog{
+   445→                UserID:    user.ID,
+   446→                Action:    "LOGIN_2FA",
+   447→                Details:   "User logged in with 2FA",
+   448→                IPAddress: c.ClientIP(),
+   449→                CreatedAt: time.Now(),
+   450→        })
+   451→
+   452→        c.JSON(http.StatusOK, gin.H{
+   453→                "success":       true,
+   454→                "token":         token,
+   455→                "refresh_token": refreshToken,
+   456→                "user":          user,
+   457→        })
+   458→}
+   459→
+   460→func ForgotPassword(c *gin.Context) {
+   461→        var input struct {
+   462→                Email string `json:"email" binding:"required,email"`
+   463→        }
+   464→        if err := c.ShouldBindJSON(&input); err != nil {
+   465→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   466→                return
+   467→        }
+   468→
+   469→        var user models.User
+   470→        if err := database.DB.Where("email = ?", strings.TrimSpace(strings.ToLower(input.Email))).First(&user).Error; err != nil {
+   471→                c.JSON(http.StatusOK, gin.H{"success": true, "message": "If the email exists, a reset link has been sent"})
+   472→                return
+   473→        }
+   474→
+   475→        tokenBytes := make([]byte, 32)
+   476→        if _, err := rand.Read(tokenBytes); err != nil {
+   477→                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate reset token"})
+   478→                return
+   479→        }
+   480→        token := hex.EncodeToString(tokenBytes)
+   481→
+   482→        resetToken := models.PasswordResetToken{
+   483→                UserID:    user.ID,
+   484→                Token:     token,
+   485→                ExpiresAt: time.Now().Add(1 * time.Hour),
+   486→        }
+   487→        if err := database.DB.Create(&resetToken).Error; err != nil {
+   488→                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create reset token"})
+   489→                return
+   490→        }
+   491→
+   492→        database.DB.Create(&models.AuditLog{
+   493→                UserID:    user.ID,
+   494→                Action:    "PASSWORD_RESET_REQUESTED",
+   495→                Details:   "Password reset requested",
+   496→                IPAddress: c.ClientIP(),
+   497→                CreatedAt: time.Now(),
+   498→        })
+   499→
+   500→        baseURL := os.Getenv("FRONTEND_URL")
+   501→        if baseURL == "" {
+   502→                baseURL = "https://eg-money.local"
+   503→        }
+   504→        resetLink := fmt.Sprintf("%s/reset-password?token=%s", baseURL, token)
+   505→
+   506→        if email.IsConfigured() {
+   507→                if err := email.SendPasswordResetEmail(user.Email, resetLink); err != nil {
+   508→                        fmt.Printf("Email send error: %v\n", err)
+   509→                }
+   510→        } else {
+   511→                fmt.Printf("Password reset link for %s (%s): %s\n", user.Email, resetToken.Token[:8]+"...", resetLink)
+   512→        }
+   513→
+   514→        c.JSON(http.StatusOK, gin.H{"success": true, "message": "If the email exists, a reset link has been sent"})
+   515→}
+   516→
+   517→func ResetPassword(c *gin.Context) {
+   518→        var input struct {
+   519→                Token       string `json:"token" binding:"required"`
+   520→                NewPassword string `json:"new_password" binding:"required,min=8"`
+   521→        }
+   522→        if err := c.ShouldBindJSON(&input); err != nil {
+   523→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   524→                return
+   525→        }
+   526→
+   527→        // Enforce strong password
+   528→        if err := ValidatePasswordStrength(input.NewPassword); err != nil {
+   529→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   530→                return
+   531→        }
+   532→
+   533→        var resetToken models.PasswordResetToken
+   534→        if err := database.DB.Where("token = ? AND used = ? AND expires_at > ?", input.Token, false, time.Now()).First(&resetToken).Error; err != nil {
+   535→                c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired reset token"})
+   536→                return
+   537→        }
+   538→
+   539→        hash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+   540→        if err != nil {
+   541→                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+   542→                return
+   543→        }
+   544→
+   545→        if err := database.DB.Model(&models.User{}).Where("id = ?", resetToken.UserID).Update("password_hash", string(hash)).Error; err != nil {
+   546→                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+   547→                return
+   548→        }
+   549→
+   550→        database.DB.Model(&resetToken).Update("used", true)
+   551→
+   552→        database.DB.Create(&models.AuditLog{
+   553→                UserID:    resetToken.UserID,
+   554→                Action:    "PASSWORD_RESET_COMPLETED",
+   555→                Details:   "Password reset completed successfully",
+   556→                IPAddress: c.ClientIP(),
+   557→                CreatedAt: time.Now(),
+   558→        })
+   559→
+   560→        c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password has been reset successfully"})
+   561→}
+   562→
+   563→// validateTOTP validates a TOTP code against the given secret using RFC 6238.
+   564→func validateTOTP(secret string, code string) bool {
+   565→        return totpauth.ValidateTOTPCode(secret, code)
+   566→}
+   567→
+   568→// isBackupCode checks if the code matches a backup code and marks it as used.
+   569→// Backup codes are stored as a JSON array of strings in the user record.
+   570→func isBackupCode(backupCodesJSON string, code string) bool {
+   571→        if backupCodesJSON == "" {
+   572→                return false
+   573→        }
+   574→
+   575→        var codes []string
+   576→        if err := json.Unmarshal([]byte(backupCodesJSON), &codes); err != nil {
+   577→                return false
+   578→        }
+   579→
+   580→        for i, c := range codes {
+   581→                if strings.EqualFold(c, code) {
+   582→                        // Remove the used backup code
+   583→                        codes = append(codes[:i], codes[i+1:]...)
+   584→                        return true
+   585→                }
+   586→        }
+   587→        return false
+   588→}
+   589→
+   590→// consumeBackupCode removes a used backup code from the user's record.
+   591→// Must be called within a database transaction for consistency.
+   592→func consumeBackupCode(userID uint, code string) bool {
+   593→        var user models.User
+   594→        if err := database.DB.First(&user, userID).Error; err != nil {
+   595→                return false
+   596→        }
+   597→
+   598→        var codes []string
+   599→        if user.TwoFABackupCodes == "" {
+   600→                return false
+   601→        }
+   602→        if err := json.Unmarshal([]byte(user.TwoFABackupCodes), &codes); err != nil {
+   603→                return false
+   604→        }
+   605→
+   606→        for i, c := range codes {
+   607→                if strings.EqualFold(c, code) {
+   608→                        codes = append(codes[:i], codes[i+1:]...)
+   609→                        newJSON, _ := json.Marshal(codes)
+   610→                        database.DB.Model(&user).Update("two_fa_backup_codes", string(newJSON))
+   611→                        return true
+   612→                }
+   613→        }
+   614→        return false
+   615→}
+   616→
+   617→// Setup2FA handles POST /api/auth/setup-2fa
+   618→// Generates a TOTP secret and otpauth URL for QR code scanning.
+   619→// Requires authentication (user must be logged in).
+   620→func Setup2FA(c *gin.Context) {
+   621→        userID := c.GetUint("user_id")
+   622→
+   623→        var user models.User
+   624→        if err := database.DB.First(&user, userID).Error; err != nil {
+   625→                c.JSON(http.StatusNotFound, gin.H{"error": "المستخدم غير موجود"})
+   626→                return
+   627→        }
+   628→
+   629→        // If 2FA is already enabled, user must disable it first
+   630→        if user.TwoFAEnabled {
+   631→                c.JSON(http.StatusBadRequest, gin.H{"error": "المصادقة الثنائية مُفعلة بالفعل. قم بتعطيلها أولاً."})
+   632→                return
+   633→        }
+   634→
+   635→        // Generate TOTP secret
+   636→        secret, err := totpauth.GenerateTOTPSecret()
+   637→        if err != nil {
+   638→                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل إنشاء سر المصادقة"})
+   639→                return
+   640→        }
+   641→
+   642→        // Generate otpauth URL for QR code
+   643→        accountName := user.Email
+   644→        if user.Username != "" {
+   645→                accountName = user.Username
+   646→        }
+   647→        otpauthURL := totpauth.GenerateOTPAuthURL(secret, accountName, "EgMoney")
+   648→
+   649→        // Save the secret (but don't enable 2FA yet — user must verify first)
+   650→        if err := database.DB.Model(&user).Update("two_fa_secret", secret).Error; err != nil {
+   651→                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل حفظ سر المصادقة"})
+   652→                return
+   653→        }
+   654→
+   655→        c.JSON(http.StatusOK, gin.H{
+   656→                "success":      true,
+   657→                "secret":       secret,
+   658→                "otpauth_url":  otpauthURL,
+   659→                "message":      "امسح رمز QR بتطبيق المصادقة ثم أدخل الكود لتفعيل المصادقة الثنائية",
+   660→        })
+   661→}
+   662→
+   663→// Enable2FA handles POST /api/auth/enable-2fa
+   664→// Verifies the first TOTP code and enables 2FA for the user.
+   665→// Also generates and returns backup codes.
+   666→func Enable2FA(c *gin.Context) {
+   667→        userID := c.GetUint("user_id")
+   668→
+   669→        var input struct {
+   670→                Code string `json:"code" binding:"required"`
+   671→        }
+   672→        if err := c.ShouldBindJSON(&input); err != nil {
+   673→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   674→                return
+   675→        }
+   676→
+   677→        var user models.User
+   678→        if err := database.DB.First(&user, userID).Error; err != nil {
+   679→                c.JSON(http.StatusNotFound, gin.H{"error": "المستخدم غير موجود"})
+   680→                return
+   681→        }
+   682→
+   683→        // Must have a secret set up first
+   684→        if user.TwoFASecret == "" {
+   685→                c.JSON(http.StatusBadRequest, gin.H{"error": "يجب إعداد المصادقة الثنائية أولاً"})
+   686→                return
+   687→        }
+   688→
+   689→        // Already enabled
+   690→        if user.TwoFAEnabled {
+   691→                c.JSON(http.StatusBadRequest, gin.H{"error": "المصادقة الثنائية مُفعلة بالفعل"})
+   692→                return
+   693→        }
+   694→
+   695→        // Verify the TOTP code
+   696→        if !totpauth.ValidateTOTPCode(user.TwoFASecret, input.Code) {
+   697→                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى."})
+   698→                return
+   699→        }
+   700→
+   701→        // Generate backup codes
+   702→        backupCodes, err := totpauth.GenerateBackupCodes(10)
+   703→        if err != nil {
+   704→                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل إنشاء رموز الاحتياط"})
+   705→                return
+   706→        }
+   707→
+   708→        backupCodesJSON, err := json.Marshal(backupCodes)
+   709→        if err != nil {
+   710→                c.JSON(http.StatusInternalServerError, gin.H{"error": "حدث خطأ غير متوقع"})
+   711→                return
+   712→        }
+   713→
+   714→        // Enable 2FA and save backup codes in a transaction
+   715→        err = database.DB.Transaction(func(tx *gorm.DB) error {
+   716→                if err := tx.Model(&user).Updates(map[string]interface{}{
+   717→                        "two_fa_enabled":      true,
+   718→                        "two_fa_backup_codes": string(backupCodesJSON),
+   719→                }).Error; err != nil {
+   720→                        return err
+   721→                }
+   722→                return nil
+   723→        })
+   724→
+   725→        if err != nil {
+   726→                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل تفعيل المصادقة الثنائية"})
+   727→                return
+   728→        }
+   729→
+   730→        // Send email notification
+   731→        if email.IsConfigured() {
+   732→                if err := email.Send2FAEnabledEmail(user.Email); err != nil {
+   733→                        fmt.Printf("[WARN] Failed to send 2FA enabled email to %s: %v\n", user.Email, err)
+   734→                }
+   735→        }
+   736→
+   737→        database.DB.Create(&models.AuditLog{
+   738→                UserID:    user.ID,
+   739→                Action:    "2FA_ENABLED",
+   740→                Details:   "Two-factor authentication enabled",
+   741→                IPAddress: c.ClientIP(),
+   742→                CreatedAt: time.Now(),
+   743→        })
+   744→
+   745→        c.JSON(http.StatusOK, gin.H{
+   746→                "success":      true,
+   747→                "message":      "تم تفعيل المصادقة الثنائية بنجاح. احفظ رموز الاحتياط في مكان آمن!",
+   748→                "backup_codes": backupCodes,
+   749→        })
+   750→}
+   751→
+   752→// Disable2FA handles POST /api/auth/disable-2fa
+   753→// Requires the current TOTP code or a backup code + password to disable.
+   754→func Disable2FA(c *gin.Context) {
+   755→        userID := c.GetUint("user_id")
+   756→
+   757→        var input struct {
+   758→                Password string `json:"password" binding:"required"`
+   759→                Code     string `json:"code" binding:"required"`
+   760→        }
+   761→        if err := c.ShouldBindJSON(&input); err != nil {
+   762→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   763→                return
+   764→        }
+   765→
+   766→        var user models.User
+   767→        if err := database.DB.First(&user, userID).Error; err != nil {
+   768→                c.JSON(http.StatusNotFound, gin.H{"error": "المستخدم غير موجود"})
+   769→                return
+   770→        }
+   771→
+   772→        // Verify password first
+   773→        if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+   774→                c.JSON(http.StatusUnauthorized, gin.H{"error": "كلمة المرور غير صحيحة"})
+   775→                return
+   776→        }
+   777→
+   778→        // Must have 2FA enabled
+   779→        if !user.TwoFAEnabled {
+   780→                c.JSON(http.StatusBadRequest, gin.H{"error": "المصادقة الثنائية غير مُفعلة"})
+   781→                return
+   782→        }
+   783→
+   784→        // Verify TOTP code or backup code
+   785→        isTOTP := totpauth.ValidateTOTPCode(user.TwoFASecret, input.Code)
+   786→        isBackup := false
+   787→        if !isTOTP {
+   788→                isBackup = consumeBackupCode(user.ID, input.Code)
+   789→        }
+   790→
+   791→        if !isTOTP && !isBackup {
+   792→                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز التحقق غير صحيح"})
+   793→                return
+   794→        }
+   795→
+   796→        // Disable 2FA and clear secret + backup codes in a transaction
+   797→        err := database.DB.Transaction(func(tx *gorm.DB) error {
+   798→                if err := tx.Model(&user).Updates(map[string]interface{}{
+   799→                        "two_fa_enabled":      false,
+   800→                        "two_fa_secret":       "",
+   801→                        "two_fa_backup_codes": "",
+   802→                }).Error; err != nil {
+   803→                        return err
+   804→                }
+   805→                return nil
+   806→        })
+   807→
+   808→        if err != nil {
+   809→                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل تعطيل المصادقة الثنائية"})
+   810→                return
+   811→        }
+   812→
+   813→        // Send email notification
+   814→        if email.IsConfigured() {
+   815→                html := `<!DOCTYPE html><html dir="rtl"><body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center">
+   816→                        <div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
+   817→                        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
+   818→                        <h2 style="color:#fff;font-size:18px;margin:16px 0">تم تعطيل المصادقة الثنائية</h2>
+   819→                        <p style="color:#a1a1aa;font-size:14px;line-height:1.6">تم تعطيل المصادقة الثنائية (2FA) على حسابك.</p>
+   820→                        <p style="color:#ef4444;font-size:13px;line-height:1.6;margin-top:16px">إذا لم تقم بتعطيل هذه الميزة، يرجى تغيير كلمة المرور فوراً والتواصل مع الدعم.</p>
+   821→                        </div></body></html>`
+   822→                if err := email.Send(user.Email, "تم تعطيل المصادقة الثنائية - EgMoney", html); err != nil {
+   823→                        fmt.Printf("[WARN] Failed to send 2FA disabled email to %s: %v\n", user.Email, err)
+   824→                }
+   825→        }
+   826→
+   827→        database.DB.Create(&models.AuditLog{
+   828→                UserID:    user.ID,
+   829→                Action:    "2FA_DISABLED",
+   830→                Details:   "Two-factor authentication disabled",
+   831→                IPAddress: c.ClientIP(),
+   832→                CreatedAt: time.Now(),
+   833→        })
+   834→
+   835→        c.JSON(http.StatusOK, gin.H{
+   836→                "success": true,
+   837→                "message": "تم تعطيل المصادقة الثنائية بنجاح",
+   838→        })
+   839→}
+   840→
+   841→// RefreshAccessToken handles POST /api/auth/refresh
+   842→// Exchanges a valid refresh token for a new JWT + new refresh token (rotation)
+   843→func RefreshAccessToken(c *gin.Context) {
+   844→        var input struct {
+   845→                RefreshToken string `json:"refresh_token" binding:"required"`
+   846→        }
+   847→        if err := c.ShouldBindJSON(&input); err != nil {
+   848→                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+   849→                return
+   850→        }
+   851→
+   852→        // Find the refresh token
+   853→        var storedToken models.RefreshToken
+   854→        if err := database.DB.Where("token = ? AND revoked = ? AND expires_at > ?", input.RefreshToken, false, time.Now()).First(&storedToken).Error; err != nil {
+   855→                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز التحديث غير صالح أو منتهي الصلاحية"})
+   856→                return
+   857→        }
+   858→
+   859→        // Get the user
+   860→        var user models.User
+   861→        if err := database.DB.First(&user, storedToken.UserID).Error; err != nil {
+   862→                c.JSON(http.StatusUnauthorized, gin.H{"error": "المستخدم غير موجود"})
+   863→                return
+   864→        }
+   865→
+   866→        // Revoke the old refresh token (rotation: each refresh token is single-use)
+   867→        database.DB.Model(&storedToken).Update("revoked", true)
+   868→
+   869→        // Generate new JWT and refresh token
+   870→        token, _ := GenerateJWT(user.ID, user.Role)
+   871→        newRefreshToken, _ := GenerateRefreshToken(user.ID, c.Request.UserAgent(), c.ClientIP())
+   872→
+   873→        c.JSON(http.StatusOK, gin.H{
+   874→                "success":       true,
+   875→                "token":         token,
+   876→                "refresh_token": newRefreshToken,
+   877→                "user":          user,
+   878→        })
+   879→}
+   880→
+   881→// Logout handles POST /api/auth/logout
+   882→// Revokes the refresh token and effectively ends the session
+   883→func Logout(c *gin.Context) {
+   884→        var input struct {
+   885→                RefreshToken string `json:"refresh_token"`
+   886→        }
+   887→        if err := c.ShouldBindJSON(&input); err == nil && input.RefreshToken != "" {
+   888→                // Revoke the specific refresh token
+   889→                database.DB.Model(&models.RefreshToken{}).Where("token = ?", input.RefreshToken).Update("revoked", true)
+   890→        }
+   891→
+   892→        userID := c.GetUint("user_id")
+   893→        database.DB.Create(&models.AuditLog{
+   894→                UserID:    userID,
+   895→                Action:    "LOGOUT",
+   896→                Details:   "User logged out",
+   897→                IPAddress: c.ClientIP(),
+   898→                CreatedAt: time.Now(),
+   899→        })
+   900→
+   901→        c.JSON(http.StatusOK, gin.H{
+   902→                "success": true,
+   903→                "message": "تم تسجيل الخروج بنجاح",
+   904→        })
+   905→}
+   906→
+   907→// GetSessions handles GET /api/auth/sessions
+   908→// Returns all active (non-revoked, non-expired) sessions for the current user
+   909→func GetSessions(c *gin.Context) {
+   910→        userID := c.GetUint("user_id")
+   911→
+   912→        var sessions []models.RefreshToken
+   913→        database.DB.Where("user_id = ? AND revoked = ? AND expires_at > ?", userID, false, time.Now()).
+   914→                Order("created_at DESC").
+   915→                Find(&sessions)
+   916→
+   917→        c.JSON(http.StatusOK, gin.H{
+   918→                "success": true,
+   919→                "data":    sessions,
+   920→        })
+   921→}
+   922→
+   923→// RevokeSession handles POST /api/auth/sessions/:id/revoke
+   924→// Revokes a specific session by ID (useful for "logout from other devices")
+   925→func RevokeSession(c *gin.Context) {
+   926→        userID := c.GetUint("user_id")
+   927→        sessionID := c.Param("id")
+   928→
+   929→        var session models.RefreshToken
+   930→        if err := database.DB.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+   931→                c.JSON(http.StatusNotFound, gin.H{"error": "الجلسة غير موجودة"})
+   932→                return
+   933→        }
+   934→
+   935→        if session.Revoked {
+   936→                c.JSON(http.StatusBadRequest, gin.H{"error": "الجلسة منتهية بالفعل"})
+   937→                return
+   938→        }
+   939→
+   940→        database.DB.Model(&session).Update("revoked", true)
+   941→
+   942→        database.DB.Create(&models.AuditLog{
+   943→                UserID:    userID,
+   944→                Action:    "SESSION_REVOKED",
+   945→                Details:   fmt.Sprintf("Session revoked: ID #%s from %s", sessionID, session.IPAddress),
+   946→                IPAddress: c.ClientIP(),
+   947→                CreatedAt: time.Now(),
+   948→        })
+   949→
+   950→        c.JSON(http.StatusOK, gin.H{
+   951→                "success": true,
+   952→                "message": "تم إنهاء الجلسة بنجاح",
+   953→        })
+   954→}
+   955→
