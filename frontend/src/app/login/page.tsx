@@ -32,7 +32,7 @@ export default function LoginPage() {
     setRequiresVerify(false);
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/login`, {
+      const res = await fetch(`${API}/api/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -81,7 +81,7 @@ export default function LoginPage() {
     e.preventDefault();
     setTwoFALoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/verify-2fa`, {
+      const res = await fetch(`${API}/api/v1/auth/verify-2fa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ temp_token: tempToken, code: twoFACode }),
@@ -107,7 +107,7 @@ export default function LoginPage() {
     if (resendCooldown > 0) return;
     setResendLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/resend-verification`, {
+      const res = await fetch(`${API}/api/v1/auth/resend-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: unverifiedEmail }),

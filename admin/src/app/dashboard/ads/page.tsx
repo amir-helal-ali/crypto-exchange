@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Plus, Pencil, Trash2, Eye, EyeOff, Upload, Sparkles, X } from "lucide-react";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface Ad {
   id: number;
@@ -38,6 +39,7 @@ export default function AdsPage() {
   const [suggesting, setSuggesting] = useState(false);
   const [suggestions, setSuggestions] = useState<Ad[]>([]);
   const [form, setForm] = useState(emptyAd);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchAds = async () => {
@@ -45,7 +47,7 @@ export default function AdsPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/admin/ads`, {
+      const res = await fetch(`${API}/api/v1/admin/ads`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -67,7 +69,7 @@ export default function AdsPage() {
     const fd = new FormData();
     fd.append("image", file);
     try {
-      const res = await fetch(`${API}/api/admin/ads/upload`, {
+      const res = await fetch(`${API}/api/v1/admin/ads/upload`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -90,7 +92,7 @@ export default function AdsPage() {
     setSuggestions([]);
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${API}/api/admin/ads/suggest`, {
+      const res = await fetch(`${API}/api/v1/admin/ads/suggest`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ topic: form.title || "", position: form.position }),
@@ -123,8 +125,8 @@ export default function AdsPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
     const url = editing
-      ? `${API}/api/admin/ads/${editing.id}`
-      : `${API}/api/admin/ads`;
+      ? `${API}/api/v1/admin/ads/${editing.id}`
+      : `${API}/api/v1/admin/ads`;
     const method = editing ? "PUT" : "POST";
 
     try {
@@ -149,11 +151,10 @@ export default function AdsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف هذا الإعلان؟")) return;
     const token = localStorage.getItem("token");
     if (!token) return;
     try {
-      const res = await fetch(`${API}/api/admin/ads/${id}`, {
+      const res = await fetch(`${API}/api/v1/admin/ads/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -185,7 +186,7 @@ export default function AdsPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
     try {
-      const res = await fetch(`${API}/api/admin/ads/${ad.id}`, {
+      const res = await fetch(`${API}/api/v1/admin/ads/${ad.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...ad, active: !ad.active }),
@@ -356,7 +357,7 @@ export default function AdsPage() {
                   <td className="p-4">
                     <div className="flex items-center gap-2">
                       <button onClick={() => handleEdit(ad)} className="btn-ghost p-1.5 text-xs"><Pencil className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => handleDelete(ad.id)} className="btn-ghost p-1.5 text-xs text-red-500 hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => setDeleteTarget(ad.id)} className="btn-ghost p-1.5 text-xs text-red-500 hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   </td>
                 </tr>
@@ -365,6 +366,21 @@ export default function AdsPage() {
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="حذف الإعلان"
+        message="هل أنت متأكد من حذف هذا الإعلان؟ لا يمكن التراجع عن هذا الإجراء."
+        confirmLabel="حذف"
+        cancelLabel="إلغاء"
+        variant="danger"
+        onConfirm={() => {
+          if (deleteTarget) handleDelete(deleteTarget);
+          setDeleteTarget(null);
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

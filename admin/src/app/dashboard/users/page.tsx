@@ -15,7 +15,7 @@ export default function AdminUsersPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
     setLoading(true);
-    fetch(`${API}/api/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API}/api/v1/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : Array.isArray(d.users) ? d.users : [])).catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -25,7 +25,7 @@ export default function AdminUsersPage() {
   const handleRoleChange = async (userId: number, role: string) => {
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${API}/api/admin/user/${userId}/role`, {
+      const res = await fetch(`${API}/api/v1/admin/user/${userId}/role`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ role }),

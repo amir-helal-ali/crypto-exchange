@@ -31,7 +31,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await authPut("/api/user/profile", profileForm);
+      const res = await authPut("/api/v1/user/profile", profileForm);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل تحديث الملف"); return; }
       const updatedUser = { ...user, ...profileForm };
@@ -50,7 +50,7 @@ export default function ProfilePage() {
     }
     setChangingPwd(true);
     try {
-      const res = await authPost("/api/user/change-password", {
+      const res = await authPost("/api/v1/user/change-password", {
         current_password: passwordForm.current_password,
         new_password: passwordForm.new_password,
       });

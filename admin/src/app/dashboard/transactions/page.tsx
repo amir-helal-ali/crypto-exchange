@@ -20,7 +20,7 @@ export default function AdminTransactionsPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
     setLoading(true);
-    fetch(`${API}/api/admin/transactions?page=${page}&limit=20`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API}/api/v1/admin/transactions?page=${page}&limit=20`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(d => {
         const data = d.data;
         setTransactions(Array.isArray(data) ? data : []);
@@ -36,7 +36,7 @@ export default function AdminTransactionsPage() {
     try {
       const body: any = { action };
       if (action === "approve" && txInputs[id]) body.tx_id = txInputs[id];
-      const res = await fetch(`${API}/api/admin/transactions/${id}/review`, {
+      const res = await fetch(`${API}/api/v1/admin/transactions/${id}/review`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),

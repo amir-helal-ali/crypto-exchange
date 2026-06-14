@@ -15,8 +15,8 @@ export default function AdminDashboard() {
     if (!token) return;
 
     Promise.all([
-      fetch(`${API}/api/admin/stats`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch(`${API}/api/admin/audit-logs`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API}/api/v1/admin/stats`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API}/api/v1/admin/audit-logs`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
     ]).then(([statsData, logsData]) => {
       setStats(statsData);
       setAuditLogs(Array.isArray(logsData) ? logsData : Array.isArray(logsData.logs) ? logsData.logs : []);

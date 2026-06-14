@@ -27,7 +27,7 @@ export default function VerifyEmailPage() {
 
     const verifyEmail = async () => {
       try {
-        const res = await fetch(`${API}/api/auth/verify-email?token=${encodeURIComponent(token)}`);
+        const res = await fetch(`${API}/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`);
         const data = await res.json();
 
         if (res.ok && data.success) {
@@ -55,7 +55,7 @@ export default function VerifyEmailPage() {
     if (!resendEmail || resendCooldown > 0) return;
     setResendLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/resend-verification`, {
+      const res = await fetch(`${API}/api/v1/auth/resend-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: resendEmail }),

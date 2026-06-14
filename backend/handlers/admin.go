@@ -3,6 +3,7 @@ package handlers
 import (
         "fmt"
         "net/http"
+        "strings"
         "time"
 
         "crypto-exchange-backend/database"
@@ -81,13 +82,45 @@ func UpdateUserRole(c *gin.Context) {
         c.JSON(http.StatusOK, gin.H{"success": true, "message": "User role updated successfully"})
 }
 
+// buildAuditQuery constructs the base GORM query for audit logs with optional filters.
+// Supported query params: action, user_id, search, date_from, date_to
+func buildAuditQuery(c *gin.Context) *gorm.DB {
+        q := database.DB.Model(&models.AuditLog{})
+
+        if action := c.Query("action"); action != "" {
+                q = q.Where("action = ?", action)
+        }
+        if userID := c.Query("user_id"); userID != "" {
+                q = q.Where("user_id = ?", userID)
+        }
+        if search := c.Query("search"); search != "" {
+                q = q.Where("details ILIKE ?", "%"+search+"%")
+        }
+        if dateFrom := c.Query("date_from"); dateFrom != "" {
+                if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
+                        q = q.Where("created_at >= ?", t)
+                }
+        }
+        if dateTo := c.Query("date_to"); dateTo != "" {
+                if t, err := time.Parse("2006-01-02", dateTo); err == nil {
+                        q = q.Where("created_at < ?", t.AddDate(0, 0, 1))
+                }
+        }
+
+        return q
+}
+
 func GetAuditLogs(c *gin.Context) {
         page, limit := getPagination(c)
         offset := (page - 1) * limit
+
+        q := buildAuditQuery(c)
+
         var total int64
-        database.DB.Model(&models.AuditLog{}).Count(&total)
+        q.Count(&total)
+
         var logs []models.AuditLog
-        database.DB.Preload("User").Order("created_at DESC").Limit(limit).Offset(offset).Find(&logs)
+        q.Preload("User").Order("created_at DESC").Limit(limit).Offset(offset).Find(&logs)
 
         formattedLogs := make([]gin.H, len(logs))
         for i, log := range logs {
@@ -97,6 +130,7 @@ func GetAuditLogs(c *gin.Context) {
                 }
                 formattedLogs[i] = gin.H{
                         "id":        log.ID,
+                        "user_id":   log.UserID,
                         "action":    log.Action,
                         "details":   log.Details,
                         "ipAddress": log.IPAddress,
@@ -106,6 +140,44 @@ func GetAuditLogs(c *gin.Context) {
         }
 
         c.JSON(http.StatusOK, gin.H{"success": true, "data": formattedLogs, "total": total, "page": page, "limit": limit})
+}
+
+// ExportAuditLogsCSV exports filtered audit logs as a CSV file download.
+func ExportAuditLogsCSV(c *gin.Context) {
+        q := buildAuditQuery(c)
+
+        var logs []models.AuditLog
+        q.Preload("User").Order("created_at DESC").Limit(10000).Find(&logs)
+
+        c.Header("Content-Type", "text/csv; charset=utf-8")
+        c.Header("Content-Disposition", "attachment; filename=audit-logs.csv")
+
+        // BOM for Excel UTF-8 compatibility
+        c.Writer.Write([]byte("\xEF\xBB\xBF"))
+
+        c.Writer.WriteString("ID,Username,Action,Details,IP Address,Created At\n")
+        for _, log := range logs {
+                username := "System"
+                if log.User != nil {
+                        username = log.User.Username
+                }
+                details := log.Details
+                if details == "" {
+                        details = "-"
+                }
+                // Escape CSV fields containing commas or quotes
+                if strings.Contains(details, ",") || strings.Contains(details, "\"") {
+                        details = "\"" + strings.ReplaceAll(details, "\"", "\"\"") + "\""
+                }
+                c.Writer.WriteString(fmt.Sprintf("%d,%s,%s,%s,%s,%s\n",
+                        log.ID,
+                        username,
+                        log.Action,
+                        details,
+                        log.IPAddress,
+                        log.CreatedAt.UTC().Format("2006-01-02 15:04:05"),
+                ))
+        }
 }
 
 func GetAllTransactions(c *gin.Context) {

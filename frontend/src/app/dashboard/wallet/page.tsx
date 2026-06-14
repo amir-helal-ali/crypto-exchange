@@ -19,8 +19,8 @@ export default function WalletPage() {
   const fetchData = async () => {
     try {
       const [balRes, txRes] = await Promise.all([
-        authGet("/api/wallet/balances"),
-        authGet("/api/wallet/transactions"),
+        authGet("/api/v1/wallet/balances"),
+        authGet("/api/v1/wallet/transactions"),
       ]);
       const balData = await balRes.json();
       const txData = await txRes.json();
@@ -54,7 +54,7 @@ export default function WalletPage() {
     e.preventDefault();
     setWithdrawLoading(true);
     try {
-      const res = await authPost("/api/wallet/withdraw", withdrawForm);
+      const res = await authPost("/api/v1/wallet/withdraw", withdrawForm);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل طلب السحب"); return; }
       toast.success("تم تقديم طلب السحب بنجاح");

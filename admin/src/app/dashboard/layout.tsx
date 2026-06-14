@@ -3,13 +3,14 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { LayoutDashboard, Users, ShieldCheck, Wallet, LogOut, Menu, ChevronDown, FileText, Image } from "lucide-react";
+import { LayoutDashboard, Users, ShieldCheck, Wallet, LogOut, Menu, ChevronDown, FileText, Image, ScrollText } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard", icon: LayoutDashboard, label: "الإحصائيات" },
   { href: "/dashboard/users", icon: Users, label: "المستخدمين" },
   { href: "/dashboard/kyc", icon: ShieldCheck, label: "طلبات KYC" },
   { href: "/dashboard/transactions", icon: Wallet, label: "المعاملات" },
+  { href: "/dashboard/audit-logs", icon: ScrollText, label: "سجلات التدقيق" },
   { href: "/dashboard/ads", icon: Image, label: "الإعلانات" },
 ];
 

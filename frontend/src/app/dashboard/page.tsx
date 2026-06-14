@@ -16,8 +16,8 @@ export default function DashboardPage() {
     if (!token) return;
 
     Promise.all([
-      authGet("/api/exchange/orders").then(r => r.json()),
-      authGet("/api/wallet/balances").then(r => r.json()),
+      authGet("/api/v1/exchange/orders").then(r => r.json()),
+      authGet("/api/v1/wallet/balances").then(r => r.json()),
     ]).then(([ordersData, walletData]) => {
       setOrders(Array.isArray(ordersData) ? ordersData : Array.isArray(ordersData.orders) ? ordersData.orders : []);
       setBalances(Array.isArray(walletData) ? walletData : Array.isArray(walletData.balances) ? walletData.balances : []);

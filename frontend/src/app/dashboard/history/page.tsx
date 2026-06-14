@@ -28,7 +28,7 @@ export default function HistoryPage() {
     setLoading(true);
     try {
       const query = statusFilter ? `?status=${statusFilter}` : "";
-      const r = await authGet(`/api/exchange/orders${query}`);
+      const r = await authGet(`/api/v1/exchange/orders${query}`);
       const d = await r.json();
       setOrders(Array.isArray(d.data) ? d.data : []);
     } catch {} finally {
@@ -38,7 +38,7 @@ export default function HistoryPage() {
 
   const handleCancel = async (orderId: number) => {
     try {
-      const res = await authPost(`/api/exchange/order/${orderId}/cancel`);
+      const res = await authPost(`/api/v1/exchange/order/${orderId}/cancel`);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل إلغاء الأمر"); return; }
       toast.success(data.message || "تم إلغاء الأمر بنجاح");

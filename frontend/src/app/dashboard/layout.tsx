@@ -60,7 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     const fetchNotifs = async () => {
       try {
-        const res = await authGet("/api/notifications?limit=20");
+        const res = await authGet("/api/v1/notifications?limit=20");
         if (res.ok) {
           const data = await res.json();
           setNotifications(data.data || []);
@@ -86,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const refreshToken = localStorage.getItem("refresh_token");
     const token = localStorage.getItem("token");
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/auth/logout`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/v1/auth/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ refresh_token: refreshToken }),
@@ -100,7 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleMarkRead = async (id: number) => {
     try {
-      await authPut(`/api/notifications/${id}/read`);
+      await authPut(`/api/v1/notifications/${id}/read`);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch {}
@@ -108,7 +108,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleMarkAllRead = async () => {
     try {
-      await authPut("/api/notifications/read-all");
+      await authPut("/api/v1/notifications/read-all");
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
     } catch {}

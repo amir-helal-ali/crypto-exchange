@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	exchangeredis "crypto-exchange-backend/redis"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,6 +17,7 @@ type RateLimiter struct {
 	mu       sync.RWMutex
 	rate     int
 	window   time.Duration
+	useRedis bool
 }
 
 type visitor struct {
@@ -58,8 +62,11 @@ func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
 		visitors: make(map[string]*visitor),
 		rate:     rate,
 		window:   window,
+		useRedis: exchangeredis.IsAvailable(),
 	}
-	go rl.cleanup()
+	if !rl.useRedis {
+		go rl.cleanup()
+	}
 	return rl
 }
 
@@ -79,6 +86,24 @@ func (rl *RateLimiter) cleanup() {
 func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
+
+		// Try Redis-based rate limiting first
+		if rl.useRedis {
+			key := fmt.Sprintf("rate_limit:%s", ip)
+			count, err := exchangeredis.IncrementRateLimit(key, rl.window)
+			if err == nil {
+				if count > rl.rate {
+					c.JSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded. Try again later."})
+					c.Abort()
+					return
+				}
+				c.Next()
+				return
+			}
+			// Fall through to in-memory on Redis error
+		}
+
+		// In-memory rate limiting (fallback)
 		rl.mu.Lock()
 		v, exists := rl.visitors[ip]
 		if !exists {

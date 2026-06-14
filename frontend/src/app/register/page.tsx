@@ -31,7 +31,7 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/register`, {
+      const res = await fetch(`${API}/api/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -56,7 +56,7 @@ export default function RegisterPage() {
     if (resendCooldown > 0) return;
     setResendLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/resend-verification`, {
+      const res = await fetch(`${API}/api/v1/auth/resend-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: registeredEmail }),

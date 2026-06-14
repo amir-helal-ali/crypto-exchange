@@ -15,6 +15,7 @@ import (
         "crypto-exchange-backend/handlers"
         "crypto-exchange-backend/matching"
         "crypto-exchange-backend/models"
+        exchangeredis "crypto-exchange-backend/redis"
         "crypto-exchange-backend/scheduler"
         "crypto-exchange-backend/websocket"
 
@@ -93,6 +94,7 @@ func main() {
         }
 
         email.LoadConfig()
+        exchangeredis.Connect()
 
         gin.SetMode(gin.ReleaseMode)
 
@@ -129,24 +131,28 @@ func main() {
                 c.JSON(200, gin.H{"status": "ok", "name": "EgMoney API", "version": "1.0.0"})
         })
 
+        // Health checks remain at /api/ (no version prefix - always latest)
         r.GET("/api/health", handlers.HealthCheck)
         r.GET("/api/health/ready", handlers.ReadinessCheck)
         r.GET("/api/health/live", handlers.LivenessCheck)
 
-        r.GET("/api/market/prices", handlers.GetPrices)
-        r.GET("/api/market/klines", handlers.GetKlines)
+        // === v1 API routes ===
+        v1 := r.Group("/api/v1")
 
-        r.POST("/api/auth/register", handlers.Register)
-        r.POST("/api/auth/login", handlers.Login)
-        r.POST("/api/auth/forgot-password", handlers.ForgotPassword)
-        r.POST("/api/auth/reset-password", handlers.ResetPassword)
-        r.GET("/api/auth/verify-email", handlers.VerifyEmail)
-        r.POST("/api/auth/resend-verification", handlers.ResendVerification)
-        r.POST("/api/auth/verify-2fa", handlers.Verify2FA)
-        r.POST("/api/auth/refresh", handlers.RefreshAccessToken)
+        v1.GET("/market/prices", handlers.GetPrices)
+        v1.GET("/market/klines", handlers.GetKlines)
+
+        v1.POST("/auth/register", handlers.Register)
+        v1.POST("/auth/login", handlers.Login)
+        v1.POST("/auth/forgot-password", handlers.ForgotPassword)
+        v1.POST("/auth/reset-password", handlers.ResetPassword)
+        v1.GET("/auth/verify-email", handlers.VerifyEmail)
+        v1.POST("/auth/resend-verification", handlers.ResendVerification)
+        v1.POST("/auth/verify-2fa", handlers.Verify2FA)
+        v1.POST("/auth/refresh", handlers.RefreshAccessToken)
 
         // Authenticated auth routes
-        authProtected := r.Group("/api/auth")
+        authProtected := v1.Group("/auth")
         authProtected.Use(handlers.AuthMiddleware())
         {
                 authProtected.POST("/setup-2fa", handlers.Setup2FA)
@@ -157,7 +163,7 @@ func main() {
                 authProtected.POST("/sessions/:id/revoke", handlers.RevokeSession)
         }
 
-        userKYC := r.Group("/api/kyc")
+        userKYC := v1.Group("/kyc")
         userKYC.Use(handlers.AuthMiddleware())
         {
                 userKYC.POST("/submit", handlers.SubmitKYC)
@@ -165,7 +171,7 @@ func main() {
                 userKYC.GET("/status", handlers.GetMyKYC)
         }
 
-        protected := r.Group("/api/exchange")
+        protected := v1.Group("/exchange")
         protected.Use(handlers.AuthMiddleware())
         {
                 protected.POST("/order", handlers.PlaceOrder)
@@ -173,7 +179,7 @@ func main() {
                 protected.POST("/order/:id/cancel", handlers.CancelOrder)
         }
 
-        wallet := r.Group("/api")
+        wallet := v1.Group("")
         wallet.Use(handlers.AuthMiddleware())
         {
                 wallet.GET("/wallet/balances", handlers.GetWalletBalances)
@@ -188,12 +194,13 @@ func main() {
                 wallet.PUT("/notifications/:id/read", handlers.MarkNotificationRead)
         }
 
-        admin := r.Group("/api/admin")
+        admin := v1.Group("/admin")
         admin.Use(handlers.AuthMiddleware(), handlers.AdminMiddleware())
         {
                 admin.GET("/stats", handlers.GetAdminStats)
                 admin.GET("/users", handlers.GetAllUsers)
                 admin.GET("/audit-logs", handlers.GetAuditLogs)
+                admin.GET("/audit-logs/export", handlers.ExportAuditLogsCSV)
                 admin.GET("/kyc", handlers.GetAllKYCRequests)
                 admin.PUT("/kyc/:id/review", handlers.ReviewKYC)
                 admin.PUT("/user/:id/role", handlers.UpdateUserRole)
@@ -207,7 +214,8 @@ func main() {
                 admin.POST("/ads/suggest", handlers.SuggestAd)
         }
 
-        r.GET("/api/ads", handlers.GetActiveAds)
+        // Public routes (outside versioned group)
+        v1.GET("/ads", handlers.GetActiveAds)
         r.GET("/ws/market", websocket.HandleMarketWebSocket)
 
         r.Static("/uploads", "./uploads")

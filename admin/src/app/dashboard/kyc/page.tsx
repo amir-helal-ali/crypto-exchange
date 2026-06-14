@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Check, X, Search } from "lucide-react";
+import PromptDialog from "@/components/PromptDialog";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
@@ -10,12 +11,13 @@ export default function AdminKYCPage() {
   const [requests, setRequests] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [rejectTarget, setRejectTarget] = useState<number | null>(null);
 
   const fetchKYC = () => {
     const token = localStorage.getItem("token");
     if (!token) return;
     setLoading(true);
-    fetch(`${API}/api/admin/kyc`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API}/api/v1/admin/kyc`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(d => {
         const data = d.data;
         setRequests(Array.isArray(data) ? data : []);
@@ -32,7 +34,7 @@ export default function AdminKYCPage() {
       if (status === "REJECTED" && rejectionReason) {
         body.rejection_reason = rejectionReason;
       }
-      const res = await fetch(`${API}/api/admin/kyc/${id}/review`, {
+      const res = await fetch(`${API}/api/v1/admin/kyc/${id}/review`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -95,10 +97,7 @@ export default function AdminKYCPage() {
                       {req.status === "PENDING" && (
                         <>
                           <button onClick={() => handleReview(req.id, "APPROVED")} className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all" title="موافقة"><Check className="h-4 w-4" /></button>
-                          <button onClick={() => {
-                            const reason = prompt("سبب الرفض (اختياري):");
-                            if (reason !== null) handleReview(req.id, "REJECTED", reason);
-                          }} className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all" title="رفض"><X className="h-4 w-4" /></button>
+                          <button onClick={() => setRejectTarget(req.id)} className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all" title="رفض"><X className="h-4 w-4" /></button>
                         </>
                       )}
                     </div>
@@ -110,6 +109,21 @@ export default function AdminKYCPage() {
         </div>
         {!loading && filtered.length === 0 && <div className="text-center py-12 text-muted-foreground">لا توجد طلبات KYC</div>}
       </div>
+
+      {/* Rejection Prompt Dialog */}
+      <PromptDialog
+        open={rejectTarget !== null}
+        title="رفض طلب التحقق"
+        message="أدخل سبب الرفض. سيتم إرسال هذا السبب للمستخدم."
+        placeholder="مثال: الصورة غير واضحة"
+        confirmLabel="رفض"
+        cancelLabel="إلغاء"
+        onConfirm={(reason) => {
+          if (rejectTarget) handleReview(rejectTarget, "REJECTED", reason);
+          setRejectTarget(null);
+        }}
+        onCancel={() => setRejectTarget(null)}
+      />
     </div>
   );
 }

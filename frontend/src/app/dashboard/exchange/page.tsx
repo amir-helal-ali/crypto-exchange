@@ -43,7 +43,7 @@ export default function ExchangePage() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const r = await authGet("/api/exchange/orders");
+      const r = await authGet("/api/v1/exchange/orders");
       const d = await r.json();
       const data = d.data;
       setOrders(Array.isArray(data) ? data : []);
@@ -52,7 +52,7 @@ export default function ExchangePage() {
 
   const fetchWallets = useCallback(async () => {
     try {
-      const r = await authGet("/api/wallet/balances");
+      const r = await authGet("/api/v1/wallet/balances");
       const d = await r.json();
       const data = d.data;
       setWallets(Array.isArray(data) ? data : []);
@@ -137,7 +137,7 @@ export default function ExchangePage() {
       const body: any = { symbol: selectedPair, side, type: orderType, quantity: form.quantity };
       if (orderType === "LIMIT" || orderType === "STOP_LIMIT") body.price = form.price;
       if (orderType === "STOP_LIMIT" || orderType === "TAKE_PROFIT") body.stop_price = form.stopPrice;
-      const res = await authPost("/api/exchange/order", body);
+      const res = await authPost("/api/v1/exchange/order", body);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل تنفيذ الأمر"); return; }
       toast.success(data.message || "تم تنفيذ الأمر بنجاح");
@@ -150,7 +150,7 @@ export default function ExchangePage() {
 
   const handleCancel = async (orderId: number) => {
     try {
-      const res = await authPost(`/api/exchange/order/${orderId}/cancel`);
+      const res = await authPost(`/api/v1/exchange/order/${orderId}/cancel`);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل إلغاء الأمر"); return; }
       toast.success(data.message || "تم إلغاء الأمر بنجاح");

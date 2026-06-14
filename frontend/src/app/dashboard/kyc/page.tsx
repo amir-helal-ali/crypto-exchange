@@ -53,7 +53,7 @@ export default function KYCPage() {
 
   const fetchKYCStatus = async () => {
     try {
-      const res = await authGet("/api/kyc/status");
+      const res = await authGet("/api/v1/kyc/status");
       if (res.ok) {
         const data = await res.json();
         if (data.data) {
@@ -94,7 +94,7 @@ export default function KYCPage() {
       const formData = new FormData();
       formData.append("document", file);
 
-      const res = await authUpload("/api/kyc/upload", formData);
+      const res = await authUpload("/api/v1/kyc/upload", formData);
 
       const data = await res.json();
       if (!res.ok) {
@@ -132,7 +132,7 @@ export default function KYCPage() {
 
     setSubmitting(true);
     try {
-      const res = await authPost("/api/kyc/submit", {
+      const res = await authPost("/api/v1/kyc/submit", {
         full_name: fullName,
         document_type: documentType,
         document_number: documentNumber,

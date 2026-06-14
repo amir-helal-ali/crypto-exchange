@@ -141,7 +141,7 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API}/api/ads`)
+    fetch(`${API}/api/v1/ads`)
       .then(res => res.json())
       .then((data: Ad[]) => {
         setHeroAds(data.filter(a => a.active && a.position === "hero"));

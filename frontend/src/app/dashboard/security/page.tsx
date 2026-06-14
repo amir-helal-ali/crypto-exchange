@@ -76,7 +76,7 @@ export default function SecurityPage() {
   const fetchSessions = async () => {
     setSessionsLoading(true);
     try {
-      const res = await authGet("/api/auth/sessions");
+      const res = await authGet("/api/v1/auth/sessions");
       if (res.ok) {
         const data = await res.json();
         setSessions(data.data || []);
@@ -90,7 +90,7 @@ export default function SecurityPage() {
 
   const handleRevokeSession = async (sessionId: number) => {
     try {
-      const res = await authPost(`/api/auth/sessions/${sessionId}/revoke`);
+      const res = await authPost(`/api/v1/auth/sessions/${sessionId}/revoke`);
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل إنهاء الجلسة");
@@ -107,7 +107,7 @@ export default function SecurityPage() {
   const handleSetup2FA = async () => {
     setSetupLoading(true);
     try {
-      const res = await authPost("/api/auth/setup-2fa");
+      const res = await authPost("/api/v1/auth/setup-2fa");
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل إعداد المصادقة الثنائية");
@@ -130,7 +130,7 @@ export default function SecurityPage() {
     }
     setVerifyLoading(true);
     try {
-      const res = await authPost("/api/auth/enable-2fa", { code: verifyCode });
+      const res = await authPost("/api/v1/auth/enable-2fa", { code: verifyCode });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "رمز التحقق غير صحيح");
@@ -161,7 +161,7 @@ export default function SecurityPage() {
     }
     setDisableLoading(true);
     try {
-      const res = await authPost("/api/auth/disable-2fa", { password: disablePassword, code: disableCode });
+      const res = await authPost("/api/v1/auth/disable-2fa", { password: disablePassword, code: disableCode });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل تعطيل المصادقة الثنائية");
