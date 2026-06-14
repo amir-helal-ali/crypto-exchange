@@ -183,6 +183,9 @@ func main() {
                 wallet.POST("/wallet/deposit", handlers.DepositCurrency)
                 wallet.POST("/wallet/withdraw", handlers.WithdrawCurrency)
                 wallet.GET("/wallet/transactions", handlers.GetTransactions)
+                wallet.GET("/notifications", handlers.GetNotifications)
+                wallet.PUT("/notifications/read-all", handlers.MarkAllNotificationsRead)
+                wallet.PUT("/notifications/:id/read", handlers.MarkNotificationRead)
         }
 
         admin := r.Group("/api/admin")

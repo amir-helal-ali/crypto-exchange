@@ -229,8 +229,39 @@ export default function ExchangePage() {
               ))}
             </div>
             <form onSubmit={handleSubmit} className="space-y-3">
+              {/* Quick price fill for LIMIT orders */}
+              {(orderType === "LIMIT" || orderType === "STOP_LIMIT") && !form.price && p?.price && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, price: p.price.toFixed(2) })}
+                  className="text-[10px] text-primary hover:underline"
+                >
+                  استخدام السعر الحالي ({p.price.toFixed(2)} USDT)
+                </button>
+              )}
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs text-muted-foreground mb-1">الكمية ({base})</label><input type="number" step="any" className="input-field" placeholder="0.00" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} required /></div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">الكمية ({base})</label>
+                  <input type="number" step="any" className="input-field" placeholder="0.00" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} required />
+                  {/* Quick percentage buttons */}
+                  <div className="flex gap-1 mt-1.5">
+                    {[25, 50, 75, 100].map(pct => {
+                      const maxQty = side === "BUY"
+                        ? (quoteWallet?.balance && p?.price ? parseFloat(quoteWallet.balance) / p.price * pct / 100 : 0)
+                        : (baseWallet?.balance ? parseFloat(baseWallet.balance) * pct / 100 : 0);
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setForm({ ...form, quantity: maxQty.toFixed(8) })}
+                          className="flex-1 text-[10px] px-1 py-0.5 rounded bg-muted/30 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                        >
+                          {pct}%
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 {(orderType === "LIMIT" || orderType === "STOP_LIMIT") && <div><label className="block text-xs text-muted-foreground mb-1">السعر (USDT)</label><input type="number" step="any" className="input-field" placeholder="0.00" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required /></div>}
                 {(orderType === "STOP_LIMIT" || orderType === "TAKE_PROFIT") && <div><label className="block text-xs text-muted-foreground mb-1">سعر الإيقاف (USDT)</label><input type="number" step="any" className="input-field" placeholder="0.00" value={form.stopPrice} onChange={e => setForm({ ...form, stopPrice: e.target.value })} required /></div>}
               </div>
