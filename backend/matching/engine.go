@@ -10,8 +10,8 @@ import (
         "time"
 
         "crypto-exchange-backend/database"
-        "crypto-exchange-backend/handlers"
         "crypto-exchange-backend/models"
+        "crypto-exchange-backend/notifications"
 
         "gorm.io/gorm"
 )
@@ -176,9 +176,9 @@ func processTriggerOrder(order *models.Order) {
 
         // Send notification to user
         if order.Type == "TAKE_PROFIT" {
-                handlers.NotifyOrderFilled(order.UserID, order.Symbol, order.Side, "TAKE_PROFIT", order.Quantity, price, order.ID)
+                notifications.NotifyOrderFilled(order.UserID, order.Symbol, order.Side, "TAKE_PROFIT", order.Quantity, price, order.ID)
         } else {
-                handlers.NotifyOrderTriggered(order.UserID, order.Symbol, order.Side, order.Type, price, order.ID)
+                notifications.NotifyOrderTriggered(order.UserID, order.Symbol, order.Side, order.Type, price, order.ID)
         }
 }
 
@@ -229,7 +229,7 @@ func processLimitOrder(order *models.Order) {
         log.Printf("MatchingEngine: LIMIT order #%d %s %s filled at %.2f (limit was %.2f)", order.ID, order.Side, order.Symbol, price, order.Price)
 
         // Send notification to user
-        handlers.NotifyOrderFilled(order.UserID, order.Symbol, order.Side, "LIMIT", order.Quantity, price, order.ID)
+        notifications.NotifyOrderFilled(order.UserID, order.Symbol, order.Side, "LIMIT", order.Quantity, price, order.ID)
 }
 
 func Start(interval time.Duration) {
