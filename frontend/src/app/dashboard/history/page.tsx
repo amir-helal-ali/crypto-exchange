@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet } from "@/lib/api";
 
 export default function HistoryPage() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -11,8 +10,10 @@ export default function HistoryPage() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-    fetch(`${API}/api/exchange/orders`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => setOrders(Array.isArray(d) ? d : Array.isArray(d.orders) ? d.orders : [])).catch(() => {});
+    authGet("/api/exchange/orders")
+      .then(r => r.json())
+      .then(d => setOrders(Array.isArray(d) ? d : Array.isArray(d.orders) ? d.orders : []))
+      .catch(() => {});
   }, []);
 
   return (
@@ -52,11 +53,11 @@ export default function HistoryPage() {
                   <td className="p-4">
                     <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
                       order.status === "FILLED" ? "bg-emerald-500/10 text-emerald-500" :
-                      order.status === "OPEN" ? "bg-blue-500/10 text-blue-500" :
+                      order.status === "PENDING" || order.status === "OPEN" ? "bg-blue-500/10 text-blue-500" :
                       order.status === "CANCELLED" ? "bg-gray-500/10 text-gray-400" :
                       "bg-red-500/10 text-red-500"
                     }`}>
-                      {order.status === "FILLED" ? "منفذ" : order.status === "OPEN" ? "مفتوح" : order.status === "CANCELLED" ? "ملغي" : "مرفوض"}
+                      {order.status === "FILLED" ? "منفذ" : order.status === "PENDING" || order.status === "OPEN" ? "مفتوح" : order.status === "CANCELLED" ? "ملغي" : "مرفوض"}
                     </span>
                   </td>
                   <td className="p-4 text-muted-foreground text-xs">{new Date(order.created_at || order.CreatedAt).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>

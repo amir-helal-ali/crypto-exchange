@@ -14,8 +14,7 @@ import {
   Camera,
   X,
 } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet, authPost, authUpload } from "@/lib/api";
 
 interface KYCData {
   id: number;
@@ -52,15 +51,9 @@ export default function KYCPage() {
     fetchKYCStatus();
   }, [router]);
 
-  const authHeaders = () => ({
-    Authorization: `Bearer ${localStorage.getItem("token")}`,
-  });
-
   const fetchKYCStatus = async () => {
     try {
-      const res = await fetch(`${API}/api/kyc/status`, {
-        headers: authHeaders(),
-      });
+      const res = await authGet("/api/kyc/status");
       if (res.ok) {
         const data = await res.json();
         if (data.data) {
@@ -101,11 +94,7 @@ export default function KYCPage() {
       const formData = new FormData();
       formData.append("document", file);
 
-      const res = await fetch(`${API}/api/kyc/upload`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: formData,
-      });
+      const res = await authUpload("/api/kyc/upload", formData);
 
       const data = await res.json();
       if (!res.ok) {
@@ -143,18 +132,11 @@ export default function KYCPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${API}/api/kyc/submit`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders(),
-        },
-        body: JSON.stringify({
-          full_name: fullName,
-          document_type: documentType,
-          document_number: documentNumber,
-          document_url: documentUrl,
-        }),
+      const res = await authPost("/api/kyc/submit", {
+        full_name: fullName,
+        document_type: documentType,
+        document_number: documentNumber,
+        document_url: documentUrl,
       });
 
       const data = await res.json();

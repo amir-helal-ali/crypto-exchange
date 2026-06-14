@@ -15,6 +15,7 @@ import (
         "crypto-exchange-backend/handlers"
         "crypto-exchange-backend/matching"
         "crypto-exchange-backend/models"
+        "crypto-exchange-backend/scheduler"
         "crypto-exchange-backend/websocket"
 
         "github.com/gin-gonic/gin"
@@ -99,6 +100,7 @@ func main() {
         seedAdmin()
 
         matching.Start(10 * time.Second)
+        scheduler.StartCleanupScheduler()
 
         r := gin.Default()
         r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
@@ -127,9 +129,9 @@ func main() {
                 c.JSON(200, gin.H{"status": "ok", "name": "EgMoney API", "version": "1.0.0"})
         })
 
-        r.GET("/api/health", func(c *gin.Context) {
-                c.JSON(200, gin.H{"status": "ok", "message": "EgMoney Go Backend is running"})
-        })
+        r.GET("/api/health", handlers.HealthCheck)
+        r.GET("/api/health/ready", handlers.ReadinessCheck)
+        r.GET("/api/health/live", handlers.LivenessCheck)
 
         r.GET("/api/market/prices", handlers.GetPrices)
         r.GET("/api/market/klines", handlers.GetKlines)

@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TrendingUp, Wallet, Clock, ArrowUpRight, ArrowDownRight } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet } from "@/lib/api";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({ totalOrders: 0, totalWallets: 0 });
@@ -17,8 +16,8 @@ export default function DashboardPage() {
     if (!token) return;
 
     Promise.all([
-      fetch(`${API}/api/exchange/orders`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch(`${API}/api/wallet/balances`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      authGet("/api/exchange/orders").then(r => r.json()),
+      authGet("/api/wallet/balances").then(r => r.json()),
     ]).then(([ordersData, walletData]) => {
       setOrders(Array.isArray(ordersData) ? ordersData : Array.isArray(ordersData.orders) ? ordersData.orders : []);
       setBalances(Array.isArray(walletData) ? walletData : Array.isArray(walletData.balances) ? walletData.balances : []);
@@ -46,7 +45,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "رصيد المحفظة", value: `${balances.filter(b => parseFloat(b.balance || "0") > 0).length || 0} أصول`, icon: Wallet, color: "text-emerald-500", bg: "bg-emerald-500/10" },
-          { label: "طلبات مفتوحة", value: orders.filter(o => o.status === "OPEN").length.toString(), icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-500/10" },
+          { label: "طلبات مفتوحة", value: orders.filter(o => o.status === "OPEN" || o.status === "PENDING").length.toString(), icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-500/10" },
           { label: "الطلبات الكلية", value: orders.length.toString(), icon: Clock, color: "text-purple-500", bg: "bg-purple-500/10" },
           { label: "BTC", value: prices["BTCUSDT"] ? `$${parseFloat(prices["BTCUSDT"]).toLocaleString()}` : "—", icon: TrendingUp, color: "text-orange-500", bg: "bg-orange-500/10" },
         ].map((item, i) => {

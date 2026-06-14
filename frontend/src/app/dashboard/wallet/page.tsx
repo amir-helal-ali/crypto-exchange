@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Wallet, Send, ArrowDownToLine, Copy, Check } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet, authPost } from "@/lib/api";
 
 const CURRENCIES = ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "ADA", "DOGE", "DOT"];
 
@@ -17,16 +16,22 @@ export default function WalletPage() {
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
+  const fetchData = async () => {
+    try {
+      const [balRes, txRes] = await Promise.all([
+        authGet("/api/wallet/balances"),
+        authGet("/api/wallet/transactions"),
+      ]);
+      const balData = await balRes.json();
+      const txData = await txRes.json();
+      setBalances(Array.isArray(balData) ? balData : Array.isArray(balData.balances) ? balData.balances : []);
+      setTransactions(Array.isArray(txData) ? txData : Array.isArray(txData.transactions) ? txData.transactions : []);
+    } catch {}
+  };
+
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-
-    const fetchData = () => {
-      fetch(`${API}/api/wallet/balances`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json()).then(d => setBalances(Array.isArray(d) ? d : Array.isArray(d.balances) ? d.balances : [])).catch(() => {});
-      fetch(`${API}/api/wallet/transactions`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json()).then(d => setTransactions(Array.isArray(d) ? d : Array.isArray(d.transactions) ? d.transactions : [])).catch(() => {});
-    };
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
@@ -47,22 +52,15 @@ export default function WalletPage() {
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem("token");
-    if (!token) { toast.error("يرجى تسجيل الدخول"); return; }
     setWithdrawLoading(true);
     try {
-      const res = await fetch(`${API}/api/wallet/withdraw`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(withdrawForm),
-      });
+      const res = await authPost("/api/wallet/withdraw", withdrawForm);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل طلب السحب"); return; }
       toast.success("تم تقديم طلب السحب بنجاح");
       setShowWithdraw(false);
       setWithdrawForm({ currency: "USDT", amount: "", address: "" });
-      fetch(`${API}/api/wallet/balances`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => setBalances(Array.isArray(d) ? d : Array.isArray(d.balances) ? d.balances : [])).catch(() => {});
-      fetch(`${API}/api/wallet/transactions`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => setTransactions(Array.isArray(d) ? d : Array.isArray(d.transactions) ? d.transactions : [])).catch(() => {});
+      fetchData();
     } catch { toast.error("حدث خطأ في الاتصال"); }
     finally { setWithdrawLoading(false); }
   };
@@ -144,21 +142,21 @@ export default function WalletPage() {
           {transactions.map((tx: any, i: number) => (
             <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-muted/20">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${tx.type === "DEPOSIT" ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
-                  {tx.type === "DEPOSIT" ? <ArrowDownToLine className="h-4 w-4 text-emerald-500" /> : <Send className="h-4 w-4 text-red-500" />}
+                <div className={`p-2 rounded-lg ${tx.type === "deposit" || tx.type === "DEPOSIT" ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
+                  {tx.type === "deposit" || tx.type === "DEPOSIT" ? <ArrowDownToLine className="h-4 w-4 text-emerald-500" /> : <Send className="h-4 w-4 text-red-500" />}
                 </div>
                 <div>
-                  <p className="text-sm font-medium">{tx.type === "DEPOSIT" ? "إيداع" : "سحب"} {tx.currency}</p>
+                  <p className="text-sm font-medium">{tx.type === "deposit" || tx.type === "DEPOSIT" ? "إيداع" : "سحب"} {tx.currency}</p>
                   <p className="text-[10px] text-muted-foreground">{new Date(tx.created_at || tx.CreatedAt).toLocaleDateString("ar-EG")}</p>
                 </div>
               </div>
               <div className="text-left flex items-center gap-3">
                 <div>
-                  <p className={`text-sm font-bold tabular-nums ${tx.type === "DEPOSIT" ? "text-emerald-500" : "text-red-500"}`}>
-                    {tx.type === "DEPOSIT" ? "+" : "-"}{parseFloat(tx.amount || "0").toFixed(8)}
+                  <p className={`text-sm font-bold tabular-nums ${tx.type === "deposit" || tx.type === "DEPOSIT" ? "text-emerald-500" : "text-red-500"}`}>
+                    {tx.type === "deposit" || tx.type === "DEPOSIT" ? "+" : "-"}{parseFloat(tx.amount || "0").toFixed(8)}
                   </p>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${tx.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-500" : tx.status === "PENDING" ? "bg-yellow-500/10 text-yellow-500" : "bg-red-500/10 text-red-500"}`}>
-                    {tx.status === "COMPLETED" ? "مكتمل" : tx.status === "PENDING" ? "قيد الانتظار" : "فشل"}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${tx.status === "COMPLETED" || tx.status === "completed" ? "bg-emerald-500/10 text-emerald-500" : tx.status === "PENDING" || tx.status === "pending" ? "bg-yellow-500/10 text-yellow-500" : "bg-red-500/10 text-red-500"}`}>
+                    {tx.status === "COMPLETED" || tx.status === "completed" ? "مكتمل" : tx.status === "PENDING" || tx.status === "pending" ? "قيد الانتظار" : "فشل"}
                   </span>
                 </div>
                 {tx.tx_id && (

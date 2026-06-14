@@ -6,10 +6,16 @@
  * 2. When a 401 is received, the client automatically tries to refresh using the refresh token
  * 3. If refresh succeeds, the original request is retried with the new token
  * 4. If refresh fails, the user is redirected to login
+ *
+ * Also provides:
+ * - FormData upload support
+ * - Standardized API response parsing
+ * - Network error handling
  */
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
+// --- Token Refresh Queue ---
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (token: string) => void;
@@ -34,6 +40,7 @@ const processQueue = (error: any, token: string | null = null) => {
 async function refreshAccessToken(): Promise<string> {
   const refreshToken = localStorage.getItem("refresh_token");
   if (!refreshToken) {
+    forceLogout();
     throw new Error("No refresh token available");
   }
 
@@ -44,11 +51,7 @@ async function refreshAccessToken(): Promise<string> {
   });
 
   if (!res.ok) {
-    // Refresh token is invalid — force logout
-    localStorage.removeItem("token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
-    window.location.href = "/login";
+    forceLogout();
     throw new Error("Refresh token expired");
   }
 
@@ -60,8 +63,35 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 /**
+ * Force logout: clear all auth data and redirect to login.
+ * Called when both access and refresh tokens are invalid.
+ */
+function forceLogout() {
+  localStorage.removeItem("token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("user");
+  // Only redirect if we're not already on login/register pages
+  if (
+    typeof window !== "undefined" &&
+    !window.location.pathname.startsWith("/login") &&
+    !window.location.pathname.startsWith("/register") &&
+    !window.location.pathname.startsWith("/verify-email") &&
+    !window.location.pathname.startsWith("/reset-password") &&
+    !window.location.pathname.startsWith("/forgot-password")
+  ) {
+    window.location.href = "/login";
+  }
+}
+
+/**
  * Authenticated fetch wrapper with automatic token refresh.
  * Use this instead of raw fetch() for all authenticated API calls.
+ *
+ * Features:
+ * - Auto-sets Authorization header
+ * - Auto-refreshes expired JWT tokens (401 → refresh → retry)
+ * - Queues concurrent requests during refresh (prevents race conditions)
+ * - Handles FormData (file uploads) without setting Content-Type
  */
 export async function authFetch(
   url: string,
@@ -69,8 +99,11 @@ export async function authFetch(
 ): Promise<Response> {
   const token = localStorage.getItem("token");
 
+  // Detect if body is FormData — don't set Content-Type (browser sets multipart boundary)
+  const isFormData = options.body instanceof FormData;
+
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options.headers as Record<string, string>),
   };
 
@@ -78,7 +111,13 @@ export async function authFetch(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  let response = await fetch(url, { ...options, headers });
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, headers });
+  } catch (networkError) {
+    // Network error (no internet, CORS, server down)
+    throw new ApiError("NETWORK_ERROR", "تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.", 0);
+  }
 
   // If 401, try to refresh the token
   if (response.status === 401) {
@@ -115,15 +154,62 @@ export async function authFetch(
   return response;
 }
 
+// --- Custom Error Class ---
+
+export class ApiError extends Error {
+  code: string;
+  status: number;
+
+  constructor(code: string, message: string, status: number = 500) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+// --- Standardized API Response Parser ---
+
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data: T;
+  message: string;
+  error?: string;
+}
+
 /**
- * Convenience method for authenticated GET requests
+ * Parse an API response and throw a standardized error if not ok.
+ * Use this for cleaner error handling in components.
+ *
+ * @example
+ * const data = await parseApiResponse<MyData>(res);
+ * // data is typed as MyData
+ */
+export async function parseApiResponse<T = any>(res: Response): Promise<T> {
+  const json = await res.json();
+
+  if (!res.ok) {
+    throw new ApiError(
+      json.code || "UNKNOWN_ERROR",
+      json.error || "حدث خطأ غير متوقع",
+      res.status
+    );
+  }
+
+  return json.data ?? json;
+}
+
+// --- Convenience Methods ---
+
+/**
+ * Authenticated GET request
  */
 export async function authGet(path: string): Promise<Response> {
   return authFetch(`${API}${path}`);
 }
 
 /**
- * Convenience method for authenticated POST requests
+ * Authenticated POST request with JSON body
  */
 export async function authPost(
   path: string,
@@ -136,7 +222,7 @@ export async function authPost(
 }
 
 /**
- * Convenience method for authenticated PUT requests
+ * Authenticated PUT request with JSON body
  */
 export async function authPut(
   path: string,
@@ -149,8 +235,21 @@ export async function authPut(
 }
 
 /**
- * Convenience method for authenticated DELETE requests
+ * Authenticated DELETE request
  */
 export async function authDelete(path: string): Promise<Response> {
   return authFetch(`${API}${path}`, { method: "DELETE" });
+}
+
+/**
+ * Authenticated file upload (FormData)
+ */
+export async function authUpload(
+  path: string,
+  formData: FormData
+): Promise<Response> {
+  return authFetch(`${API}${path}`, {
+    method: "POST",
+    body: formData,
+  });
 }

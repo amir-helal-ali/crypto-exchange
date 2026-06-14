@@ -3,8 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import { TrendingUp, TrendingDown, ArrowUpDown } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet, authPost, authFetch } from "@/lib/api";
 
 const PAIRS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "DOTUSDT"];
 
@@ -42,24 +41,22 @@ export default function ExchangePage() {
   const wsRef = useRef<WebSocket | null>(null);
   const prevPrices = useRef<Record<string, number>>({});
 
-  const fetchOrders = useCallback(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    fetch(`${API}/api/exchange/orders`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => {
-        const data = d.data;
-        setOrders(Array.isArray(data) ? data : []);
-      }).catch(() => {});
+  const fetchOrders = useCallback(async () => {
+    try {
+      const r = await authGet("/api/exchange/orders");
+      const d = await r.json();
+      const data = d.data;
+      setOrders(Array.isArray(data) ? data : []);
+    } catch {}
   }, []);
 
-  const fetchWallets = useCallback(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    fetch(`${API}/api/wallet/balances`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => {
-        const data = d.data;
-        setWallets(Array.isArray(data) ? data : []);
-      }).catch(() => {});
+  const fetchWallets = useCallback(async () => {
+    try {
+      const r = await authGet("/api/wallet/balances");
+      const d = await r.json();
+      const data = d.data;
+      setWallets(Array.isArray(data) ? data : []);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -135,14 +132,12 @@ export default function ExchangePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem("token");
-    if (!token) { toast.error("يرجى تسجيل الدخول أولاً"); return; }
     setLoading(true);
     try {
       const body: any = { symbol: selectedPair, side, type: orderType, quantity: form.quantity };
       if (orderType === "LIMIT" || orderType === "STOP_LIMIT") body.price = form.price;
       if (orderType === "STOP_LIMIT" || orderType === "TAKE_PROFIT") body.stop_price = form.stopPrice;
-      const res = await fetch(`${API}/api/exchange/order`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+      const res = await authPost("/api/exchange/order", body);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل تنفيذ الأمر"); return; }
       toast.success(data.message || "تم تنفيذ الأمر بنجاح");
@@ -154,10 +149,8 @@ export default function ExchangePage() {
   };
 
   const handleCancel = async (orderId: number) => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
     try {
-      const res = await fetch(`${API}/api/exchange/order/${orderId}/cancel`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const res = await authPost(`/api/exchange/order/${orderId}/cancel`);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل إلغاء الأمر"); return; }
       toast.success(data.message || "تم إلغاء الأمر بنجاح");

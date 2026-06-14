@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { User, Mail, Save, Shield, Lock, Eye, EyeOff } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authPut, authPost } from "@/lib/api";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<any>({ username: "", email: "" });
@@ -30,14 +29,9 @@ export default function ProfilePage() {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem("token");
     setSaving(true);
     try {
-      const res = await fetch(`${API}/api/user/profile`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(profileForm),
-      });
+      const res = await authPut("/api/user/profile", profileForm);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل تحديث الملف"); return; }
       const updatedUser = { ...user, ...profileForm };
@@ -54,13 +48,11 @@ export default function ProfilePage() {
       toast.error("كلمة المرور الجديدة غير متطابقة");
       return;
     }
-    const token = localStorage.getItem("token");
     setChangingPwd(true);
     try {
-      const res = await fetch(`${API}/api/user/change-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ current_password: passwordForm.current_password, new_password: passwordForm.new_password }),
+      const res = await authPost("/api/user/change-password", {
+        current_password: passwordForm.current_password,
+        new_password: passwordForm.new_password,
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل تغيير كلمة المرور"); return; }
@@ -132,7 +124,7 @@ export default function ProfilePage() {
               <label className="block text-sm font-medium mb-1.5">كلمة المرور الحالية</label>
               <div className="relative">
                 <input type={showPwd.current ? "text" : "password"} className="input-field pl-10" placeholder="••••••••" value={passwordForm.current_password} onChange={e => setPasswordForm({ ...passwordForm, current_password: e.target.value })} required />
-                <button type="button" onClick={() => setShowPwd({ ...showPwd, current: !showPwd.current })} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"><Eye className="h-4 w-4" /></button>
+                <button type="button" onClick={() => setShowPwd({ ...showPwd, current: !showPwd.current })} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPwd.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -140,14 +132,14 @@ export default function ProfilePage() {
                 <label className="block text-sm font-medium mb-1.5">كلمة المرور الجديدة</label>
                 <div className="relative">
                   <input type={showPwd.new ? "text" : "password"} className="input-field pl-10" placeholder="••••••••" value={passwordForm.new_password} onChange={e => setPasswordForm({ ...passwordForm, new_password: e.target.value })} required minLength={6} />
-                  <button type="button" onClick={() => setShowPwd({ ...showPwd, new: !showPwd.new })} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"><Eye className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setShowPwd({ ...showPwd, new: !showPwd.new })} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPwd.new ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">تأكيد كلمة المرور</label>
                 <div className="relative">
                   <input type={showPwd.confirm ? "text" : "password"} className="input-field pl-10" placeholder="••••••••" value={passwordForm.confirm_password} onChange={e => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })} required minLength={6} />
-                  <button type="button" onClick={() => setShowPwd({ ...showPwd, confirm: !showPwd.confirm })} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"><Eye className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setShowPwd({ ...showPwd, confirm: !showPwd.confirm })} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPwd.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
                 </div>
               </div>
             </div>

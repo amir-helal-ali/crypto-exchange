@@ -18,8 +18,7 @@ import {
   Smartphone,
   Trash2,
 } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet, authPost } from "@/lib/api";
 
 interface User {
   id: number;
@@ -77,9 +76,7 @@ export default function SecurityPage() {
   const fetchSessions = async () => {
     setSessionsLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/sessions`, {
-        headers: authHeaders(),
-      });
+      const res = await authGet("/api/auth/sessions");
       if (res.ok) {
         const data = await res.json();
         setSessions(data.data || []);
@@ -93,10 +90,7 @@ export default function SecurityPage() {
 
   const handleRevokeSession = async (sessionId: number) => {
     try {
-      const res = await fetch(`${API}/api/auth/sessions/${sessionId}/revoke`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
+      const res = await authPost(`/api/auth/sessions/${sessionId}/revoke`);
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل إنهاء الجلسة");
@@ -109,19 +103,11 @@ export default function SecurityPage() {
     }
   };
 
-  const authHeaders = () => ({
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("token")}`,
-  });
-
   // --- 2FA Setup Flow ---
   const handleSetup2FA = async () => {
     setSetupLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/setup-2fa`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
+      const res = await authPost("/api/auth/setup-2fa");
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل إعداد المصادقة الثنائية");
@@ -144,11 +130,7 @@ export default function SecurityPage() {
     }
     setVerifyLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/enable-2fa`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ code: verifyCode }),
-      });
+      const res = await authPost("/api/auth/enable-2fa", { code: verifyCode });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "رمز التحقق غير صحيح");
@@ -179,11 +161,7 @@ export default function SecurityPage() {
     }
     setDisableLoading(true);
     try {
-      const res = await fetch(`${API}/api/auth/disable-2fa`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ password: disablePassword, code: disableCode }),
-      });
+      const res = await authPost("/api/auth/disable-2fa", { password: disablePassword, code: disableCode });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل تعطيل المصادقة الثنائية");
