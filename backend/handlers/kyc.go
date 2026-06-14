@@ -3,6 +3,9 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"crypto-exchange-backend/database"
@@ -11,8 +14,69 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// UploadKYCDocument handles POST /api/kyc/upload
+// Allows users to upload KYC document images (passport, national ID, etc.)
+func UploadKYCDocument(c *gin.Context) {
+	file, err := c.FormFile("document")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "لم يتم تقديم ملف"})
+		return
+	}
+
+	// Max file size: 10MB for KYC documents
+	if file.Size > 10*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت"})
+		return
+	}
+
+	// Validate file extension
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowedExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".pdf": true}
+	if !allowedExts[ext] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "نوع ملف غير مدعوم. الأنواع المسموحة: jpg, jpeg, png, webp, pdf"})
+		return
+	}
+
+	// Create KYC upload directory
+	uploadDir := "./uploads/kyc"
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل إنشاء مجلد الرفع"})
+		return
+	}
+
+	// Generate unique filename with user ID prefix
+	userID := c.GetUint("user_id")
+	filename := fmt.Sprintf("kyc_%d_%d%s", userID, time.Now().UnixNano(), ext)
+	dst := filepath.Join(uploadDir, filename)
+
+	if err := c.SaveUploadedFile(file, dst); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل حفظ الملف"})
+		return
+	}
+
+	documentURL := "/uploads/kyc/" + filename
+	c.JSON(http.StatusOK, gin.H{
+		"success":      true,
+		"url":          documentURL,
+		"filename":     filename,
+		"message":      "تم رفع الملف بنجاح",
+	})
+}
+
 func SubmitKYC(c *gin.Context) {
 	userID := c.GetUint("user_id")
+
+	// Check if user already has a pending or approved KYC request
+	var existingKYC models.KYCRequest
+	if err := database.DB.Where("user_id = ? AND status IN ?", userID, []string{"PENDING", "APPROVED"}).First(&existingKYC).Error; err == nil {
+		if existingKYC.Status == "APPROVED" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "تم التحقق من هويتك بالفعل"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "لديك طلب تحقق قيد المراجعة بالفعل"})
+		return
+	}
+
 	var input struct {
 		FullName       string `json:"full_name" binding:"required"`
 		DocumentType   string `json:"document_type" binding:"required,oneof=passport national_id driving_license"`
@@ -21,6 +85,12 @@ func SubmitKYC(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate document URL is from our server (security: prevent external URLs)
+	if !strings.HasPrefix(input.DocumentURL, "/uploads/kyc/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "رابط المستند غير صالح. يرجى رفع الملف أولاً."})
 		return
 	}
 
@@ -34,18 +104,30 @@ func SubmitKYC(c *gin.Context) {
 	}
 
 	if err := database.DB.Create(&kyc).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "KYC request already submitted"})
+		c.JSON(http.StatusConflict, gin.H{"error": "فشل تقديم طلب التحقق. يرجى المحاولة مرة أخرى."})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"success": true, "message": "KYC request submitted successfully"})
+	database.DB.Create(&models.AuditLog{
+		UserID:    userID,
+		Action:    "KYC_SUBMITTED",
+		Details:   fmt.Sprintf("KYC request submitted: %s (%s)", input.DocumentType, input.DocumentNumber[:3]+"***"),
+		IPAddress: c.ClientIP(),
+		CreatedAt: time.Now(),
+	})
+
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"message": "تم تقديم طلب التحقق بنجاح. سيتم مراجعته خلال 24-48 ساعة.",
+		"data":    kyc,
+	})
 }
 
 func GetMyKYC(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var kyc models.KYCRequest
 	if err := database.DB.Where("user_id = ?", userID).First(&kyc).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "No KYC request found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "لم يتم تقديم طلب تحقق بعد"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": kyc})
@@ -84,7 +166,7 @@ func ReviewKYC(c *gin.Context) {
 	}
 
 	if kyc.Status != "PENDING" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "KYC request already reviewed"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "تم مراجعة هذا الطلب بالفعل"})
 		return
 	}
 
@@ -104,5 +186,5 @@ func ReviewKYC(c *gin.Context) {
 		CreatedAt: time.Now(),
 	})
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "KYC request reviewed successfully"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "تم مراجعة طلب التحقق بنجاح"})
 }

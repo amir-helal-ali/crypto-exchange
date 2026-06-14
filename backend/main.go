@@ -155,6 +155,7 @@ func main() {
         userKYC.Use(handlers.AuthMiddleware())
         {
                 userKYC.POST("/submit", handlers.SubmitKYC)
+                userKYC.POST("/upload", handlers.UploadKYCDocument)
                 userKYC.GET("/status", handlers.GetMyKYC)
         }
 

@@ -3,13 +3,14 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { LayoutDashboard, TrendingUp, Wallet, Clock, User, LogOut, Menu, X, ChevronDown, BarChart3, Shield } from "lucide-react";
+import { LayoutDashboard, TrendingUp, Wallet, Clock, User, LogOut, Menu, X, ChevronDown, BarChart3, Shield, FileText } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard", icon: LayoutDashboard, label: "لوحة التحكم" },
   { href: "/dashboard/exchange", icon: TrendingUp, label: "التداول" },
   { href: "/dashboard/wallet", icon: Wallet, label: "المحفظة" },
   { href: "/dashboard/history", icon: Clock, label: "سجل الصفقات" },
+  { href: "/dashboard/kyc", icon: FileText, label: "التحقق" },
   { href: "/dashboard/security", icon: Shield, label: "الأمان" },
   { href: "/dashboard/profile", icon: User, label: "الملف الشخصي" },
 ];
