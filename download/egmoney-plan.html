@@ -1,0 +1,1955 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EgMoney - خطة إكمال المشروع الشاملة</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  :root {
+    --bg-primary: #0a0f1a;
+    --bg-secondary: #111827;
+    --bg-card: #1a2332;
+    --bg-card-hover: #1f2b3d;
+    --accent: #10b981;
+    --accent-light: #34d399;
+    --accent-dark: #059669;
+    --gold: #f59e0b;
+    --gold-light: #fbbf24;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --cyan: #06b6d4;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border: #2d3a4d;
+    --border-light: #374151;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'Noto Sans Arabic', 'Inter', sans-serif;
+    font-size: 11pt;
+    line-height: 1.8;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 20mm 22mm;
+    margin: 0 auto;
+    background: var(--bg-primary);
+    page-break-after: always;
+    position: relative;
+  }
+
+  .page:last-child {
+    page-break-after: auto;
+  }
+
+  /* Cover Page */
+  .cover-page {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cover-page::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 70% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 30% 70%, rgba(59, 130, 246, 0.06) 0%, transparent 50%);
+    z-index: 0;
+  }
+
+  .cover-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover-logo {
+    font-size: 48pt;
+    font-weight: 900;
+    letter-spacing: -1px;
+    margin-bottom: 8mm;
+    background: linear-gradient(135deg, var(--accent-light), var(--accent), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .cover-subtitle {
+    font-size: 14pt;
+    color: var(--text-secondary);
+    margin-bottom: 15mm;
+    font-weight: 300;
+    letter-spacing: 2px;
+  }
+
+  .cover-title {
+    font-size: 22pt;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6mm;
+    line-height: 1.5;
+  }
+
+  .cover-desc {
+    font-size: 12pt;
+    color: var(--text-muted);
+    max-width: 450px;
+    margin: 0 auto 20mm;
+    line-height: 2;
+  }
+
+  .cover-meta {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .cover-meta-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 10pt;
+    color: var(--text-secondary);
+  }
+
+  .cover-meta-item span {
+    color: var(--accent-light);
+    font-weight: 600;
+  }
+
+  .cover-line {
+    width: 60px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--cyan));
+    margin: 8mm auto;
+    border-radius: 2px;
+  }
+
+  /* Phase badge */
+  .phase-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 18px;
+    border-radius: 6px;
+    font-size: 14pt;
+    font-weight: 700;
+    margin-bottom: 6mm;
+  }
+
+  .phase-4 { background: rgba(139, 92, 246, 0.15); color: var(--purple); border: 1px solid rgba(139, 92, 246, 0.3); }
+  .phase-5 { background: rgba(59, 130, 246, 0.15); color: var(--blue); border: 1px solid rgba(59, 130, 246, 0.3); }
+  .phase-6 { background: rgba(245, 158, 11, 0.15); color: var(--gold); border: 1px solid rgba(245, 158, 11, 0.3); }
+  .phase-7 { background: rgba(6, 182, 212, 0.15); color: var(--cyan); border: 1px solid rgba(6, 182, 212, 0.3); }
+  .phase-8 { background: rgba(16, 185, 129, 0.15); color: var(--accent-light); border: 1px solid rgba(16, 185, 129, 0.3); }
+
+  .phase-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 13pt;
+    font-weight: 800;
+  }
+
+  .phase-4 .phase-number { background: rgba(139, 92, 246, 0.3); }
+  .phase-5 .phase-number { background: rgba(59, 130, 246, 0.3); }
+  .phase-6 .phase-number { background: rgba(245, 158, 11, 0.3); }
+  .phase-7 .phase-number { background: rgba(6, 182, 212, 0.3); }
+  .phase-8 .phase-number { background: rgba(16, 185, 129, 0.3); }
+
+  /* Section Headers */
+  .section-title {
+    font-size: 16pt;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 4mm;
+    padding-bottom: 3mm;
+    border-bottom: 2px solid var(--border);
+  }
+
+  .feature-title {
+    font-size: 13pt;
+    font-weight: 700;
+    color: var(--accent-light);
+    margin-top: 6mm;
+    margin-bottom: 3mm;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .feature-title::before {
+    content: '';
+    width: 4px;
+    height: 18px;
+    background: var(--accent);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .sub-feature-title {
+    font-size: 11.5pt;
+    font-weight: 600;
+    color: var(--gold-light);
+    margin-top: 4mm;
+    margin-bottom: 2mm;
+  }
+
+  /* Cards */
+  .info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4mm 5mm;
+    margin: 3mm 0;
+  }
+
+  .file-card {
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.15);
+    border-radius: 6px;
+    padding: 3mm 4mm;
+    margin: 2mm 0;
+    font-size: 10pt;
+  }
+
+  .file-card-title {
+    font-weight: 600;
+    color: var(--accent-light);
+    margin-bottom: 1mm;
+    font-size: 10.5pt;
+  }
+
+  /* Lists */
+  .spec-list {
+    list-style: none;
+    padding: 0;
+    margin: 2mm 0;
+  }
+
+  .spec-list li {
+    padding: 1.5mm 0;
+    padding-right: 16px;
+    position: relative;
+    color: var(--text-secondary);
+    font-size: 10.5pt;
+    line-height: 1.9;
+  }
+
+  .spec-list li::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 9px;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .spec-list li strong {
+    color: var(--text-primary);
+  }
+
+  .numbered-list {
+    list-style: none;
+    padding: 0;
+    margin: 2mm 0;
+    counter-reset: step-counter;
+  }
+
+  .numbered-list li {
+    padding: 2mm 0;
+    padding-right: 30px;
+    position: relative;
+    color: var(--text-secondary);
+    font-size: 10.5pt;
+    line-height: 1.8;
+    counter-increment: step-counter;
+  }
+
+  .numbered-list li::before {
+    content: counter(step-counter);
+    position: absolute;
+    right: 0;
+    top: 2mm;
+    width: 20px;
+    height: 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Tables */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 3mm 0;
+    font-size: 10pt;
+  }
+
+  .data-table th {
+    background: var(--bg-card);
+    color: var(--accent-light);
+    font-weight: 600;
+    padding: 3mm 4mm;
+    text-align: right;
+    border: 1px solid var(--border);
+    font-size: 9.5pt;
+  }
+
+  .data-table td {
+    padding: 2.5mm 4mm;
+    text-align: right;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 9.5pt;
+    line-height: 1.6;
+  }
+
+  .data-table tr:nth-child(even) {
+    background: rgba(255,255,255,0.02);
+  }
+
+  /* Status badges */
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 8.5pt;
+    font-weight: 600;
+  }
+
+  .badge-done { background: rgba(16, 185, 129, 0.15); color: var(--accent-light); }
+  .badge-new { background: rgba(59, 130, 246, 0.15); color: var(--blue); }
+  .badge-critical { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+  .badge-warning { background: rgba(245, 158, 11, 0.15); color: var(--gold-light); }
+
+  /* TOC */
+  .toc-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 2.5mm 0;
+    border-bottom: 1px dotted var(--border);
+    font-size: 11pt;
+  }
+
+  .toc-item-phase {
+    font-weight: 700;
+    font-size: 12pt;
+    padding: 3mm 0 2mm;
+    border-bottom: none;
+    margin-top: 2mm;
+  }
+
+  .toc-item-feature {
+    padding-right: 15px;
+    font-size: 10.5pt;
+  }
+
+  .toc-page {
+    color: var(--text-muted);
+    font-size: 10pt;
+    font-weight: 400;
+  }
+
+  /* Flow diagram */
+  .flow-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin: 4mm 0;
+    flex-wrap: wrap;
+    direction: ltr;
+  }
+
+  .flow-step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 9pt;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .flow-arrow {
+    color: var(--accent);
+    font-size: 14pt;
+    font-weight: 700;
+  }
+
+  /* Priority indicator */
+  .priority-critical { color: var(--red); font-weight: 700; }
+  .priority-high { color: var(--gold-light); font-weight: 700; }
+  .priority-medium { color: var(--blue); font-weight: 700; }
+  .priority-low { color: var(--text-muted); font-weight: 600; }
+
+  /* Code snippet */
+  .code-inline {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--accent-light);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 9.5pt;
+    direction: ltr;
+    unicode-bidi: embed;
+  }
+
+  /* Summary stats */
+  .stats-row {
+    display: flex;
+    gap: 12px;
+    margin: 5mm 0;
+    flex-wrap: wrap;
+  }
+
+  .stat-item {
+    flex: 1;
+    min-width: 120px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4mm;
+    text-align: center;
+  }
+
+  .stat-number {
+    font-size: 20pt;
+    font-weight: 800;
+    margin-bottom: 1mm;
+  }
+
+  .stat-label {
+    font-size: 9pt;
+    color: var(--text-muted);
+  }
+
+  .stat-purple .stat-number { color: var(--purple); }
+  .stat-blue .stat-number { color: var(--blue); }
+  .stat-gold .stat-number { color: var(--gold); }
+  .stat-cyan .stat-number { color: var(--cyan); }
+  .stat-green .stat-number { color: var(--accent-light); }
+
+  /* Warning box */
+  .warning-box {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 6px;
+    padding: 3mm 5mm;
+    margin: 3mm 0;
+  }
+
+  .warning-box-title {
+    color: var(--red);
+    font-weight: 700;
+    font-size: 10.5pt;
+    margin-bottom: 1mm;
+  }
+
+  .info-box {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 6px;
+    padding: 3mm 5mm;
+    margin: 3mm 0;
+  }
+
+  .info-box-title {
+    color: var(--blue);
+    font-weight: 700;
+    font-size: 10.5pt;
+    margin-bottom: 1mm;
+  }
+
+  p {
+    margin-bottom: 2mm;
+    color: var(--text-secondary);
+    font-size: 10.5pt;
+    line-height: 1.85;
+  }
+
+  .text-primary { color: var(--text-primary); }
+  .text-accent { color: var(--accent-light); }
+  .text-muted { color: var(--text-muted); }
+  .text-small { font-size: 9.5pt; }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 5mm 0;
+  }
+
+  .mb-sm { margin-bottom: 2mm; }
+  .mb-md { margin-bottom: 4mm; }
+  .mb-lg { margin-bottom: 6mm; }
+  .mt-sm { margin-top: 2mm; }
+  .mt-md { margin-top: 4mm; }
+</style>
+</head>
+<body>
+
+<!-- ==================== COVER PAGE ==================== -->
+<div class="page cover-page">
+  <div class="cover-content">
+    <div class="cover-logo">EgMoney</div>
+    <div class="cover-subtitle">منصة تبادل العملات الرقمية</div>
+    <div class="cover-line"></div>
+    <div class="cover-title">الخطة الشاملة لإكمال المشروع</div>
+    <p class="cover-desc">
+      وثيقة هندسية تفصيلية تحدد جميع الميزات المتبقية والمتطلبات التقنية اللازمة لتحويل منصة EgMoney إلى منصة إنتاجية جاهزة للنشر الفعلي، مع التزام صارم بالسلامة المالية وجودة الكود وتناسق الأنواع بين الواجهة والخادم.
+    </p>
+    <div class="cover-meta">
+      <div class="cover-meta-item">الإصدار: <span>2.0</span></div>
+      <div class="cover-meta-item">التاريخ: <span>يونيو 2026</span></div>
+      <div class="cover-meta-item">الحالة: <span>نشطة</span></div>
+      <div class="cover-meta-item">الأولوية: <span>إنتاجية</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TABLE OF CONTENTS ==================== -->
+<div class="page">
+  <div class="section-title">فهرس المحتويات</div>
+
+  <div class="stats-row mb-lg">
+    <div class="stat-item stat-purple">
+      <div class="stat-number">5</div>
+      <div class="stat-label">مراحل تطوير</div>
+    </div>
+    <div class="stat-item stat-blue">
+      <div class="stat-number">18</div>
+      <div class="stat-label">ميزة رئيسية</div>
+    </div>
+    <div class="stat-item stat-gold">
+      <div class="stat-number">45+</div>
+      <div class="stat-label">ملف للتطوير/التعديل</div>
+    </div>
+    <div class="stat-item stat-cyan">
+      <div class="stat-number">8</div>
+      <div class="stat-label">جداول قاعدة بيانات جديدة</div>
+    </div>
+    <div class="stat-item stat-green">
+      <div class="stat-number">3</div>
+      <div class="stat-label">مراحل مكتملة</div>
+    </div>
+  </div>
+
+  <div class="toc-item toc-item-phase" style="color: var(--accent-light);">
+    المراحل المكتملة (المراحل 1-3)
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>إصلاح أخطاء KYC والمعاملات + محرك المطابقة + نظام حجز الأموال</span>
+    <span class="badge badge-done">تم</span>
+  </div>
+
+  <div class="toc-item toc-item-phase" style="color: var(--purple);">
+    المرحلة الرابعة: الأمان والتحقق
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>4.1 تأكيد البريد الإلكتروني عند التسجيل</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>4.2 المصادقة الثنائية (2FA/TOTP)</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>4.3 رفع ملفات KYC الفعلية</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>4.4 إدارة الجلسات وتجديد الرمز</span>
+  </div>
+
+  <div class="toc-item toc-item-phase" style="color: var(--blue);">
+    المرحلة الخامسة: البنية التحتية وجودة الكود
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>5.1 طبقة API المركزية (Frontend + Admin)</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>5.2 مكتبة المكونات المشتركة</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>5.3 التحقق من المدخلات (Backend + Frontend)</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>5.4 إشعارات WebSocket الفورية للأوردرات</span>
+  </div>
+
+  <div class="toc-item toc-item-phase" style="color: var(--gold);">
+    المرحلة السادسة: تحسينات التداول
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>6.1 رسوم التداول والعمولات</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>6.2 تكامل مكتبة lightweight-charts</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>6.3 واجهة الإيداع في صفحة المحفظة</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>6.4 ترقيم الصفحات والتصفية للتاريخ</span>
+  </div>
+
+  <div class="toc-item toc-item-phase" style="color: var(--cyan);">
+    المرحلة السابعة: تجربة المستخدم
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>7.1 واجهة تقديم KYC للمستخدم</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>7.2 نظام الإشعارات</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>7.3 صفحة سجلات التدقيق للإدارة</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>7.4 مكونات UI احترافية (Modals, Alerts)</span>
+  </div>
+
+  <div class="toc-item toc-item-phase" style="color: var(--accent-light);">
+    المرحلة الثامنة: التجهيز للإنتاج
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>8.1 إدارة المتغيرات البيئية و .env.example</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>8.2 Redis لمحدد المعدل والتخزين المؤقت</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>8.3 ترقيم إصدارات API</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>8.4 الاختبارات (وحدة + تكامل + E2E)</span>
+  </div>
+  <div class="toc-item toc-item-feature">
+    <span>8.5 CI/CD وبرامج النشر</span>
+  </div>
+</div>
+
+<!-- ==================== PHASE 4: SECURITY ==================== -->
+<div class="page">
+  <div class="phase-badge phase-4">
+    <span class="phase-number">4</span>
+    المرحلة الرابعة: الأمان والتحقق
+  </div>
+  <p class="mb-md">
+    هذه المرحلة تركز على تعزيز أمان المنصة بشكل جذري. بدون تأكيد البريد الإلكتروني والمصادقة الثنائية، لا يمكن اعتبار المنصة آمنة للاستخدام الإنتاجي مع أموال حقيقية. كل ميزة في هذه المرحلة تعتبر <span class="priority-critical">حرجة</span> للأمان.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- 4.1 Email Verification -->
+  <div class="feature-title">4.1 تأكيد البريد الإلكتروني عند التسجيل</div>
+  <p>
+    حالياً يمكن لأي مستخدم التسجيل والبدء بالتداول فوراً دون تأكيد بريده الإلكتروني. هذا يفتح الباب أمام الحسابات المزيفة والبريد المزعج. يجب تعديل مسار التسجيل ليتطلب تأكيد البريد قبل تفعيل الحساب.
+  </p>
+
+  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+  <div class="info-card">
+    <ul class="spec-list">
+      <li><strong>إضافة حقل لنموذج User:</strong> <span class="code-inline">EmailVerified bool `gorm:"default:false" json:"email_verified"`</span></li>
+      <li><strong>نموذج جديد EmailVerificationToken:</strong> مماثل لـ PasswordResetToken، يحتوي على UserID, Token (64 حرف عشوائي), ExpiresAt (24 ساعة), Used</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">handlers/auth.go</div>
+    <ul class="spec-list">
+      <li><strong>Register:</strong> بعد إنشاء المستخدم بنجاح، توليد رمز تحقق عشوائي 64 بايت وحفظه في EmailVerificationToken، ثم إرسال بريد يحتوي على رابط التحقق (مثال: <span class="code-inline">https://eg-money.local/verify-email?token=xxx</span>). المستخدم يُنشأ بحالة <span class="code-inline">EmailVerified=false</span>. لا يتم تسجيل الدخول تلقائياً بعد التسجيل.</li>
+      <li><strong>VerifyEmail (مسار جديد GET /api/auth/verify-email):</strong> مسار عام يستقبل token من query parameter. يبحث عن الرمز في قاعدة البيانات، يتحقق من عدم انتهاء الصلاحية وعدم الاستخدام السابق. إذا صالح: يحدّث <span class="code-inline">User.EmailVerified=true</span> ويحذف الرمز. يُرجع رسالة نجاح أو خطأ مناسب.</li>
+      <li><strong>ResendVerification (مسار جديد POST /api/auth/resend-verification):</strong> يستقبل البريد الإلكتروني، يبحث عن المستخدم، إذا لم يكن مؤكدًا يُنشئ رمزًا جديدًا ويرسله. معدل محدود: طلب واحد كل 60 ثانية.</li>
+      <li><strong>Login:</strong> إضافة تحقق: إذا <span class="code-inline">user.EmailVerified == false</span> يُرجع خطأ 403 مع رسالة "يرجى تأكيد بريدك الإلكتروني أولاً".</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">email/email.go</div>
+    <ul class="spec-list">
+      <li>إضافة دالة <span class="code-inline">SendVerificationEmail(to, token string)</span> بقوالب HTML احترافية تحمل شعار EgMoney وزر تأكيد واضح.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">main.go</div>
+    <ul class="spec-list">
+      <li>إضافة المسارات العامة الجديدة: <span class="code-inline">GET /api/auth/verify-email</span> و <span class="code-inline">POST /api/auth/resend-verification</span></li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+  <div class="file-card">
+    <div class="file-card-title">register/page.tsx</div>
+    <ul class="spec-list">
+      <li>بعد التسجيل الناجح، عرض رسالة "تم إرسال رابط التأكيد إلى بريدك" بدلاً من تسجيل الدخول التلقائي.</li>
+      <li>إضافة رابط "إعادة إرسال رابط التأكيد" يعمل بعد 60 ثانية.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">verify-email/page.tsx (صفحة جديدة)</div>
+    <ul class="spec-list">
+      <li>يستقبل token من URL، يستدعي <span class="code-inline">GET /api/auth/verify-email?token=xxx</span>.</li>
+      <li>عرض حالة النجاح مع زر "تسجيل الدخول" أو حالة الخطأ مع خيار إعادة الإرسال.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">login/page.tsx</div>
+    <ul class="spec-list">
+      <li>إذا أرجع الخادم خطأ 403 (بريد غير مؤكد)، عرض رسالة واضحة مع زر "إعادة إرسال رابط التأكيد".</li>
+    </ul>
+  </div>
+
+  <div class="warning-box">
+    <div class="warning-box-title">تنبيه أمني</div>
+    <p style="margin:0; font-size:10pt;">رمز التحقق يجب أن يكون عشوائياً بتشفير آمن (crypto/rand) وليس رياضياً (math/rand). مدة الصلاحية 24 ساعة كحد أقصى. لا يجوز كشف ما إذا كان البريد مسجلاً أم لا في API إعادة الإرسال (نفس الرسالة دائماً).</p>
+  </div>
+</div>
+
+<!-- ==================== 4.2 2FA ==================== -->
+<div class="page">
+  <div class="feature-title">4.2 المصادقة الثنائية (2FA/TOTP)</div>
+  <p>
+    توفر المصادقة الثنائية طبقة حماية إضافية ضد اختراق كلمات المرور. نستخدم معيار TOTP (Time-based One-Time Password) المتوافق مع تطبيقات Google Authenticator و Authy. المصادقة الثنائية اختيارية للمستخدمين ولكنها إلزامية للإدارة عند سحب الأموال.
+  </p>
+
+  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+  <div class="info-card">
+    <ul class="spec-list">
+      <li><strong>إضافة حقول لنموذج User:</strong> <span class="code-inline">TwoFASecret string `gorm:"size:100" json:"-"`</span> و <span class="code-inline">TwoFAEnabled bool `gorm:"default:false" json:"two_fa_enabled"`</span> و <span class="code-inline">TwoFABackupCodes string `gorm:"type:text" json:"-"`</span> (رموز طوارئ مشفرة JSON)</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">go.mod</div>
+    <ul class="spec-list">
+      <li>إضافة مكتبة: <span class="code-inline">github.com/pquerna/otp</span> (مكتبة TOTP القياسية في Go)</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">handlers/auth.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>Login:</strong> بعد التحقق من كلمة المرور، إذا <span class="code-inline">TwoFAEnabled=true</span>: لا يُرجع الرمز المميز (JWT) مباشرة. بل يُرجع <span class="code-inline">{success: true, requires_2fa: true, temp_token: "xxx"}</span> حيث temp_token صالح لمدة 5 دقائق فقط.</li>
+      <li><strong>Verify2FA (مسار جديد POST /api/auth/verify-2fa):</strong> يستقبل temp_token ورمز TOTP (6 أرقام). يتحقق من صحة temp_token ثم يتحقق من رمز TOTP باستخدام المكتبة. إذا صحيح: يُرجع الرمز المميز (JWT) الكامل. يتحقق أيضاً من رموز الطوارئ الاحتياطية.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">handlers/twofa.go (ملف جديد)</div>
+    <ul class="spec-list">
+      <li><strong>Setup2FA (POST /api/user/2fa/setup):</strong> يولد سر TOTP فريد للمستخدم باستخدام <span class="code-inline">totp.Generate()</span>، يحفظه في User.TwoFASecret (بدون تفعيل بعد)، يُرجع QR code URL (otpauth://totp/...) لعرضه في الواجهة.</li>
+      <li><strong>Enable2FA (POST /api/user/2fa/enable):</strong> يستقبل رمز TOTP للتأكيد. إذا صحيح: يفعّل <span class="code-inline">TwoFAEnabled=true</span> ويولد 10 رموز طوارئ أحادية الاستخدام ويحفظها مشفرة. يُرجع الرموز الاحتياطية مرة واحدة فقط.</li>
+      <li><strong>Disable2FA (POST /api/user/2fa/disable):</strong> يتطلب كلمة المرور الحالية + رمز TOTP. يوقف <span class="code-inline">TwoFAEnabled=false</span> ويمسح السر والرموز الاحتياطية.</li>
+      <li><strong>GenerateBackupCodes (POST /api/user/2fa/backup-codes):</strong> يتطلب كلمة المرور + رمز TOTP. يولد مجموعة جديدة من رموز الطوارئ (يبطل القديمة).</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">handlers/wallet.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>WithdrawCurrency:</strong> إذا <span class="code-inline">TwoFAEnabled=true</span>، يتطلب رمز TOTP إضافي في الطلب <span class="code-inline">two_fa_code</span>. التحقق منه قبل معالجة السحب.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+  <div class="file-card">
+    <div class="file-card-title">login/page.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>إذا أرجع الخادم <span class="code-inline">requires_2fa: true</span>، عرض حقل إدخال رمز TOTP بدلاً من إكمال تسجيل الدخول.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">dashboard/profile/page.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>إضافة قسم "المصادقة الثنائية": زر "تفعيل" يعرض QR code + حقل تأكيد الرمز. إذا مفعّل: عرض حالة "مفعّل" مع زر "تعطيل" وزر "إعادة إنشاء رموز الطوارئ".</li>
+      <li>حفظ رموز الطوارئ عند التفعيل الأول وعرض تحذير "احفظ هذه الرموز في مكان آمن".</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">dashboard/wallet/page.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>نافذة السحب: إذا المستخدم فعّل 2FA، إضافة حقل إلزامي لرمز TOTP قبل تأكيد السحب.</li>
+    </ul>
+  </div>
+
+  <div class="info-box">
+    <div class="info-box-title">ملاحظة تقنية</div>
+    <p style="margin:0; font-size:10pt;">temp_token المستخدم في تسجيل الدخول مع 2FA يجب أن يُخزن في Redis (أو قاعدة بيانات) مع TTL = 5 دقائق لمنع إعادة الاستخدام. في المرحلة الحالية يمكن تخزينه مؤقتاً في الذاكرة مع mutex حتى يتم إضافة Redis في المرحلة 8.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 4.3 KYC File Upload -->
+  <div class="feature-title">4.3 رفع ملفات KYC الفعلية</div>
+  <p>
+    حالياً يقبل الخادم فقط نص URL للوثيقة (<span class="code-inline">document_url</span> كنص) دون رفع ملف فعلي. يجب توفير مسار رفع ملفات حقيقي يقبل صور الوثائق (جواز سفر، بطاقة هوية) ويحفظها بأمان.
+  </p>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">handlers/kyc.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>UploadKYCDocument (مسار جديد POST /api/kyc/upload):</strong> يستقبل ملف multipart/form-data. التحقق من: نوع الملف (jpg, png, pdf فقط)، الحجم الأقصى (10MB). يحفظ الملف في <span class="code-inline">./uploads/kyc/{user_id}_{timestamp}.{ext}</span>. يُرجع URL الملف النسبي.</li>
+      <li><strong>SubmitKYC:</strong> تعديل ليستقبل document_url كـ URL الملف المرفوع (من المسار السابق) وليس نصاً حراً. التحقق من أن URL يبدأ بـ <span class="code-inline">/uploads/kyc/</span>.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">main.go</div>
+    <ul class="spec-list">
+      <li>إضافة المسار: <span class="code-inline">POST /api/kyc/upload</span> (محمي بـ AuthMiddleware)</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+  <div class="file-card">
+    <div class="file-card-title">dashboard/kyc/page.tsx (صفحة جديدة - تفصيل في 7.1)</div>
+    <ul class="spec-list">
+      <li>مكون رفع ملف مع معاينة الصورة قبل الإرسال. استدعاء <span class="code-inline">POST /api/kyc/upload</span> أولاً ثم <span class="code-inline">POST /api/kyc/submit</span> مع URL المسترجع.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في لوحة الإدارة (Admin)</div>
+  <div class="file-card">
+    <div class="file-card-title">dashboard/kyc/page.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>عرض صورة/ملف الوثيقة المرفوعة كرابط قابل للتحميل أو معاينة مباشرة (img tag أو iframe للـ PDF).</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== 4.4 Session Management ==================== -->
+<div class="page">
+  <div class="feature-title">4.4 إدارة الجلسات وتجديد الرمز المميز</div>
+  <p>
+    حالياً الرمز المميز (JWT) صالح لمدة 24 ساعة بدون آلية تجديد. عند انتهاء الصلاحية يفقد المستخدم كل سياقه ويجب إعادة تسجيل الدخول. هذا سيئ للتجربة ويخلق ثغرة أمنية لأن الرمز المسروق يظل صالحاً لمدة طويلة.
+  </p>
+
+  <div class="sub-feature-title">الاستراتيجية: Access Token + Refresh Token</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>النوع</th>
+        <th>المدة</th>
+        <th>التخزين</th>
+        <th>الاستخدام</th>
+      </tr>
+      <tr>
+        <td><strong>Access Token</strong></td>
+        <td>15 دقيقة</td>
+        <td>localStorage</td>
+        <td>جميع طلبات API</td>
+      </tr>
+      <tr>
+        <td><strong>Refresh Token</strong></td>
+        <td>7 أيام</td>
+        <td>قاعدة البيانات + httpOnly cookie</td>
+        <td>تجديد Access Token فقط</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+  <div class="info-card">
+    <ul class="spec-list">
+      <li><strong>نموذج جديد RefreshToken:</strong> ID, UserID (فهرس), Token (فهرس فريد, 64 حرف), UserAgent, IPAddress, ExpiresAt, Revoked (bool), CreatedAt</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">handlers/auth.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>Login/Verify2FA:</strong> بالإضافة إلى Access Token (15 دقيقة)، توليد Refresh Token (64 بايت عشوائي) وحفظه في قاعدة البيانات. إرجاع Access Token في JSON و Refresh Token كـ httpOnly cookie آمن.</li>
+      <li><strong>RefreshToken (مسار جديد POST /api/auth/refresh):</strong> يقرأ Refresh Token من الـ cookie. يبحث عنه في قاعدة البيانات. يتحقق من عدم إلغائه وعدم انتهاء الصلاحية. إذا صالح: يولد Access Token جديد (15 دقيقة) ويُرجعه.</li>
+      <li><strong>Logout (مسار جديد POST /api/auth/logout):</strong> يلغي Refresh Token الحالي في قاعدة البيانات ويمسح الـ cookie.</li>
+      <li><strong>JWT Access Token:</strong> تغيير المدة من 24 ساعة إلى 15 دقيقة في دالة توليد الرمز.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">handlers/middleware.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>AuthMiddleware:</strong> إذا انتهت صلاحية Access Token، يُرجع <span class="code-inline">401 {success: false, message: "انتهت صلاحية الرمز", code: "TOKEN_EXPIRED"}</span>. الكود المميز <span class="code-inline">TOKEN_EXPIRED</span> يسمح للواجهة بالتمييز بين انتهاء الصلاحية والرمز غير الصالح.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الواجهة (Frontend + Admin)</div>
+  <div class="file-card">
+    <div class="file-card-title">lib/api.ts (ملف جديد - سيتم تفصيله في 5.1)</div>
+    <ul class="spec-list">
+      <li>معترض HTTP (interceptor): عند استلام خطأ 401 مع <span class="code-inline">code: "TOKEN_EXPIRED"</span>، يستدعي تلقائياً <span class="code-inline">POST /api/auth/refresh</span> ثم يعيد الطلب الأصلي بالرمز الجديد. إذا فشل التجديد أيضاً: توجيه إلى صفحة تسجيل الدخول.</li>
+      <li>تحديث <span class="code-inline">localStorage</span> بالرمز الجديد بعد كل تجديد ناجح.</li>
+    </ul>
+  </div>
+
+  <div class="warning-box">
+    <div class="warning-box-title">قواعد أمنية إلزامية</div>
+    <ul class="spec-list" style="margin:0;">
+      <li>Refresh Token يجب أن يكون httpOnly + Secure + SameSite=Strict cookie فقط. لا يجوز تخزينه في localStorage.</li>
+      <li>كل تجديد ناجح للرمز يُلغي Refresh Token القديم ويولد واحداً جديداً (Rotation). هذا يمنع إعادة الاستخدام إذا سُرق الرمز.</li>
+      <li>تسجيل الخروج من جميع الأجهزة: مسار <span class="code-inline">POST /api/auth/logout-all</span> يلغي جميع Refresh Tokens للمستخدم.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== PHASE 5: INFRASTRUCTURE ==================== -->
+<div class="page">
+  <div class="phase-badge phase-5">
+    <span class="phase-number">5</span>
+    المرحلة الخامسة: البنية التحتية وجودة الكود
+  </div>
+  <p class="mb-md">
+    هذه المرحلة تعالج المشاكل الهيكلية في الكود الحالي: تكرار استدعاءات API في كل صفحة، غياب مكتبة مكونات مشتركة، ضعف التحقق من المدخلات، وغياب الإشعارات الفورية. إصلاح هذه المشاكل سيُحسّن إنتاجية التطوير بشكل كبير ويمنع أخطاء مستقبلية.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- 5.1 Centralized API Layer -->
+  <div class="feature-title">5.1 طبقة API المركزية</div>
+  <p>
+    حالياً كل صفحة في الواجهة ولوحة الإدارة تكرر نفس كود <span class="code-inline">fetch</span> مع إضافة الرمز المميز ومعالجة الأخطاء. يجب إنشاء طبقة API مركزية تُوحّد جميع الاستدعاءات وتتعامل تلقائياً مع تجديد الرمز المميز ومعالجة الأخطاء.
+  </p>
+
+  <div class="sub-feature-title">الملفات الجديدة</div>
+  <div class="file-card">
+    <div class="file-card-title">frontend/src/lib/api.ts + admin/src/lib/api.ts</div>
+    <ul class="spec-list">
+      <li><strong>فئة ApiClient:</strong> singleton يحتوي على baseURL, token getter/setter, و refresh mechanism.</li>
+      <li><strong>الدوال الأساسية:</strong> <span class="code-inline">get(path, params?)</span>, <span class="code-inline">post(path, body)</span>, <span class="code-inline">put(path, body)</span>, <span class="code-inline">del(path)</span></li>
+      <li><strong>معترض تلقائي:</strong> يضيف <span class="code-inline">Authorization: Bearer {token}</span> لكل طلب. عند 401 مع TOKEN_EXPIRED: يحاول التجديد ثم يعيد الطلب. عند فشل التجديد: يمسح الرمز ويُوجّه لتسجيل الدخول.</li>
+      <li><strong>معالجة الأخطاء الموحدة:</strong> تحويل جميع الاستجابات إلى <span class="code-inline">{success, data, message}</span> بشكل متسق.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">frontend/src/lib/endpoints.ts + admin/src/lib/endpoints.ts</div>
+    <ul class="spec-list">
+      <li><strong>تصدير دوال مُسمّى لكل مسار API:</strong> <span class="code-inline">auth.login()</span>, <span class="code-inline">auth.register()</span>, <span class="code-inline">exchange.placeOrder()</span>, <span class="code-inline">wallet.getBalances()</span>, <span class="code-inline">admin.getUsers()</span> ... إلخ</li>
+      <li><strong>أنواع TypeScript:</strong> تحديد واجهات (interfaces) لكل طلب واستجابة مع أنواع دقيقة.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">مثال على البنية</div>
+  <div class="info-card" style="direction: ltr; text-align: left; font-family: 'Courier New', monospace; font-size: 9pt; line-height: 1.6; color: var(--text-secondary);">
+    <pre style="margin:0; white-space: pre-wrap;">
+// lib/api.ts
+class ApiClient {
+  private baseUrl: string;
+  async get&lt;T&gt;(path: string): Promise&lt;ApiResponse&lt;T&gt;&gt;
+  async post&lt;T&gt;(path: string, body: any): Promise&lt;ApiResponse&lt;T&gt;&gt;
+  private async refreshToken(): Promise&lt;boolean&gt;
+}
+export const api = new ApiClient();
+
+// lib/endpoints.ts
+export const auth = {
+  login: (data: LoginReq) =&gt; api.post&lt;LoginRes&gt;('/auth/login', data),
+  register: (data: RegisterReq) =&gt; api.post&lt;RegisterRes&gt;('/auth/register', data),
+}
+export const exchange = {
+  placeOrder: (data: OrderReq) =&gt; api.post&lt;Order&gt;('/exchange/order', data),
+  getOrders: (params?: OrderParams) =&gt; api.get&lt;Order[]&gt;('/exchange/orders'),
+}</pre>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 5.2 Shared Components -->
+  <div class="feature-title">5.2 مكتبة المكونات المشتركة</div>
+  <p>
+    الواجهة ولوحة الإدارة تكرران نفس أنماط CSS (glass-panel, btn-primary, input-field) دون مكونات React قابلة لإعادة الاستخدام. هذا يُصعّب الصيانة ويؤدي إلى تناقضات بصرية.
+  </p>
+
+  <div class="sub-feature-title">المكونات المطلوبة</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>المكون</th>
+        <th>الاستخدام</th>
+        <th>الخصائص</th>
+      </tr>
+      <tr>
+        <td><strong>GlassCard</strong></td>
+        <td>حاوية شفافة أساسية</td>
+        <td>title?, children, className?, actions?</td>
+      </tr>
+      <tr>
+        <td><strong>DataTable</strong></td>
+        <td>جدول بيانات مع ترقيم صفحات</td>
+        <td>columns, data, pagination?, loading?, onRowClick?</td>
+      </tr>
+      <tr>
+        <td><strong>Modal</strong></td>
+        <td>نافذة منبثقة (بديل prompt)</td>
+        <td>isOpen, onClose, title, children, footer?</td>
+      </tr>
+      <tr>
+        <td><strong>InputField</strong></td>
+        <td>حقل إدخال مع تسمية وخطأ</td>
+        <td>label, error?, type?, icon?, ...inputProps</td>
+      </tr>
+      <tr>
+        <td><strong>Button</strong></td>
+        <td>زر موحد (primary/danger/ghost)</td>
+        <td>variant, loading?, disabled?, onClick, children</td>
+      </tr>
+      <tr>
+        <td><strong>StatusBadge</strong></td>
+        <td>شارة حالة ملونة</td>
+        <td>status, label?</td>
+      </tr>
+      <tr>
+        <td><strong>ConfirmDialog</strong></td>
+        <td>حوار تأكيد (بديل confirm)</td>
+        <td>isOpen, onConfirm, onCancel, message, variant?</td>
+      </tr>
+      <tr>
+        <td><strong>EmptyState</strong></td>
+        <td>حالة فارغة مع أيقونة</td>
+        <td>icon, title, description?</td>
+      </tr>
+      <tr>
+        <td><strong>Loader</strong></td>
+        <td>مؤشر تحميل</td>
+        <td>size?, text?</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">frontend/src/components/ui/ + admin/src/components/ui/</div>
+    <ul class="spec-list">
+      <li>كل مكون في ملف منفصل مع أنواع TypeScript كاملة.</li>
+      <li>بعد الإنشاء، استبدال جميع استخدامات <span class="code-inline">prompt()</span> و <span class="code-inline">confirm()</span> بـ Modal و ConfirmDialog.</li>
+      <li>استبدال جميع الجداول المكررة بـ DataTable.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== 5.3 + 5.4 ==================== -->
+<div class="page">
+  <!-- 5.3 Input Validation -->
+  <div class="feature-title">5.3 التحقق من المدخلات (Backend + Frontend)</div>
+  <p>
+    حالياً الخادم يعتمد على تحقق بسيط جداً (مثل طول العنوان الأدنى 10 أحرف للسحب). هذا غير كافٍ لمنصة مالية. يجب تطبيق تحقق شامل على كلا الجانبين.
+  </p>
+
+  <div class="sub-feature-title">قواعد التحقق المطلوبة</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>الحقل</th>
+        <th>القاعدة</th>
+        <th>المسار</th>
+      </tr>
+      <tr>
+        <td>البريد الإلكتروني</td>
+        <td>صيغة صالحة + طول 3-255 + نطاق موجود</td>
+        <td>Register, ForgotPassword</td>
+      </tr>
+      <tr>
+        <td>اسم المستخدم</td>
+        <td>3-30 حرف، أحرف إنجليزية + أرقام + _ فقط</td>
+        <td>Register</td>
+      </tr>
+      <tr>
+        <td>كلمة المرور</td>
+        <td>8+ حرف، حرف كبير + صغير + رقم + رمز</td>
+        <td>Register, ChangePassword, ResetPassword</td>
+      </tr>
+      <tr>
+        <td>الكمية (Order)</td>
+        <td>رقم موجب، دقة 8 خانات عشرية كحد أقصى، حد أدنى حسب الزوج</td>
+        <td>PlaceOrder</td>
+      </tr>
+      <tr>
+        <td>السعر (Limit)</td>
+        <td>رقم موجب، دقة 8 خانات عشرية كحد أقصى</td>
+        <td>PlaceOrder (LIMIT/STOP_LIMIT)</td>
+      </tr>
+      <tr>
+        <td>رمز الزوج (Symbol)</td>
+        <td>يجب أن يكون من القائمة المعتمدة (8 أزواج)</td>
+        <td>PlaceOrder</td>
+      </tr>
+      <tr>
+        <td>عنوان السحب</td>
+        <td>طول 20-500، تحقق تنسيق حسب العملة (مستقبل: تحقق blockchain)</td>
+        <td>WithdrawCurrency</td>
+      </tr>
+      <tr>
+        <td>مبلغ السحب</td>
+        <td>موجب، لا يتجاوز الرصيد المتاح (المحجوز محسوب)، حد أدنى حسب العملة</td>
+        <td>WithdrawCurrency</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="sub-feature-title">التنفيذ في الخادم</div>
+  <div class="file-card">
+    <div class="file-card-title">handlers/validation.go (ملف جديد)</div>
+    <ul class="spec-list">
+      <li><strong>دوال التحقق:</strong> <span class="code-inline">ValidateEmail()</span>, <span class="code-inline">ValidateUsername()</span>, <span class="code-inline">ValidatePassword()</span>, <span class="code-inline">ValidateOrderInput()</span>, <span class="code-inline">ValidateWithdrawal()</span></li>
+      <li>كل دالة تُرجع قاموس أخطاء مفصل: <span class="code-inline">map[string]string</span> (اسم الحقل =&gt; رسالة الخطأ)</li>
+      <li>دمجها في كل handler قبل معالجة الطلب</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التنفيذ في الواجهة</div>
+  <div class="file-card">
+    <div class="file-card-title">frontend/src/lib/validation.ts + admin/src/lib/validation.ts</div>
+    <ul class="spec-list">
+      <li>نفس قواعد التحقق مكتوبة بـ TypeScript لتعمل في المتصفح قبل إرسال الطلب.</li>
+      <li>تكامل مع مكون <span class="code-inline">InputField</span> لعرض أخطاء فورية أثناء الكتابة.</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 5.4 WebSocket Order Notifications -->
+  <div class="feature-title">5.4 إشعارات WebSocket الفورية للأوردرات</div>
+  <p>
+    حالياً عندما يتم تنفيذ أوردر في محرك المطابقة (matching engine)، لا يتلقى المستخدم أي إشعار فوري. يجب عليه تحديث الصفحة يدوياً. هذا غير مقبول في منصة تداول حقيقية حيث الثواني تهم.
+  </p>
+
+  <div class="sub-feature-title">التصميم: WebSocket خاص بالمستخدم</div>
+  <div class="info-card">
+    <div class="flow-container">
+      <div class="flow-step">محرك المطابقة</div>
+      <span class="flow-arrow">&larr;</span>
+      <div class="flow-step">تنفيذ الأوردر</div>
+      <span class="flow-arrow">&larr;</span>
+      <div class="flow-step">بث عبر Hub</div>
+      <span class="flow-arrow">&larr;</span>
+      <div class="flow-step">WS للمستخدم</div>
+      <span class="flow-arrow">&larr;</span>
+      <div class="flow-step">تحديث الواجهة</div>
+    </div>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">websocket/hub.go (ملف جديد)</div>
+    <ul class="spec-list">
+      <li><strong>UserHub:</strong> مركز اتصالات مركزي يدير اتصالات WebSocket للمستخدمين. يحتوي على خريطة <span class="code-inline">map[uint][]*UserClient</span> (UserID =&gt; قائمة العملاء).</li>
+      <li><strong>UserClient:</strong> يحتوي على معرف المستخدم وقناة إرسال (channel).</li>
+      <li><strong>NotifyUser(userID, event):</strong> دالة عامة تنشر حدثاً لجميع اتصالات المستخدم. الحدث يحتوي على: <span class="code-inline">{type: "order_fill"|"order_trigger"|"deposit_approved"|"withdrawal_processed", data: {...}}</span></li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">websocket/user_ws.go (ملف جديد)</div>
+    <ul class="spec-list">
+      <li><strong>HandleUserWebSocket:</strong> مسار <span class="code-inline">GET /ws/user</span> محمي بـ AuthMiddleware. يصادق المستخدم من query parameter token. يُسجّل الاتصال في UserHub. يقرأ من قناة الإرسال ويُرسل الرسائل كـ JSON. ينظف عند قطع الاتصال.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">matching/execution.go - التعديلات</div>
+    <ul class="spec-list">
+      <li>بعد كل <span class="code-inline">ExecuteFill()</span> ناجح، استدعاء <span class="code-inline">websocket.NotifyUser(order.UserID, OrderFillEvent{...})</span></li>
+      <li>بعد كل <span class="code-inline">processTriggerOrder()</span> ناجح، إشعار المستخدم بتفعيل الأوردر الشرطي.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">handlers/admin.go - التعديلات</div>
+    <ul class="spec-list">
+      <li>بعد <span class="code-inline">ReviewTransaction()</span>، إشعار المستخدم: <span class="code-inline">NotifyUser(tx.UserID, DepositApprovedEvent{...})</span> أو <span class="code-inline">WithdrawalProcessedEvent{...}</span></li>
+      <li>بعد <span class="code-inline">ReviewKYC()</span>، إشعار المستخدم بحالة KYC.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+  <div class="file-card">
+    <div class="file-card-title">dashboard/layout.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>الاتصال بـ <span class="code-inline">wss://api.eg-money.local/ws/user?token=xxx</span> عند تسجيل الدخول.</li>
+      <li>عند استلام إشعار: عرض toast إشعار مع صوت تنبيه اختياري.</li>
+      <li>تحديث بيانات الصفحة تلقائياً (أرصدة، أوامر) عند استلام أحداث ذات صلة.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== PHASE 6: TRADING ENHANCEMENTS ==================== -->
+<div class="page">
+  <div class="phase-badge phase-6">
+    <span class="phase-number">6</span>
+    المرحلة السادسة: تحسينات التداول
+  </div>
+  <p class="mb-md">
+    هذه المرحلة تضيف الميزات المالية والتداولية الأساسية الناقصة: رسوم العمولة، رسوم بيانية احترافية، واجهة الإيداع، وترقيم الصفحات. بدون رسوم تداول لا توجد إيرادات للمنصة. بدون واجهة إيداع لا يمكن للمستخدم إضافة أموال.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- 6.1 Trading Fees -->
+  <div class="feature-title">6.1 رسوم التداول والعمولات</div>
+  <p>
+    المنصة حالياً لا تخصم أي رسوم على التداول. هذا يعني عدم وجود نموذج إيرادات. يجب تطبيق نظام رسوم شامل مع دعم رسوم مختلفة حسب نوع الأوردر ومستوى المستخدم.
+  </p>
+
+  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+  <div class="info-card">
+    <ul class="spec-list">
+      <li><strong>إضافة حقول لنموذج Order:</strong> <span class="code-inline">Fee float64 `gorm:"default:0;type:decimal(36,18)" json:"fee"`</span> و <span class="code-inline">FeeCurrency string `gorm:"size:20" json:"fee_currency"`</span></li>
+      <li><strong>نموذج جديد FeeSchedule:</strong> ID, UserType (USER/VERIFIED_USER), OrderType (MARKET/LIMIT/STOP_LIMIT/TAKE_PROFIT), MakerFee (float64), TakerFee (float64), MinFee (float64), CreatedAt, UpdatedAt</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">هيكل الرسوم</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>نوع المستخدم</th>
+        <th>نوع الأوردر</th>
+        <th>رسوم الصانع (Maker)</th>
+        <th>رسوم الآخذ (Taker)</th>
+      </tr>
+      <tr>
+        <td>USER</td>
+        <td>MARKET</td>
+        <td>-</td>
+        <td>0.25%</td>
+      </tr>
+      <tr>
+        <td>USER</td>
+        <td>LIMIT (fill)</td>
+        <td>0.15%</td>
+        <td>0.20%</td>
+      </tr>
+      <tr>
+        <td>VERIFIED_USER</td>
+        <td>MARKET</td>
+        <td>-</td>
+        <td>0.15%</td>
+      </tr>
+      <tr>
+        <td>VERIFIED_USER</td>
+        <td>LIMIT (fill)</td>
+        <td>0.10%</td>
+        <td>0.12%</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">matching/execution.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>ExecuteFill:</strong> حساب الرسوم بعد التنفيذ: <span class="code-inline">fee = fillAmount * fillPrice * feeRate</span>. خصم الرسوم من العملة المتلقاة. مثال: شراء BTC بسعر 50000 بكمية 0.1 = 5000 USDT. رسوم 0.25% = 12.5 USDT. بدلاً من تلقي 0.1 BTC كاملة، يتلقى 0.099975 BTC والـ 12.5 USDT تُخصم من محفظة USDT أو تُضاف لمحفظة الرسوم.</li>
+      <li><strong>ReserveFunds:</strong> يجب أن يحجز مبلغاً إضافياً لتغطية الرسوم المتوقعة: <span class="code-inline">reservedAmount = orderCost + estimatedFee</span></li>
+      <li>تحديث Order.Fee و Order.FeeCurrency عند التنفيذ.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">handlers/admin.go - إضافات</div>
+    <ul class="spec-list">
+      <li><strong>مسارات إدارة الرسوم:</strong> <span class="code-inline">GET /api/admin/fees</span> (عرض جدول الرسوم)، <span class="code-inline">PUT /api/admin/fees/:id</span> (تعديل نسبة الرسوم).</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+  <div class="file-card">
+    <div class="file-card-title">dashboard/exchange/page.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>نموذج الطلب: عرض الرسوم المقدرة بجانب التكلفة الإجمالية. "الرسوم المقدرة: ~0.25% = 12.50 USDT"</li>
+      <li>قائمة الأوامر: عرض الرسوم الفعلية المخصومة لكل أوردر منفذ.</li>
+    </ul>
+  </div>
+
+  <div class="warning-box">
+    <div class="warning-box-title">قاعدة مالية حرجة</div>
+    <p style="margin:0; font-size:10pt;">حساب الرسوم يجب أن يتم داخل نفس معاملة قاعدة البيانات (DB Transaction) التي تنفذ الأوردر. لا يجوز حساب الرسوم في معاملة منفصلة لأن هذا قد يؤدي إلى تنفيذ الأوردر بدون خصم الرسوم في حالة فشل المعاملة الثانية. الرسوم تُحسب من المبلغ المحجوز (ReservedAmount) وليس من رصيد منفصل.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 6.2 Chart Library -->
+  <div class="feature-title">6.2 تكامل مكتبة lightweight-charts</div>
+  <p>
+    حالياً صفحة التداول تستخدم رسم Canvas يدوي للشموع اليابانية. مكتبة <span class="code-inline">lightweight-charts</span> مُدرجة في package.json لكنها غير مستخدمة. هذه المكتبة توفر رسوماً بيانية احترافية مع دعم أصلي للتكبير والتصغير والمؤشرات الفنية.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">dashboard/exchange/page.tsx - إعادة كتابة قسم الرسم البياني</div>
+    <ul class="spec-list">
+      <li>استبدال كود Canvas اليدوي بـ <span class="code-inline">createChart()</span> من lightweight-charts.</li>
+      <li>إضافة <span class="code-inline">CandlestickSeries</span> مع بيانات klines من Binance.</li>
+      <li>إضافة <span class="code-inline">VolumeSeries</span> (أعمدة حجم التداول) أسفل الشموع.</li>
+      <li>دعم تبديل الأطر الزمنية (1د، 5د، 15د، ساعة، 4 ساعات، يوم).</li>
+      <li>تحديث البيانات في الوقت الفعلي عبر WebSocket.</li>
+      <li>إضافة خطوط السعر الحالي (price line) وخطوط الأوامر المعلقة (order lines).</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 6.3 Deposit UI -->
+  <div class="feature-title">6.3 واجهة الإيداع في صفحة المحفظة</div>
+  <p>
+    حالياً صفحة المحفظة تعرض فقط زر السحب بدون أي واجهة للإيداع. المسار <span class="code-inline">POST /api/wallet/deposit</span> موجود في الخادم لكن لا توجد واجهة لاستدعائه. يجب إضافة نموذج إيداع كامل.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">dashboard/wallet/page.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>إضافة زر "إيداع" بجانب كل عملة في بطاقات المحفظة.</li>
+      <li>نافذة إيداع (Modal): اختيار العملة، إدخال المبلغ، حقل ملاحظات اختياري.</li>
+      <li>استدعاء <span class="code-inline">POST /api/wallet/deposit</span> وعرض رسالة "تم إنشاء طلب الإيداع، بانتظار موافقة الإدارة".</li>
+      <li>عرض حالة طلبات الإيداع المعلقة في قسم المعاملات.</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 6.4 Pagination -->
+  <div class="feature-title">6.4 ترقيم الصفحات والتصفية للتاريخ</div>
+  <p>
+    صفحة السجل (History) تجلب جميع الأوامر دفعة واحدة بدون ترقيم صفحات أو تصفية. هذا سيء للأداء مع كثرة البيانات. الخادم يدعم ترقيم الصفحات عبر <span class="code-inline">getPagination()</span> لكن الواجهة لا تستخدمه.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">dashboard/history/page.tsx - إعادة كتابة</div>
+    <ul class="spec-list">
+      <li>إضافة معلمات ترقيم الصفحات: <span class="code-inline">?page=1&limit=20</span></li>
+      <li>إضافة تصفية حسب: نوع الأوردر (MARKET/LIMIT/STOP_LIMIT/TAKE_PROFIT)، الجانب (BUY/SELL)، الحالة (PENDING/FILLED/CANCELLED)، الزوج، تاريخ من-إلى.</li>
+      <li>مكون ترقيم صفحات مرئي في أسفل الجدول.</li>
+      <li>تحديث الخادم: إضافة معلمات تصفية إلى <span class="code-inline">GetOrders</span> (symbol, side, type, status, date_from, date_to).</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== PHASE 7: UX ==================== -->
+<div class="page">
+  <div class="phase-badge phase-7">
+    <span class="phase-number">7</span>
+    المرحلة السابعة: تجربة المستخدم
+  </div>
+  <p class="mb-md">
+    هذه المرحلة تُكمل الميزات الناقصة في واجهة المستخدم: واجهة تقديم KYC، نظام إشعارات، صفحة سجلات التدقيق للإدارة، ومكونات UI احترافية. كل ميزة هنا تعزز ثقة المستخدم وكفاءة الإدارة.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- 7.1 KYC Submission UI -->
+  <div class="feature-title">7.1 واجهة تقديم KYC للمستخدم</div>
+  <p>
+    المسار <span class="code-inline">POST /api/kyc/submit</span> موجود في الخادم لكن لا توجد صفحة في الواجهة لتقديم طلب التحقق. يجب إنشاء صفحة كاملة تسمح للمستخدم برفع وثائقه وتتبع حالة الطلب.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">dashboard/kyc/page.tsx (صفحة جديدة)</div>
+    <ul class="spec-list">
+      <li><strong>الحالة الأولية (لم يقدم):</strong> نموذج يتضمن: الاسم الكامل، نوع الوثيقة (جواز سفر / بطاقة هوية / رخصة قيادة)، رقم الوثيقة، رفع صورة الوثيقة (أمام + خلف)، رفع صورة شخصية مع الوثيقة.</li>
+      <li><strong>رفع الملفات:</strong> استدعاء <span class="code-inline">POST /api/kyc/upload</span> لكل ملف ثم <span class="code-inline">POST /api/kyc/submit</span> مع جميع البيانات.</li>
+      <li><strong>الحالة المعلقة (PENDING):</strong> عرض رسالة "طلبك قيد المراجعة" مع تاريخ التقديم.</li>
+      <li><strong>الحالة المقبولة (APPROVED):</strong> عرض شارة "هوية موثقة" مع تاريخ القبول.</li>
+      <li><strong>الحالة المرفوضة (REJECTED):</strong> عرض سبب الرفض مع إمكانية إعادة التقديم.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">dashboard/layout.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>إضافة رابط "التحقق من الهوية" في القائمة الجانبية بين المحفظة والملف الشخصي.</li>
+      <li>عرض شارة بجانب اسم المستخدم تشير لحالة KYC (رمادية/صفراء/خضراء/حمراء).</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 7.2 Notification System -->
+  <div class="feature-title">7.2 نظام الإشعارات</div>
+  <p>
+    المنصة لا تملك نظام إشعارات مركزي. يجب إنشاء نظام يخزن الإشعارات في قاعدة البيانات ويعرضها في الواجهة مع دعم الإشعارات الفورية عبر WebSocket.
+  </p>
+
+  <div class="sub-feature-title">التغييرات في قاعدة البيانات</div>
+  <div class="info-card">
+    <ul class="spec-list">
+      <li><strong>نموذج جديد Notification:</strong> ID, UserID (فهرس), Type (order_fill, deposit_approved, withdrawal_processed, kyc_approved, kyc_rejected, security_alert), Title (string), Body (text), Data (JSON), Read (bool, default:false), CreatedAt</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">handlers/notification.go (ملف جديد)</div>
+    <ul class="spec-list">
+      <li><strong>GetNotifications (GET /api/notifications):</strong> يجلب آخر 50 إشعار مع دعم ترقيم الصفحات ومعلمة <span class="code-inline">unread_only</span>.</li>
+      <li><strong>MarkAsRead (PUT /api/notifications/:id/read):</strong> يحدّث Read=true.</li>
+      <li><strong>MarkAllAsRead (PUT /api/notifications/read-all):</strong> يحدّث جميع إشعارات المستخدم.</li>
+      <li><strong>GetUnreadCount (GET /api/notifications/unread-count):</strong> يُرجع عدد الإشعارات غير المقروءة.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">models/notification.go (ملف جديد) + التكامل</div>
+    <ul class="spec-list">
+      <li>في كل handler يُنشئ حدثاً (تنفيذ أوردر، موافقة إيداع، رفض KYC): إنشاء سجل Notification مرتبط بالمستخدم + بث عبر WebSocket.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الواجهة (Frontend)</div>
+  <div class="file-card">
+    <div class="file-card-title">dashboard/layout.tsx + components/NotificationBell.tsx</div>
+    <ul class="spec-list">
+      <li>أيقونة جرس في الشريط العلوي مع عداد الإشعارات غير المقروءة.</li>
+      <li>قائمة منسدلة تعرض آخر 10 إشعارات مع ألوان مختلفة حسب النوع.</li>
+      <li>صفحة إشعارات كاملة: <span class="code-inline">dashboard/notifications/page.tsx</span></li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 7.3 Admin Audit Log -->
+  <div class="feature-title">7.3 صفحة سجلات التدقيق للإدارة</div>
+  <p>
+    لوحة الإدارة تعرض بعض سجلات التدقيق في الصفحة الرئيسية فقط بدون صفحة مخصصة. يجب إنشاء صفحة مخصصة مع تصفية وبحث متقدم.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">admin/dashboard/audit-logs/page.tsx (صفحة جديدة)</div>
+    <ul class="spec-list">
+      <li>جدول كامل لسجلات التدقيق مع تصفية حسب: نوع الإجراء، المستخدم، التاريخ.</li>
+      <li>بحث نصي في حقل التفاصيل.</li>
+      <li>ترقيم صفحات.</li>
+      <li>تصدير CSV لسجلات التدقيق.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">admin/dashboard/layout.tsx - التعديلات</div>
+    <ul class="spec-list">
+      <li>إضافة رابط "سجلات التدقيق" في القائمة الجانبية.</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 7.4 Professional UI Components -->
+  <div class="feature-title">7.4 مكونات UI احترافية (Modals, Alerts)</div>
+  <p>
+    عدة صفحات تستخدم <span class="code-inline">prompt()</span> و <span class="code-inline">confirm()</span> الأصليين في المتصفح وهو غير احترافي. يجب استبدالها بمكونات React مخصصة.
+  </p>
+
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>الصفحة</th>
+        <th>الاستخدام الحالي</th>
+        <th>الاستبدال</th>
+      </tr>
+      <tr>
+        <td>KYC (Admin)</td>
+        <td>prompt() لسبب الرفض</td>
+        <td>Modal مع حقل نصي</td>
+      </tr>
+      <tr>
+        <td>Transactions (Admin)</td>
+        <td>prompt() لـ TxID</td>
+        <td>Modal مع حقل إدخال</td>
+      </tr>
+      <tr>
+        <td>Exchange (Frontend)</td>
+        <td>confirm() لإلغاء الأوردر</td>
+        <td>ConfirmDialog</td>
+      </tr>
+      <tr>
+        <td>Wallet (Frontend)</td>
+        <td>confirm() للسحب</td>
+        <td>ConfirmDialog مع ملخص</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ==================== PHASE 8: PRODUCTION ==================== -->
+<div class="page">
+  <div class="phase-badge phase-8">
+    <span class="phase-number">8</span>
+    المرحلة الثامنة: التجهيز للإنتاج
+  </div>
+  <p class="mb-md">
+    المرحلة الأخيرة تُجهّز المنصة للنشر الإنتاجي الفعلي. تشمل: إدارة آمنة للمتغيرات البيئية، Redis للأداء والأمان، ترقيم إصدارات API، اختبارات شاملة، وخط أنابيب CI/CD.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- 8.1 Environment Variables -->
+  <div class="feature-title">8.1 إدارة المتغيرات البيئية</div>
+  <p>
+    حالياً العديد من القيم الحساسة مُرمّزة في docker-compose.yml (كلمة مرور قاعدة البيانات، سر JWT الافتراضي، كلمة مرور الإدارة). يجب نقلها جميعاً إلى ملف .env مع توثيق كامل.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">.env.example (ملف جديد في جذر المشروع)</div>
+    <ul class="spec-list">
+      <li>توثيق جميع المتغيرات المطلوبة مع قيم افتراضية آمنة وتعليقات توضيحية.</li>
+      <li>المتغيرات الحرجة: DATABASE_URL, JWT_SECRET, ADMIN_PASSWORD, SMTP_HOST/PORT/USER/PASS</li>
+      <li>المتغيرات الاختيارية: REDIS_URL, PORT, SMTP_FROM_NAME/EMAIL</li>
+      <li>تحديث docker-compose.yml لقراءة من ملف .env بدلاً من القيم المُرمّزة.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">.gitignore - التحديث</div>
+    <ul class="spec-list">
+      <li>التأكد من وجود <span class="code-inline">.env</span> في .gitignore (لا يجوز رفع القيم الحقيقية).</li>
+      <li>رفع .env.example فقط كقالب.</li>
+    </ul>
+  </div>
+
+  <div class="warning-box">
+    <div class="warning-box-title">قاعدة أمنية</div>
+    <p style="margin:0; font-size:10pt;">JWT_SECRET يجب أن يكون 32+ حرفاً عشوائياً في الإنتاج. لا يجوز استخدام القيمة الافتراضية. يجب إنشاؤه بأمر مثل: <span class="code-inline">openssl rand -hex 32</span>. كلمة مرور الإدارة الافتراضية يجب تغييرها فور أول تسجيل دخول.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 8.2 Redis -->
+  <div class="feature-title">8.2 Redis لمحدد المعدل والتخزين المؤقت</div>
+  <p>
+    محدد المعدل الحالي يعمل في الذاكرة فقط. هذا يعني: (1) يُفقد عند إعادة تشغيل الخادم، (2) لا يعمل عبر عدة نسخ (instances) من الخادم. Redis يحل كلا المشكلتين ويوفر تخزيناً مؤقتاً لأسعار السوق.
+  </p>
+
+  <div class="sub-feature-title">التغييرات في البنية التحتية</div>
+  <div class="file-card">
+    <div class="file-card-title">docker-compose.yml - إضافة خدمة Redis</div>
+    <ul class="spec-list">
+      <li>إضافة خدمة <span class="code-inline">redis:7-alpine</span> مع volume مؤقت و health check.</li>
+      <li>إضافة متغير <span class="code-inline">REDIS_URL</span> لخدمة الخادم.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">التغييرات في الخادم (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">go.mod</div>
+    <ul class="spec-list">
+      <li>إضافة: <span class="code-inline">github.com/redis/go-redis/v9</span></li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">handlers/middleware.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>RateLimiter:</strong> إذا Redis متاح، استخدامه بدلاً من الذاكرة المحلية. مفاتيح Redis: <span class="code-inline">rate_limit:{ip}</span> مع TTL تلقائي.</li>
+    </ul>
+  </div>
+
+  <div class="file-card">
+    <div class="file-card-title">matching/engine.go - التعديلات</div>
+    <ul class="spec-list">
+      <li><strong>تخزين مؤقت للأسعار:</strong> حفظ آخر سعر في Redis مع TTL. هذا يسمح لنسخ متعددة من الخادم بمشاركة بيانات الأسعار.</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 8.3 API Versioning -->
+  <div class="feature-title">8.3 ترقيم إصدارات API</div>
+  <p>
+    جميع المسارات حالياً تحت <span class="code-inline">/api/...</span> بدون رقم إصدار. هذا يُصعّب إجراء تغييرات جذرية على API بدون كسر التوافق مع الإصدارات السابقة. يجب إضافة بادئة الإصدار.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">main.go - التعديلات</div>
+    <ul class="spec-list">
+      <li>تغيير جميع المسارات من <span class="code-inline">/api/...</span> إلى <span class="code-inline">/api/v1/...</span>.</li>
+      <li>إضافة مسارات <span class="code-inline">/api/...</span> كإعادة توجيه (redirect) مؤقتة للتوافق مع الإصدارات السابقة لمدة انتقالية.</li>
+      <li>تحديث <span class="code-inline">NEXT_PUBLIC_API_URL</span> في الواجهة ولوحة الإدارة.</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 8.4 Testing -->
+  <div class="feature-title">8.4 الاختبارات (وحدة + تكامل + E2E)</div>
+  <p>
+    المشروع لا يحتوي على أي اختبارات حالياً. لمنصة مالية هذا غير مقبول. يجب إنشاء اختبارات شاملة على ثلاثة مستويات.
+  </p>
+
+  <div class="sub-feature-title">اختبارات الوحدة (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">backend/*_test.go</div>
+    <ul class="spec-list">
+      <li><strong>matching/execution_test.go:</strong> اختبار ReserveFunds، ExecuteFill، ReleaseFunds مع سيناريوهات: رصيد كافٍ، رصيد غير كافٍ، حجز مزدوج (race condition)، استرداد بعد إلغاء.</li>
+      <li><strong>handlers/validation_test.go:</strong> اختبار جميع دوال التحقق من المدخلات.</li>
+      <li><strong>handlers/auth_test.go:</strong> اختبار التسجيل، تسجيل الدخول، التحقق من البريد، 2FA.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">اختبارات التكامل (Backend)</div>
+  <div class="file-card">
+    <div class="file-card-title">backend/tests/integration/</div>
+    <ul class="spec-list">
+      <li>اختبار المسار الكامل: تسجيل &rarr; تأكيد البريد &rarr; تسجيل الدخول &rarr; إيداع &rarr; موافقة الإدارة &rarr; وضع أوردر &rarr; تنفيذ &rarr; سحب &rarr; موافقة الإدارة.</li>
+      <li>اختبار التزامن: أوردران متزامنان على نفس الرصيد. التحقق من أن الرصيد لا ينخفض تحت الصفر أبداً.</li>
+      <li>قاعدة بيانات اختبارية معفية (test database) تُعاد تهيئتها قبل كل اختبار.</li>
+    </ul>
+  </div>
+
+  <div class="sub-feature-title">اختبارات E2E (Frontend)</div>
+  <div class="file-card">
+    <div class="file-card-title">frontend/e2e/ + admin/e2e/</div>
+    <ul class="spec-list">
+      <li>استخدام Playwright لاختبار المسارات الحرجة: التسجيل، تسجيل الدخول، وضع أوردر، السحب.</li>
+      <li>اختبار سيناريوهات الخطأ: كلمة مرور خاطئة، رصيد غير كافٍ، رمز منتهي الصلاحية.</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 8.5 CI/CD -->
+  <div class="feature-title">8.5 CI/CD وبرامج النشر</div>
+  <p>
+    لا يوجد خط أنابيب للتكامل المستمر والنشر المستمر. يجب إنشاء واحد يضمن جودة الكود قبل دمجه.
+  </p>
+
+  <div class="file-card">
+    <div class="file-card-title">.github/workflows/ci.yml (ملف جديد)</div>
+    <ul class="spec-list">
+      <li><strong>عند Push/Pull Request:</strong> تشغيل اختبارات الخادم (go test)، تشغيل اختبارات الواجهة (npm run build)، فحص الأمان (go vet، npm audit)، التحقق من التنسيق (gofmt، prettier).</li>
+      <li><strong>عند Push إلى master:</strong> بناء صور Docker تلقائياً ورفعها إلى registry.</li>
+      <li><strong>النشر:</strong> SSH إلى الخادم الإنتاجي، سحب الصور الجديدة، تشغيل docker-compose up -d.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ==================== SUMMARY & PRIORITY MATRIX ==================== -->
+<div class="page">
+  <div class="section-title">ملخص الأولويات والجدول الزمني</div>
+
+  <div class="sub-feature-title">مصفوفة الأولويات</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>المرحلة</th>
+        <th>الميزة</th>
+        <th>الأولوية</th>
+        <th>التعقيد</th>
+        <th>الملفات المقدرة</th>
+      </tr>
+      <tr>
+        <td>4.1</td>
+        <td>تأكيد البريد الإلكتروني</td>
+        <td class="priority-critical">حرجة</td>
+        <td>متوسط</td>
+        <td>6 ملفات</td>
+      </tr>
+      <tr>
+        <td>4.2</td>
+        <td>المصادقة الثنائية 2FA</td>
+        <td class="priority-critical">حرجة</td>
+        <td>عالي</td>
+        <td>8 ملفات</td>
+      </tr>
+      <tr>
+        <td>4.3</td>
+        <td>رفع ملفات KYC</td>
+        <td class="priority-high">عالية</td>
+        <td>منخفض</td>
+        <td>4 ملفات</td>
+      </tr>
+      <tr>
+        <td>4.4</td>
+        <td>إدارة الجلسات</td>
+        <td class="priority-critical">حرجة</td>
+        <td>عالي</td>
+        <td>7 ملفات</td>
+      </tr>
+      <tr>
+        <td>5.1</td>
+        <td>طبقة API المركزية</td>
+        <td class="priority-high">عالية</td>
+        <td>متوسط</td>
+        <td>6 ملفات</td>
+      </tr>
+      <tr>
+        <td>5.2</td>
+        <td>مكتبة المكونات</td>
+        <td class="priority-medium">متوسطة</td>
+        <td>متوسط</td>
+        <td>10 ملفات</td>
+      </tr>
+      <tr>
+        <td>5.3</td>
+        <td>التحقق من المدخلات</td>
+        <td class="priority-high">عالية</td>
+        <td>متوسط</td>
+        <td>5 ملفات</td>
+      </tr>
+      <tr>
+        <td>5.4</td>
+        <td>إشعارات WebSocket</td>
+        <td class="priority-high">عالية</td>
+        <td>عالي</td>
+        <td>6 ملفات</td>
+      </tr>
+      <tr>
+        <td>6.1</td>
+        <td>رسوم التداول</td>
+        <td class="priority-critical">حرجة</td>
+        <td>عالي</td>
+        <td>7 ملفات</td>
+      </tr>
+      <tr>
+        <td>6.2</td>
+        <td>مكتبة الرسوم البيانية</td>
+        <td class="priority-medium">متوسطة</td>
+        <td>متوسط</td>
+        <td>2 ملفات</td>
+      </tr>
+      <tr>
+        <td>6.3</td>
+        <td>واجهة الإيداع</td>
+        <td class="priority-high">عالية</td>
+        <td>منخفض</td>
+        <td>2 ملفات</td>
+      </tr>
+      <tr>
+        <td>6.4</td>
+        <td>ترقيم الصفحات</td>
+        <td class="priority-medium">متوسطة</td>
+        <td>منخفض</td>
+        <td>3 ملفات</td>
+      </tr>
+      <tr>
+        <td>7.1</td>
+        <td>واجهة KYC للمستخدم</td>
+        <td class="priority-high">عالية</td>
+        <td>متوسط</td>
+        <td>3 ملفات</td>
+      </tr>
+      <tr>
+        <td>7.2</td>
+        <td>نظام الإشعارات</td>
+        <td class="priority-medium">متوسطة</td>
+        <td>عالي</td>
+        <td>7 ملفات</td>
+      </tr>
+      <tr>
+        <td>7.3</td>
+        <td>سجلات التدقيق</td>
+        <td class="priority-low">منخفضة</td>
+        <td>منخفض</td>
+        <td>2 ملفات</td>
+      </tr>
+      <tr>
+        <td>7.4</td>
+        <td>مكونات UI</td>
+        <td class="priority-medium">متوسطة</td>
+        <td>منخفض</td>
+        <td>5 ملفات</td>
+      </tr>
+      <tr>
+        <td>8.1</td>
+        <td>المتغيرات البيئية</td>
+        <td class="priority-high">عالية</td>
+        <td>منخفض</td>
+        <td>3 ملفات</td>
+      </tr>
+      <tr>
+        <td>8.2</td>
+        <td>Redis</td>
+        <td class="priority-medium">متوسطة</td>
+        <td>متوسط</td>
+        <td>5 ملفات</td>
+      </tr>
+      <tr>
+        <td>8.3</td>
+        <td>ترقيم API</td>
+        <td class="priority-low">منخفضة</td>
+        <td>منخفض</td>
+        <td>4 ملفات</td>
+      </tr>
+      <tr>
+        <td>8.4</td>
+        <td>الاختبارات</td>
+        <td class="priority-high">عالية</td>
+        <td>عالي</td>
+        <td>10+ ملفات</td>
+      </tr>
+      <tr>
+        <td>8.5</td>
+        <td>CI/CD</td>
+        <td class="priority-medium">متوسطة</td>
+        <td>متوسط</td>
+        <td>3 ملفات</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="sub-feature-title">الجدول الزمني المقترح</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>المرحلة</th>
+        <th>المدة المقدرة</th>
+        <th>المخرجات</th>
+      </tr>
+      <tr>
+        <td><strong>المرحلة 4</strong> - الأمان</td>
+        <td>5-7 أيام</td>
+        <td>تأكيد بريد + 2FA + رفع KYC + تجديد الرمز</td>
+      </tr>
+      <tr>
+        <td><strong>المرحلة 5</strong> - البنية</td>
+        <td>4-5 أيام</td>
+        <td>API مركزي + مكونات + تحقق + WebSocket إشعارات</td>
+      </tr>
+      <tr>
+        <td><strong>المرحلة 6</strong> - التداول</td>
+        <td>4-5 أيام</td>
+        <td>رسوم + رسوم بيانية + إيداع + ترقيم صفحات</td>
+      </tr>
+      <tr>
+        <td><strong>المرحلة 7</strong> - تجربة المستخدم</td>
+        <td>3-4 أيام</td>
+        <td>KYC + إشعارات + سجلات + UI</td>
+      </tr>
+      <tr>
+        <td><strong>المرحلة 8</strong> - الإنتاج</td>
+        <td>5-7 أيام</td>
+        <td>.env + Redis + API v1 + اختبارات + CI/CD</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="info-box mt-md">
+    <div class="info-box-title">قاعدة التنفيذ</div>
+    <p style="margin:0; font-size:10pt;">
+      كل ميزة تُنفّذ بالترتيب داخل كل مرحلة. بعد إكمال كل ميزة: (1) اختبار يدوي شامل، (2) commit + push إلى master، (3) انتقال للميزة التالية. لا يجوز الانتقال لميزة جديدة حتى تعمل الميزة الحالية بشكل كامل. كل تغيير مالي يجب أن يكون داخل DB Transaction مع Row Locking.
+    </p>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="sub-feature-title">الجداول الجديدة المطلوبة في قاعدة البيانات</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>الجدول</th>
+        <th>المرحلة</th>
+        <th>الغرض</th>
+      </tr>
+      <tr>
+        <td>email_verification_tokens</td>
+        <td>4.1</td>
+        <td>رموز تأكيد البريد</td>
+      </tr>
+      <tr>
+        <td>refresh_tokens</td>
+        <td>4.4</td>
+        <td>رموز تجديد الجلسة</td>
+      </tr>
+      <tr>
+        <td>fee_schedules</td>
+        <td>6.1</td>
+        <td>جدول رسوم التداول</td>
+      </tr>
+      <tr>
+        <td>notifications</td>
+        <td>7.2</td>
+        <td>إشعارات المستخدمين</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="sub-feature-title mt-md">الحقول الجديدة في النماذج الموجودة</div>
+  <div class="info-card">
+    <table class="data-table">
+      <tr>
+        <th>النموذج</th>
+        <th>الحقل</th>
+        <th>المرحلة</th>
+      </tr>
+      <tr>
+        <td>User</td>
+        <td>email_verified (bool)</td>
+        <td>4.1</td>
+      </tr>
+      <tr>
+        <td>User</td>
+        <td>two_fa_secret (string)</td>
+        <td>4.2</td>
+      </tr>
+      <tr>
+        <td>User</td>
+        <td>two_fa_enabled (bool)</td>
+        <td>4.2</td>
+      </tr>
+      <tr>
+        <td>User</td>
+        <td>two_fa_backup_codes (text)</td>
+        <td>4.2</td>
+      </tr>
+      <tr>
+        <td>Order</td>
+        <td>fee (decimal)</td>
+        <td>6.1</td>
+      </tr>
+      <tr>
+        <td>Order</td>
+        <td>fee_currency (string)</td>
+        <td>6.1</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>
