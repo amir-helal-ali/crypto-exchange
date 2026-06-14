@@ -10,16 +10,10 @@ import (
         "crypto-exchange-backend/handlers"
 
         "github.com/gin-gonic/gin"
-        "github.com/gorilla/websocket"
+        gorillaws "github.com/gorilla/websocket"
 )
 
 const maxConnectionsPerUser = 5
-
-var upgrader = websocket.Upgrader{
-        CheckOrigin: func(r *http.Request) bool {
-                return true // CORS is handled by middleware
-        },
-}
 
 // UserEvent represents a real-time event sent to a specific user.
 type UserEvent struct {
@@ -30,7 +24,7 @@ type UserEvent struct {
 // UserClient represents a single WebSocket connection for a user.
 type UserClient struct {
         UserID   uint
-        Conn     *websocket.Conn
+        Conn     *gorillaws.Conn
         Send     chan []byte
         Hub      *UserHub
 }
@@ -186,11 +180,11 @@ func (c *UserClient) writePump() {
                 case message, ok := <-c.Send:
                         c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
                         if !ok {
-                                c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+                                c.Conn.WriteMessage(gorillaws.CloseMessage, []byte{})
                                 return
                         }
 
-                        w, err := c.Conn.NextWriter(websocket.TextMessage)
+                        w, err := c.Conn.NextWriter(gorillaws.TextMessage)
                         if err != nil {
                                 return
                         }
@@ -209,7 +203,7 @@ func (c *UserClient) writePump() {
 
                 case <-ticker.C:
                         c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-                        if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+                        if err := c.Conn.WriteMessage(gorillaws.PingMessage, nil); err != nil {
                                 return
                         }
                 }
