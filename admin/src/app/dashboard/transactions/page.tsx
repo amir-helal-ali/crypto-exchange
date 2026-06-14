@@ -43,7 +43,7 @@ export default function AdminTransactionsPage() {
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل المراجعة"); return; }
-      toast.success(action === "approve" ? "تمت الموافقة على المعاملة" : "تم رفض المعاملة والمبلغ مسترد");
+      toast.success(data.message || (action === "approve" ? "تمت الموافقة على المعاملة" : "تم رفض المعاملة"));
       fetchTransactions();
     } catch { toast.error("حدث خطأ في الاتصال"); }
     finally { setReviewingId(null); }
@@ -130,7 +130,7 @@ export default function AdminTransactionsPage() {
                   </td>
                   <td className="p-4 text-muted-foreground text-xs">{tx.created_at ? new Date(tx.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
                   <td className="p-4">
-                    {tx.status === "PENDING" && tx.type === "withdraw" && (
+                    {tx.status === "PENDING" && (
                       <div className="flex items-center gap-2">
                         <div className="flex flex-col gap-1">
                           <input

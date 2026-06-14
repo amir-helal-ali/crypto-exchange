@@ -17,11 +17,13 @@ func GetAdminStats(c *gin.Context) {
 	var totalOrders int64
 	var totalTransactions int64
 	var pendingWithdrawals int64
+	var pendingDeposits int64
 	var pendingKYC int64
 	database.DB.Model(&models.User{}).Count(&totalUsers)
 	database.DB.Model(&models.Order{}).Count(&totalOrders)
 	database.DB.Model(&models.Transaction{}).Count(&totalTransactions)
 	database.DB.Model(&models.Transaction{}).Where("type = ? AND status = ?", "withdraw", "PENDING").Count(&pendingWithdrawals)
+	database.DB.Model(&models.Transaction{}).Where("type = ? AND status = ?", "deposit", "PENDING").Count(&pendingDeposits)
 	database.DB.Model(&models.KYCRequest{}).Where("status = ?", "PENDING").Count(&pendingKYC)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -31,6 +33,7 @@ func GetAdminStats(c *gin.Context) {
 			"totalOrders":       totalOrders,
 			"totalTransactions": totalTransactions,
 			"pendingWithdrawals": pendingWithdrawals,
+			"pendingDeposits":   pendingDeposits,
 			"pendingKYC":        pendingKYC,
 		},
 	})
@@ -137,6 +140,15 @@ func GetAllTransactions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": formatted, "total": total, "page": page, "limit": limit})
 }
 
+// ReviewTransaction handles both deposit and withdrawal review by admin.
+//
+// For WITHDRAWAL transactions (funds already deducted at request time):
+//   - approve: marks as COMPLETED, records blockchain TxID
+//   - reject:  marks as REJECTED and returns funds to user's wallet
+//
+// For DEPOSIT transactions (funds NOT yet credited):
+//   - approve: marks as COMPLETED and credits funds to user's wallet (with row locking)
+//   - reject:  marks as REJECTED (no fund movement needed)
 func ReviewTransaction(c *gin.Context) {
 	txID := c.Param("id")
 	adminID, _ := c.Get("user_id")
@@ -161,42 +173,87 @@ func ReviewTransaction(c *gin.Context) {
 		return
 	}
 
+	var statusText string
+
 	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
+		// Lock the transaction row to prevent concurrent processing
+		var lockedTxn models.Transaction
+		if err := dbTx.Where("id = ? AND status = ?", txn.ID, "PENDING").First(&lockedTxn).Error; err != nil {
+			return fmt.Errorf("المعاملة قيد المعالجة بالفعل")
+		}
+
 		if input.Action == "approve" {
-			txn.Status = "COMPLETED"
-			txn.TxID = input.TxID
-		} else {
-			txn.Status = "REJECTED"
-			var wallet models.Wallet
-			if err := dbTx.Where("user_id = ? AND currency = ?", txn.UserID, txn.Currency).First(&wallet).Error; err == nil {
-				wallet.Balance += txn.Amount
+			lockedTxn.Status = "COMPLETED"
+			if input.TxID != "" {
+				lockedTxn.TxID = input.TxID
+			}
+
+			// For deposits: credit funds to user's wallet
+			if lockedTxn.Type == "deposit" {
+				var wallet models.Wallet
+				if err := dbTx.Where("user_id = ? AND currency = ?", lockedTxn.UserID, lockedTxn.Currency).First(&wallet).Error; err != nil {
+					return fmt.Errorf("محفظة المستخدم غير موجودة")
+				}
+				wallet.Balance += lockedTxn.Amount
 				if err := dbTx.Save(&wallet).Error; err != nil {
-					return err
+					return fmt.Errorf("فشل إضافة الرصيد: %v", err)
 				}
 			}
+
+		} else {
+			// Reject
+			lockedTxn.Status = "REJECTED"
+
+			// For withdrawals: return funds to user's wallet (were deducted at request time)
+			if lockedTxn.Type == "withdraw" {
+				var wallet models.Wallet
+				if err := dbTx.Where("user_id = ? AND currency = ?", lockedTxn.UserID, lockedTxn.Currency).First(&wallet).Error; err == nil {
+					wallet.Balance += lockedTxn.Amount
+					if err := dbTx.Save(&wallet).Error; err != nil {
+						return fmt.Errorf("فشل إعادة الرصيد: %v", err)
+					}
+				}
+			}
+			// For deposits: no fund movement needed (were never credited)
 		}
-		if err := dbTx.Save(&txn).Error; err != nil {
+
+		if err := dbTx.Save(&lockedTxn).Error; err != nil {
 			return err
 		}
 		return nil
 	})
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process transaction"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Log the action
+	actionType := "إيداع"
+	if txn.Type == "withdraw" {
+		actionType = "سحب"
 	}
 
 	database.DB.Create(&models.AuditLog{
 		UserID:    adminID.(uint),
 		Action:    "REVIEW_TRANSACTION",
-		Details:   fmt.Sprintf("%s withdrawal #%d for %.4f %s", input.Action, txn.ID, txn.Amount, txn.Currency),
+		Details:   fmt.Sprintf("%s %s #%d for %.8f %s (user #%d)", input.Action, actionType, txn.ID, txn.Amount, txn.Currency, txn.UserID),
 		IPAddress: c.ClientIP(),
 		CreatedAt: time.Now(),
 	})
 
-	statusText := "تمت الموافقة على السحب"
-	if input.Action == "reject" {
-		statusText = "تم رفض السحب وإعادة الرصيد"
+	if input.Action == "approve" {
+		if txn.Type == "deposit" {
+			statusText = "تمت الموافقة على الإيداع وإضافة الرصيد"
+		} else {
+			statusText = "تمت الموافقة على السحب"
+		}
+	} else {
+		if txn.Type == "deposit" {
+			statusText = "تم رفض طلب الإيداع"
+		} else {
+			statusText = "تم رفض السحب وإعادة الرصيد"
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": statusText})

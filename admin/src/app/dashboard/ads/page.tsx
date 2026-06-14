@@ -18,6 +18,8 @@ interface Ad {
   updated_at: string;
 }
 
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+
 const POSITIONS = [
   { value: "hero", label: "الهيرو (أعلى الصفحة)" },
   { value: "section", label: "قسم داخلي" },
@@ -40,13 +42,18 @@ export default function AdsPage() {
 
   const fetchAds = async () => {
     const token = localStorage.getItem("token");
-    const res = await fetch("https://api.eg-money.local/api/admin/ads", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setAds(data);
-    }
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/api/admin/ads`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const data = d.data;
+        setAds(Array.isArray(data) ? data : []);
+      }
+    } catch {}
     setLoading(false);
   };
 
@@ -59,19 +66,21 @@ export default function AdsPage() {
     const token = localStorage.getItem("token");
     const fd = new FormData();
     fd.append("image", file);
-    const res = await fetch("https://api.eg-money.local/api/admin/ads/upload", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: fd,
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setForm(prev => ({ ...prev, image_url: data.url }));
-      toast.success("تم رفع الصورة");
-    } else {
-      const err = await res.json();
-      toast.error(err.error || "فشل رفع الصورة");
-    }
+    try {
+      const res = await fetch(`${API}/api/admin/ads/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setForm(prev => ({ ...prev, image_url: data.url }));
+        toast.success("تم رفع الصورة");
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "فشل رفع الصورة");
+      }
+    } catch { toast.error("حدث خطأ في الاتصال"); }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -80,17 +89,20 @@ export default function AdsPage() {
     setSuggesting(true);
     setSuggestions([]);
     const token = localStorage.getItem("token");
-    const res = await fetch("https://api.eg-money.local/api/admin/ads/suggest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ topic: form.title || "", position: form.position }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setSuggestions(data);
-    } else {
-      toast.error("فشل جلب الاقتراحات");
-    }
+    try {
+      const res = await fetch(`${API}/api/admin/ads/suggest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ topic: form.title || "", position: form.position }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const data = d.data;
+        setSuggestions(Array.isArray(data) ? data : []);
+      } else {
+        toast.error("فشل جلب الاقتراحات");
+      }
+    } catch { toast.error("حدث خطأ في الاتصال"); }
     setSuggesting(false);
   };
 
@@ -109,43 +121,49 @@ export default function AdsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = localStorage.getItem("token");
+    if (!token) return;
     const url = editing
-      ? `https://api.eg-money.local/api/admin/ads/${editing.id}`
-      : "https://api.eg-money.local/api/admin/ads";
+      ? `${API}/api/admin/ads/${editing.id}`
+      : `${API}/api/admin/ads`;
     const method = editing ? "PUT" : "POST";
 
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(form),
-    });
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(form),
+      });
 
-    if (res.ok) {
-      toast.success(editing ? "تم تحديث الإعلان" : "تم إضافة الإعلان");
-      setShowForm(false);
-      setEditing(null);
-      setForm(emptyAd);
-      setSuggestions([]);
-      fetchAds();
-    } else {
-      const err = await res.json();
-      toast.error(err.error || "فشل العملية");
-    }
+      if (res.ok) {
+        toast.success(editing ? "تم تحديث الإعلان" : "تم إضافة الإعلان");
+        setShowForm(false);
+        setEditing(null);
+        setForm(emptyAd);
+        setSuggestions([]);
+        fetchAds();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "فشل العملية");
+      }
+    } catch { toast.error("حدث خطأ في الاتصال"); }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm("هل أنت متأكد من حذف هذا الإعلان؟")) return;
     const token = localStorage.getItem("token");
-    const res = await fetch(`https://api.eg-money.local/api/admin/ads/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      toast.success("تم حذف الإعلان");
-      fetchAds();
-    } else {
-      toast.error("فشل الحذف");
-    }
+    if (!token) return;
+    try {
+      const res = await fetch(`${API}/api/admin/ads/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        toast.success("تم حذف الإعلان");
+        fetchAds();
+      } else {
+        toast.error("فشل الحذف");
+      }
+    } catch { toast.error("حدث خطأ في الاتصال"); }
   };
 
   const handleEdit = (ad: Ad) => {
@@ -161,6 +179,24 @@ export default function AdsPage() {
       sort_order: ad.sort_order,
     });
     setShowForm(true);
+  };
+
+  const toggleActive = async (ad: Ad) => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await fetch(`${API}/api/admin/ads/${ad.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...ad, active: !ad.active }),
+      });
+      if (res.ok) {
+        toast.success(ad.active ? "تم إخفاء الإعلان" : "تم تفعيل الإعلان");
+        fetchAds();
+      } else {
+        toast.error("فشل تحديث الحالة");
+      }
+    } catch { toast.error("حدث خطأ في الاتصال"); }
   };
 
   if (loading) return <div className="flex items-center justify-center py-20"><span className="spinner h-8 w-8" /></div>;
@@ -247,13 +283,13 @@ export default function AdsPage() {
 
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={handleSuggest} className="btn-ghost gap-2 text-xs" disabled={suggesting}>
-                  <Sparkles className="h-3.5 w-3.5" /> {suggesting ? "جاري التوليد..." : "اقتراح BIG PICKLE"}
+                  <Sparkles className="h-3.5 w-3.5" /> {suggesting ? "جاري التوليد..." : "اقتراح محتوى"}
                 </button>
               </div>
 
               {suggestions.length > 0 && (
                 <div className="space-y-2 bg-muted/30 rounded-xl p-3">
-                  <p className="text-xs font-medium text-muted-foreground">اقتراحات BIG PICKLE:</p>
+                  <p className="text-xs font-medium text-muted-foreground">اقتراحات:</p>
                   {suggestions.map((s, i) => (
                     <button key={i} type="button" onClick={() => applySuggestion(s)} className="w-full text-right glass-panel rounded-xl p-3 card-hover text-xs">
                       <p className="font-medium text-sm">{s.title}</p>
@@ -309,11 +345,13 @@ export default function AdsPage() {
                   </td>
                   <td className="p-4 hidden md:table-cell text-muted-foreground">{ad.sort_order}</td>
                   <td className="p-4">
-                    {ad.active ? (
-                      <span className="flex items-center gap-1 text-xs text-emerald-500"><Eye className="h-3 w-3" /> نشط</span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground"><EyeOff className="h-3 w-3" /> مخفي</span>
-                    )}
+                    <button onClick={() => toggleActive(ad)} className="flex items-center gap-1">
+                      {ad.active ? (
+                        <span className="flex items-center gap-1 text-xs text-emerald-500"><Eye className="h-3 w-3" /> نشط</span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground"><EyeOff className="h-3 w-3" /> مخفي</span>
+                      )}
+                    </button>
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-2">

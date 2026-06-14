@@ -97,6 +97,10 @@ func UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Profile updated successfully", "data": updatedUser})
 }
 
+// WithdrawCurrency handles withdrawal requests.
+// Funds are deducted immediately from the wallet and a PENDING transaction is created.
+// The admin must then approve or reject the withdrawal.
+// If rejected, the admin handler returns the funds to the wallet.
 func WithdrawCurrency(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var input struct {
@@ -117,31 +121,23 @@ func WithdrawCurrency(c *gin.Context) {
 		return
 	}
 
-	var wallet models.Wallet
-	if err := database.DB.Where("user_id = ? AND currency = ?", userID, input.Currency).First(&wallet).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Wallet not found for this currency"})
-		return
-	}
-
-	if wallet.Balance < input.Amount {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient balance"})
-		return
-	}
-
 	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
+		// Lock wallet row for concurrent safety
 		var lockedWallet models.Wallet
 		if err := dbTx.Where("user_id = ? AND currency = ?", userID, input.Currency).First(&lockedWallet).Error; err != nil {
-			return err
+			return fmt.Errorf("محفظة %s غير موجودة", input.Currency)
 		}
 		if lockedWallet.Balance < input.Amount {
-			return fmt.Errorf("insufficient balance")
+			return fmt.Errorf("رصيد %s غير كافٍ (المطلوب: %.8f، المتاح: %.8f)", input.Currency, input.Amount, lockedWallet.Balance)
 		}
 
+		// Deduct funds immediately
 		lockedWallet.Balance -= input.Amount
 		if err := dbTx.Save(&lockedWallet).Error; err != nil {
 			return err
 		}
 
+		// Create PENDING transaction for admin review
 		tx := models.Transaction{
 			UserID:   userID,
 			Type:     "withdraw",
@@ -161,7 +157,7 @@ func WithdrawCurrency(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Withdrawal request submitted"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "تم تقديم طلب السحب بنجاح. سيتم مراجعته من قبل الإدارة."})
 }
 
 func GetTransactions(c *gin.Context) {
@@ -178,6 +174,10 @@ func GetTransactions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": transactions, "total": total, "page": page, "limit": limit})
 }
 
+// DepositCurrency handles deposit requests.
+// Since deposits and withdrawals are processed manually by the admin,
+// this endpoint creates a PENDING transaction that must be approved by admin.
+// Funds are NOT credited until the admin approves the deposit.
 func DepositCurrency(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	var input struct {
@@ -190,26 +190,39 @@ func DepositCurrency(c *gin.Context) {
 		return
 	}
 
-	var wallet models.Wallet
-	if err := database.DB.Where("user_id = ? AND currency = ?", userID, input.Currency).First(&wallet).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Wallet not found for this currency"})
+	input.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
+
+	if input.Amount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Amount must be greater than zero"})
 		return
 	}
 
-	wallet.Balance += input.Amount
-	database.DB.Save(&wallet)
+	// Verify wallet exists for this currency
+	var wallet models.Wallet
+	if err := database.DB.Where("user_id = ? AND currency = ?", userID, input.Currency).First(&wallet).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "محفظة هذه العملة غير موجودة"})
+		return
+	}
 
+	// Create PENDING deposit transaction — admin must approve before funds are credited
 	tx := models.Transaction{
 		UserID:   userID,
 		Type:     "deposit",
 		Currency: input.Currency,
 		Amount:   input.Amount,
-		Status:   "COMPLETED",
+		Status:   "PENDING",
 		TxID:     input.TxID,
 	}
-	database.DB.Create(&tx)
+	if err := database.DB.Create(&tx).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل إنشاء طلب الإيداع"})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Deposit successful", "data": tx})
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "تم تقديم طلب الإيداع بنجاح. سيتم مراجعته من قبل الإدارة وإضافة الرصيد بعد التأكيد.",
+		"data":    tx,
+	})
 }
 
 func ChangePassword(c *gin.Context) {
