@@ -3,13 +3,14 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { LayoutDashboard, TrendingUp, Wallet, Clock, User, LogOut, Menu, X, ChevronDown, BarChart3 } from "lucide-react";
+import { LayoutDashboard, TrendingUp, Wallet, Clock, User, LogOut, Menu, X, ChevronDown, BarChart3, Shield } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard", icon: LayoutDashboard, label: "لوحة التحكم" },
   { href: "/dashboard/exchange", icon: TrendingUp, label: "التداول" },
   { href: "/dashboard/wallet", icon: Wallet, label: "المحفظة" },
   { href: "/dashboard/history", icon: Clock, label: "سجل الصفقات" },
+  { href: "/dashboard/security", icon: Shield, label: "الأمان" },
   { href: "/dashboard/profile", icon: User, label: "الملف الشخصي" },
 ];
 
@@ -77,6 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {userMenuOpen && (
               <div className="absolute left-0 mt-2 w-48 glass-panel-strong rounded-xl p-2 shadow-xl border border-border/50 z-50">
                 <Link href="/dashboard/profile" className="block w-full text-right px-3 py-2 text-sm rounded-lg hover:bg-muted/50" onClick={() => setUserMenuOpen(false)}>الملف الشخصي</Link>
+                <Link href="/dashboard/security" className="block w-full text-right px-3 py-2 text-sm rounded-lg hover:bg-muted/50" onClick={() => setUserMenuOpen(false)}>الأمان والحماية</Link>
                 <button onClick={handleLogout} className="flex w-full items-center gap-2 px-3 py-2 text-sm rounded-lg text-red-500 hover:bg-red-500/10">
                   <LogOut className="h-4 w-4" /> تسجيل الخروج
                 </button>

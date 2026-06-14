@@ -3,6 +3,7 @@ package handlers
 import (
         "crypto/rand"
         "encoding/hex"
+        "encoding/json"
         "fmt"
         "net/http"
         "os"
@@ -10,6 +11,7 @@ import (
         "sync"
         "time"
 
+        totpauth "crypto-exchange-backend/auth"
         "crypto-exchange-backend/database"
         "crypto-exchange-backend/email"
         "crypto-exchange-backend/models"
@@ -383,8 +385,13 @@ func Verify2FA(c *gin.Context) {
                 return
         }
 
-        // Verify TOTP code (or backup code)
-        if !validateTOTP(user.TwoFASecret, input.Code) && !isBackupCode(user.TwoFABackupCodes, input.Code) {
+        // Verify TOTP code or backup code
+        isTOTP := validateTOTP(user.TwoFASecret, input.Code)
+        isBackup := false
+        if !isTOTP {
+                isBackup = consumeBackupCode(user.ID, input.Code)
+        }
+        if !isTOTP && !isBackup {
                 c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز المصادقة الثنائية غير صحيح"})
                 return
         }
@@ -513,16 +520,287 @@ func ResetPassword(c *gin.Context) {
         c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password has been reset successfully"})
 }
 
-// validateTOTP validates a TOTP code against the given secret.
-// Full implementation will be added in Feature 4.2 (2FA).
+// validateTOTP validates a TOTP code against the given secret using RFC 6238.
 func validateTOTP(secret string, code string) bool {
-        // Stub: will be replaced with full TOTP validation in 4.2
-        return false
+        return totpauth.ValidateTOTPCode(secret, code)
 }
 
 // isBackupCode checks if the code matches a backup code and marks it as used.
-// Full implementation will be added in Feature 4.2 (2FA).
-func isBackupCode(backupCodes string, code string) bool {
-        // Stub: will be replaced with full backup code validation in 4.2
+// Backup codes are stored as a JSON array of strings in the user record.
+func isBackupCode(backupCodesJSON string, code string) bool {
+        if backupCodesJSON == "" {
+                return false
+        }
+
+        var codes []string
+        if err := json.Unmarshal([]byte(backupCodesJSON), &codes); err != nil {
+                return false
+        }
+
+        for i, c := range codes {
+                if strings.EqualFold(c, code) {
+                        // Remove the used backup code
+                        codes = append(codes[:i], codes[i+1:]...)
+                        return true
+                }
+        }
         return false
+}
+
+// consumeBackupCode removes a used backup code from the user's record.
+// Must be called within a database transaction for consistency.
+func consumeBackupCode(userID uint, code string) bool {
+        var user models.User
+        if err := database.DB.First(&user, userID).Error; err != nil {
+                return false
+        }
+
+        var codes []string
+        if user.TwoFABackupCodes == "" {
+                return false
+        }
+        if err := json.Unmarshal([]byte(user.TwoFABackupCodes), &codes); err != nil {
+                return false
+        }
+
+        for i, c := range codes {
+                if strings.EqualFold(c, code) {
+                        codes = append(codes[:i], codes[i+1:]...)
+                        newJSON, _ := json.Marshal(codes)
+                        database.DB.Model(&user).Update("two_fa_backup_codes", string(newJSON))
+                        return true
+                }
+        }
+        return false
+}
+
+// Setup2FA handles POST /api/auth/setup-2fa
+// Generates a TOTP secret and otpauth URL for QR code scanning.
+// Requires authentication (user must be logged in).
+func Setup2FA(c *gin.Context) {
+        userID := c.GetUint("user_id")
+
+        var user models.User
+        if err := database.DB.First(&user, userID).Error; err != nil {
+                c.JSON(http.StatusNotFound, gin.H{"error": "المستخدم غير موجود"})
+                return
+        }
+
+        // If 2FA is already enabled, user must disable it first
+        if user.TwoFAEnabled {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "المصادقة الثنائية مُفعلة بالفعل. قم بتعطيلها أولاً."})
+                return
+        }
+
+        // Generate TOTP secret
+        secret, err := totpauth.GenerateTOTPSecret()
+        if err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل إنشاء سر المصادقة"})
+                return
+        }
+
+        // Generate otpauth URL for QR code
+        accountName := user.Email
+        if user.Username != "" {
+                accountName = user.Username
+        }
+        otpauthURL := totpauth.GenerateOTPAuthURL(secret, accountName, "EgMoney")
+
+        // Save the secret (but don't enable 2FA yet — user must verify first)
+        if err := database.DB.Model(&user).Update("two_fa_secret", secret).Error; err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل حفظ سر المصادقة"})
+                return
+        }
+
+        c.JSON(http.StatusOK, gin.H{
+                "success":      true,
+                "secret":       secret,
+                "otpauth_url":  otpauthURL,
+                "message":      "امسح رمز QR بتطبيق المصادقة ثم أدخل الكود لتفعيل المصادقة الثنائية",
+        })
+}
+
+// Enable2FA handles POST /api/auth/enable-2fa
+// Verifies the first TOTP code and enables 2FA for the user.
+// Also generates and returns backup codes.
+func Enable2FA(c *gin.Context) {
+        userID := c.GetUint("user_id")
+
+        var input struct {
+                Code string `json:"code" binding:"required"`
+        }
+        if err := c.ShouldBindJSON(&input); err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }
+
+        var user models.User
+        if err := database.DB.First(&user, userID).Error; err != nil {
+                c.JSON(http.StatusNotFound, gin.H{"error": "المستخدم غير موجود"})
+                return
+        }
+
+        // Must have a secret set up first
+        if user.TwoFASecret == "" {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "يجب إعداد المصادقة الثنائية أولاً"})
+                return
+        }
+
+        // Already enabled
+        if user.TwoFAEnabled {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "المصادقة الثنائية مُفعلة بالفعل"})
+                return
+        }
+
+        // Verify the TOTP code
+        if !totpauth.ValidateTOTPCode(user.TwoFASecret, input.Code) {
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى."})
+                return
+        }
+
+        // Generate backup codes
+        backupCodes, err := totpauth.GenerateBackupCodes(10)
+        if err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل إنشاء رموز الاحتياط"})
+                return
+        }
+
+        backupCodesJSON, err := json.Marshal(backupCodes)
+        if err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "حدث خطأ غير متوقع"})
+                return
+        }
+
+        // Enable 2FA and save backup codes in a transaction
+        err = database.DB.Transaction(func(tx *gorm.DB) error {
+                if err := tx.Model(&user).Updates(map[string]interface{}{
+                        "two_fa_enabled":      true,
+                        "two_fa_backup_codes": string(backupCodesJSON),
+                }).Error; err != nil {
+                        return err
+                }
+                return nil
+        })
+
+        if err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل تفعيل المصادقة الثنائية"})
+                return
+        }
+
+        // Send email notification
+        if email.IsConfigured() {
+                html := `<!DOCTYPE html><html dir="rtl"><body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center">
+                        <div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
+                        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
+                        <h2 style="color:#fff;font-size:18px;margin:16px 0">تم تفعيل المصادقة الثنائية</h2>
+                        <p style="color:#a1a1aa;font-size:14px;line-height:1.6">تم تفعيل المصادقة الثنائية (2FA) على حسابك بنجاح. ستُطلب رمز المصادقة عند كل تسجيل دخول.</p>
+                        <p style="color:#ef4444;font-size:13px;line-height:1.6;margin-top:16px">إذا لم تقم بتفعيل هذه الميزة، يرجى تغيير كلمة المرور فوراً والتواصل مع الدعم.</p>
+                        </div></body></html>`
+                if err := email.Send(user.Email, "تم تفعيل المصادقة الثنائية - EgMoney", html); err != nil {
+                        fmt.Printf("[WARN] Failed to send 2FA enabled email to %s: %v\n", user.Email, err)
+                }
+        }
+
+        database.DB.Create(&models.AuditLog{
+                UserID:    user.ID,
+                Action:    "2FA_ENABLED",
+                Details:   "Two-factor authentication enabled",
+                IPAddress: c.ClientIP(),
+                CreatedAt: time.Now(),
+        })
+
+        c.JSON(http.StatusOK, gin.H{
+                "success":      true,
+                "message":      "تم تفعيل المصادقة الثنائية بنجاح. احفظ رموز الاحتياط في مكان آمن!",
+                "backup_codes": backupCodes,
+        })
+}
+
+// Disable2FA handles POST /api/auth/disable-2fa
+// Requires the current TOTP code or a backup code + password to disable.
+func Disable2FA(c *gin.Context) {
+        userID := c.GetUint("user_id")
+
+        var input struct {
+                Password string `json:"password" binding:"required"`
+                Code     string `json:"code" binding:"required"`
+        }
+        if err := c.ShouldBindJSON(&input); err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }
+
+        var user models.User
+        if err := database.DB.First(&user, userID).Error; err != nil {
+                c.JSON(http.StatusNotFound, gin.H{"error": "المستخدم غير موجود"})
+                return
+        }
+
+        // Verify password first
+        if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "كلمة المرور غير صحيحة"})
+                return
+        }
+
+        // Must have 2FA enabled
+        if !user.TwoFAEnabled {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "المصادقة الثنائية غير مُفعلة"})
+                return
+        }
+
+        // Verify TOTP code or backup code
+        isTOTP := totpauth.ValidateTOTPCode(user.TwoFASecret, input.Code)
+        isBackup := false
+        if !isTOTP {
+                isBackup = consumeBackupCode(user.ID, input.Code)
+        }
+
+        if !isTOTP && !isBackup {
+                c.JSON(http.StatusUnauthorized, gin.H{"error": "رمز التحقق غير صحيح"})
+                return
+        }
+
+        // Disable 2FA and clear secret + backup codes in a transaction
+        err := database.DB.Transaction(func(tx *gorm.DB) error {
+                if err := tx.Model(&user).Updates(map[string]interface{}{
+                        "two_fa_enabled":      false,
+                        "two_fa_secret":       "",
+                        "two_fa_backup_codes": "",
+                }).Error; err != nil {
+                        return err
+                }
+                return nil
+        })
+
+        if err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل تعطيل المصادقة الثنائية"})
+                return
+        }
+
+        // Send email notification
+        if email.IsConfigured() {
+                html := `<!DOCTYPE html><html dir="rtl"><body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center">
+                        <div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
+                        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
+                        <h2 style="color:#fff;font-size:18px;margin:16px 0">تم تعطيل المصادقة الثنائية</h2>
+                        <p style="color:#a1a1aa;font-size:14px;line-height:1.6">تم تعطيل المصادقة الثنائية (2FA) على حسابك.</p>
+                        <p style="color:#ef4444;font-size:13px;line-height:1.6;margin-top:16px">إذا لم تقم بتعطيل هذه الميزة، يرجى تغيير كلمة المرور فوراً والتواصل مع الدعم.</p>
+                        </div></body></html>`
+                if err := email.Send(user.Email, "تم تعطيل المصادقة الثنائية - EgMoney", html); err != nil {
+                        fmt.Printf("[WARN] Failed to send 2FA disabled email to %s: %v\n", user.Email, err)
+                }
+        }
+
+        database.DB.Create(&models.AuditLog{
+                UserID:    user.ID,
+                Action:    "2FA_DISABLED",
+                Details:   "Two-factor authentication disabled",
+                IPAddress: c.ClientIP(),
+                CreatedAt: time.Now(),
+        })
+
+        c.JSON(http.StatusOK, gin.H{
+                "success": true,
+                "message": "تم تعطيل المصادقة الثنائية بنجاح",
+        })
 }

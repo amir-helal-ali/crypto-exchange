@@ -142,6 +142,15 @@ func main() {
         r.POST("/api/auth/resend-verification", handlers.ResendVerification)
         r.POST("/api/auth/verify-2fa", handlers.Verify2FA)
 
+        // 2FA management routes (require authentication)
+        twofa := r.Group("/api/auth")
+        twofa.Use(handlers.AuthMiddleware())
+        {
+                twofa.POST("/setup-2fa", handlers.Setup2FA)
+                twofa.POST("/enable-2fa", handlers.Enable2FA)
+                twofa.POST("/disable-2fa", handlers.Disable2FA)
+        }
+
         userKYC := r.Group("/api/kyc")
         userKYC.Use(handlers.AuthMiddleware())
         {
