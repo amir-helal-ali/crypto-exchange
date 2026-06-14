@@ -93,3 +93,41 @@ Stage Summary:
 - History pagination: proper page navigation with API pagination support
 - User WebSocket: real-time push notifications for order fills, deposits, withdrawals, KYC status changes
 - All features follow the original EgMoney plan specifications
+
+---
+Task ID: 11
+Agent: Main Agent
+Task: Comprehensive Security Fixes and Feature Completion
+
+Work Log:
+- Fixed CRITICAL race condition: Added FOR UPDATE row locking to all wallet operations in matching/execution.go (ReserveFunds, ExecuteFill, ReleaseFunds)
+- Fixed CRITICAL race condition: Added FOR UPDATE row locking to WithdrawCurrency in handlers/wallet.go
+- Fixed CRITICAL race condition: Added FOR UPDATE row locking to ReviewTransaction wallet operations in handlers/admin.go
+- Fixed CRITICAL bug: ReserveFunds and ExecuteFill were using database.DB (global) instead of dbTx for user lookups - now use dbTx for transaction consistency
+- Fixed CRITICAL bug: CleanStaleOrders() was defined but never called from runCleanup() - stale orders were never cleaned, locking user funds forever
+- Fixed CRITICAL security gap: ChangePassword now revokes all refresh tokens to force re-login on all devices
+- Added KYC document preview to admin panel: modal with image/PDF viewer, "عرض المستند" button per request, rejection reason display
+- Integrated validation.go into all handlers: PlaceOrder (ValidateOrderInput), WithdrawCurrency (ValidateWithdrawal), DepositCurrency (ValidateDeposit), SubmitKYC (ValidateKYCSubmission)
+- Removed duplicate validatePasswordStrength from auth.go, unified to use ValidatePasswordStrength from validation.go
+- Fixed password validation inconsistency: frontend reset-password now requires 8 chars + uppercase + lowercase + digit + special char (matching backend)
+- Added 3 missing email templates: SendPasswordResetEmail, Send2FAEnabledEmail, SendWelcomeEmail (professional Arabic RTL design)
+- Updated ForgotPassword handler to use SendPasswordResetEmail template
+- Updated VerifyEmail handler to send WelcomeEmail after successful verification
+- Updated Enable2FA handler to use Send2FAEnabledEmail template
+- Fixed N+1 query in GetAllTransactions: replaced individual user lookups with Preload("User")
+- Added User relationship to Transaction model for Preload support
+- Added max connections per user (5) to WebSocket UserHub to prevent abuse
+- Removed dead code: `var _ = strconv.Itoa` in user_ws.go, unused database import in execution.go
+- Both frontend (17 routes) and admin (11 routes) build successfully with zero errors
+
+Stage Summary:
+- 6 critical security bugs fixed (race conditions, transaction consistency, session management)
+- 1 critical functional bug fixed (CleanStaleOrders never called)
+- KYC document preview added to admin (was essential for platform operation)
+- All validation functions now properly integrated into handlers
+- Password validation consistency fixed across frontend and backend
+- 3 new email templates added with professional Arabic RTL design
+- N+1 query performance issue fixed
+- WebSocket connection limit added for abuse prevention
+- Dead code and duplicate functions removed
+- Project is now significantly more secure and production-ready
