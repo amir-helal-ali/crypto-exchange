@@ -1,6 +1,7 @@
 package handlers
 
 import (
+        "errors"
         "fmt"
         "net/http"
         "os"
@@ -11,6 +12,7 @@ import (
         exchangeredis "crypto-exchange-backend/redis"
 
         "github.com/gin-gonic/gin"
+        "github.com/golang-jwt/jwt/v5"
 )
 
 type RateLimiter struct {
@@ -158,7 +160,7 @@ func AuthMiddleware() gin.HandlerFunc {
         return func(c *gin.Context) {
                 authHeader := c.GetHeader("Authorization")
                 if authHeader == "" {
-                        c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+                        c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required", "code": "AUTH_REQUIRED"})
                         c.Abort()
                         return
                 }
@@ -170,7 +172,18 @@ func AuthMiddleware() gin.HandlerFunc {
 
                 claims, err := ValidateJWT(token)
                 if err != nil {
-                        c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+                        // Distinguish between expired and invalid tokens
+                        if errors.Is(err, jwt.ErrTokenExpired) {
+                                c.JSON(http.StatusUnauthorized, gin.H{
+                                        "error": "Token expired",
+                                        "code":  "TOKEN_EXPIRED",
+                                })
+                        } else {
+                                c.JSON(http.StatusUnauthorized, gin.H{
+                                        "error": "Invalid token",
+                                        "code":  "INVALID_TOKEN",
+                                })
+                        }
                         c.Abort()
                         return
                 }

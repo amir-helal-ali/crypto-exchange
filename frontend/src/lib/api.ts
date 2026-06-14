@@ -119,8 +119,23 @@ export async function authFetch(
     throw new ApiError("NETWORK_ERROR", "تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.", 0);
   }
 
-  // If 401, try to refresh the token
+  // If 401, check for TOKEN_EXPIRED and try to refresh
   if (response.status === 401) {
+    // Try to parse the response to get the error code
+    let errorCode = "";
+    try {
+      const cloned = response.clone();
+      const errData = await cloned.json();
+      errorCode = errData.code || "";
+    } catch {}
+
+    // If the token is invalid (not just expired), don't try to refresh
+    if (errorCode === "INVALID_TOKEN" || errorCode === "AUTH_REQUIRED") {
+      forceLogout();
+      throw new ApiError(errorCode, "رمز المصادقة غير صالح", 401);
+    }
+
+    // Token expired or unknown 401 — try to refresh
     if (isRefreshing) {
       // Another refresh is already in progress — queue this request
       return new Promise((resolve, reject) => {

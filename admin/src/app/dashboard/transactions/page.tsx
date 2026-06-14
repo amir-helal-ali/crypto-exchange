@@ -2,7 +2,23 @@
 
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Search, Check, X, Copy, CheckCircle2 } from "lucide-react";
+import {
+  Search,
+  Check,
+  X,
+  Copy,
+  CheckCircle2,
+  Wallet,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+} from "lucide-react";
 import { authGet, authPut } from "@/lib/api";
 
 export default function AdminTransactionsPage() {
@@ -14,6 +30,7 @@ export default function AdminTransactionsPage() {
   const [reviewingId, setReviewingId] = useState<number | null>(null);
   const [txInputs, setTxInputs] = useState<Record<number, string>>({});
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
   const fetchTransactions = () => {
     const token = localStorage.getItem("token");
@@ -43,29 +60,148 @@ export default function AdminTransactionsPage() {
     finally { setReviewingId(null); }
   };
 
-  const filtered = transactions.filter(t =>
-    t.user?.username?.toLowerCase().includes(search.toLowerCase()) ||
-    t.user?.email?.toLowerCase().includes(search.toLowerCase()) ||
-    t.currency?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = transactions.filter(t => {
+    const matchesSearch =
+      t.user?.username?.toLowerCase().includes(search.toLowerCase()) ||
+      t.user?.email?.toLowerCase().includes(search.toLowerCase()) ||
+      t.currency?.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === "ALL" || t.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  // Stats
+  const pendingCount = transactions.filter(t => t.status === "PENDING").length;
+  const completedCount = transactions.filter(t => t.status === "COMPLETED").length;
+  const rejectedCount = transactions.filter(t => t.status === "REJECTED").length;
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "COMPLETED": return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      case "PENDING": return "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
+      case "REJECTED": return "bg-red-500/10 text-red-400 border-red-500/20";
+      default: return "bg-muted/20 text-muted-foreground border-border/30";
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "COMPLETED": return CheckCircle;
+      case "PENDING": return Clock;
+      case "REJECTED": return XCircle;
+      default: return Clock;
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "COMPLETED": return "مكتمل";
+      case "PENDING": return "قيد الانتظار";
+      case "REJECTED": return "مرفوض";
+      default: return status;
+    }
+  };
+
+  if (loading && transactions.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="flex flex-col items-center gap-4">
+          <span className="spinner h-8 w-8" />
+          <p className="text-sm text-muted-foreground">جاري تحميل المعاملات...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">المعاملات</h1>
-        <p className="text-muted-foreground mt-1">إدارة عمليات السحب والإيداع</p>
+    <div className="space-y-6 animate-fade-in">
+      {/* ─── Header ─── */}
+      <div className="animate-slide-in-down">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+            <Wallet className="h-5 w-5 text-emerald-500" />
+          </div>
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold">المعاملات</h1>
+            <p className="text-sm text-muted-foreground">إدارة عمليات السحب والإيداع ومراجعة الطلبات</p>
+          </div>
+        </div>
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input type="text" className="input-field pr-10" placeholder="بحث..." value={search} onChange={e => setSearch(e.target.value)} />
+      {/* ─── Stats Row ─── */}
+      <div className="grid grid-cols-3 gap-3 animate-slide-in-up delay-100">
+        <div className="stat-card stat-card-yellow">
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-yellow-500/10">
+              <Clock className="h-5 w-5 text-yellow-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{pendingCount}</p>
+              <p className="text-[11px] text-muted-foreground">قيد الانتظار</p>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card stat-card-emerald">
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10">
+              <CheckCircle className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{completedCount}</p>
+              <p className="text-[11px] text-muted-foreground">مكتملة</p>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card stat-card-red">
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-red-500/10">
+              <XCircle className="h-5 w-5 text-red-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{rejectedCount}</p>
+              <p className="text-[11px] text-muted-foreground">مرفوضة</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="glass-panel rounded-2xl overflow-hidden">
+      {/* ─── Search & Filter Bar ─── */}
+      <div className="glass-panel rounded-2xl p-4 animate-slide-in-up delay-200">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+            <input
+              type="text"
+              className="input-field pr-10"
+              placeholder="بحث باسم المستخدم أو البريد أو العملة..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Status Filter */}
+          <div className="relative">
+            <Filter className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50 pointer-events-none" />
+            <select
+              className="input-field pr-10 appearance-none min-w-[140px]"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+            >
+              <option value="ALL">جميع الحالات</option>
+              <option value="PENDING">قيد الانتظار</option>
+              <option value="COMPLETED">مكتمل</option>
+              <option value="REJECTED">مرفوض</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Transactions Table ─── */}
+      <div className="glass-panel rounded-2xl overflow-hidden animate-slide-in-up delay-300">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/50">
+              <tr className="border-b border-border/50 bg-muted/10">
                 <th className="text-right p-4 text-muted-foreground font-medium">المستخدم</th>
                 <th className="text-right p-4 text-muted-foreground font-medium">النوع</th>
                 <th className="text-right p-4 text-muted-foreground font-medium">العملة</th>
@@ -78,91 +214,162 @@ export default function AdminTransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((tx: any, i: number) => (
-                <tr key={i} className="border-b border-border/20 hover:bg-muted/10 transition-all">
-                  <td className="p-4">
-                    <div>
-                      <p className="font-medium">{tx.user?.username || tx.username || "—"}</p>
-                      <p className="text-[10px] text-muted-foreground">{tx.user?.email || tx.email || ""}</p>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${tx.type === "deposit" ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"}`}>
-                      {tx.type === "deposit" ? "إيداع" : "سحب"}
-                    </span>
-                  </td>
-                  <td className="p-4 font-medium">{tx.currency}</td>
-                  <td className="p-4 tabular-nums">{parseFloat(tx.amount || "0").toFixed(8)}</td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground max-w-[100px] truncate block">{tx.address || "—"}</span>
-                      {tx.address && (
-                        <button onClick={() => { navigator.clipboard.writeText(tx.address); setCopiedId(tx.id); setTimeout(() => setCopiedId(null), 2000); }} className="text-muted-foreground hover:text-foreground flex-shrink-0">
-                          {copiedId === tx.id ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground max-w-[80px] truncate block">{tx.tx_id || "—"}</span>
-                      {tx.tx_id && (
-                        <button onClick={() => { navigator.clipboard.writeText(tx.tx_id); setCopiedId(tx.id); setTimeout(() => setCopiedId(null), 2000); }} className="text-muted-foreground hover:text-foreground flex-shrink-0">
-                          {copiedId === tx.id ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
-                      tx.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-500" :
-                      tx.status === "PENDING" ? "bg-yellow-500/10 text-yellow-500" :
-                      "bg-red-500/10 text-red-500"
-                    }`}>
-                      {tx.status === "COMPLETED" ? "مكتمل" : tx.status === "PENDING" ? "قيد الانتظار" : "مرفوض"}
-                    </span>
-                  </td>
-                  <td className="p-4 text-muted-foreground text-xs">{tx.created_at ? new Date(tx.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
-                  <td className="p-4">
-                    {tx.status === "PENDING" && (
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col gap-1">
-                          <input
-                            type="text"
-                            className="input-field text-xs py-1 px-2 w-24"
-                            placeholder="TxID"
-                            value={txInputs[tx.id] || ""}
-                            onChange={e => setTxInputs(prev => ({ ...prev, [tx.id]: e.target.value }))}
-                          />
-                          <div className="flex gap-1">
-                            <button onClick={() => handleReview(tx.id, "approve")} disabled={reviewingId === tx.id} className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all disabled:opacity-50" title="موافقة">
-                              {reviewingId === tx.id ? <span className="spinner h-3 w-3" /> : <Check className="h-3.5 w-3.5" />}
-                            </button>
-                            <button onClick={() => handleReview(tx.id, "reject")} disabled={reviewingId === tx.id} className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all disabled:opacity-50" title="رفض">
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-16">
+                    <Wallet className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-muted-foreground font-medium">لا توجد معاملات</p>
+                    <p className="text-xs text-muted-foreground/60 mt-1">ستظهر المعاملات هنا عند إجراء عمليات إيداع أو سحب</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filtered.map((tx: any, i: number) => {
+                  const StatusIcon = getStatusIcon(tx.status);
+                  return (
+                    <tr key={i} className="border-b border-border/20 hover:bg-muted/5 transition-all">
+                      <td className="p-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                            <span className="text-xs font-bold text-primary">
+                              {(tx.user?.username || tx.username || "?")[0]?.toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{tx.user?.username || tx.username || "—"}</p>
+                            <p className="text-[10px] text-muted-foreground">{tx.user?.email || tx.email || ""}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${
+                          tx.type === "deposit"
+                            ? "bg-emerald-500/10 text-emerald-400"
+                            : "bg-red-500/10 text-red-400"
+                        }`}>
+                          {tx.type === "deposit" ? (
+                            <ArrowDownLeft className="h-3 w-3" />
+                          ) : (
+                            <ArrowUpRight className="h-3 w-3" />
+                          )}
+                          {tx.type === "deposit" ? "إيداع" : "سحب"}
+                        </div>
+                      </td>
+                      <td className="p-4 font-medium">{tx.currency}</td>
+                      <td className="p-4 tabular-nums font-medium">
+                        <span className={tx.type === "deposit" ? "text-emerald-400" : "text-red-400"}>
+                          {tx.type === "deposit" ? "+" : "-"}{parseFloat(tx.amount || "0").toFixed(8)}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-muted-foreground max-w-[100px] truncate block font-mono">{tx.address || "—"}</span>
+                          {tx.address && (
+                            <button onClick={() => { navigator.clipboard.writeText(tx.address); setCopiedId(tx.id); setTimeout(() => setCopiedId(null), 2000); }} className="text-muted-foreground hover:text-foreground flex-shrink-0 transition-colors">
+                              {copiedId === tx.id ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-muted-foreground max-w-[80px] truncate block font-mono">{tx.tx_id || "—"}</span>
+                          {tx.tx_id && (
+                            <button onClick={() => { navigator.clipboard.writeText(tx.tx_id); setCopiedId(tx.id); setTimeout(() => setCopiedId(null), 2000); }} className="text-muted-foreground hover:text-foreground flex-shrink-0 transition-colors">
+                              {copiedId === tx.id ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${getStatusBadge(tx.status)}`}>
+                          <StatusIcon className="h-3 w-3" />
+                          {getStatusLabel(tx.status)}
+                        </span>
+                      </td>
+                      <td className="p-4 text-muted-foreground text-xs whitespace-nowrap">
+                        {tx.created_at ? new Date(tx.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" }) : "—"}
+                      </td>
+                      <td className="p-4">
+                        {tx.status === "PENDING" && (
+                          <div className="flex items-center gap-2">
+                            <div className="flex flex-col gap-1.5">
+                              <input
+                                type="text"
+                                className="input-field text-xs py-1 px-2 w-28"
+                                placeholder="أدخل TxID"
+                                value={txInputs[tx.id] || ""}
+                                onChange={e => setTxInputs(prev => ({ ...prev, [tx.id]: e.target.value }))}
+                              />
+                              <div className="flex gap-1.5">
+                                <button
+                                  onClick={() => handleReview(tx.id, "approve")}
+                                  disabled={reviewingId === tx.id}
+                                  className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                                  title="موافقة"
+                                >
+                                  {reviewingId === tx.id ? <span className="spinner h-3 w-3" /> : <Check className="h-3.5 w-3.5" />}
+                                </button>
+                                <button
+                                  onClick={() => handleReview(tx.id, "reject")}
+                                  disabled={reviewingId === tx.id}
+                                  className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all disabled:opacity-50"
+                                  title="رفض"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
-        {!loading && filtered.length === 0 && <div className="text-center py-12 text-muted-foreground">لا توجد معاملات</div>}
-      </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-            <button key={p} onClick={() => setPage(p)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${p === page ? "bg-primary text-primary-foreground" : "bg-muted/30 text-muted-foreground hover:bg-muted/50"}`}>
-              {p}
-            </button>
-          ))}
-        </div>
-      )}
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-border/50">
+            <p className="text-sm text-muted-foreground">
+              صفحة {page} من {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(Math.max(1, page - 1))}
+                disabled={page === 1}
+                className="btn-ghost p-2 disabled:opacity-30"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const p = Math.max(1, Math.min(page - 2, totalPages - 4)) + i;
+                if (p > totalPages) return null;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      p === page ? "bg-primary text-primary-foreground" : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setPage(Math.min(totalPages, page + 1))}
+                disabled={page === totalPages}
+                className="btn-ghost p-2 disabled:opacity-30"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -100,6 +100,7 @@ func main() {
 
         database.Connect()
         seedAdmin()
+        matching.SeedDefaultFees()
 
         matching.Start(10 * time.Second)
         scheduler.StartCleanupScheduler()
@@ -226,11 +227,15 @@ func main() {
                 admin.DELETE("/ads/:id", handlers.DeleteAd)
                 admin.POST("/ads/upload", handlers.UploadAdImage)
                 admin.POST("/ads/suggest", handlers.SuggestAd)
+                admin.GET("/fees", handlers.GetFeeSchedules)
+                admin.PUT("/fees/:id", handlers.UpdateFeeSchedule)
         }
 
         // Public routes (outside versioned group)
         v1.GET("/ads", handlers.GetActiveAds)
+        v1.GET("/fees", handlers.GetFeeSchedules)
         r.GET("/ws/market", websocket.HandleMarketWebSocket)
+        r.GET("/ws/user", websocket.HandleUserWebSocket)
 
         r.Static("/uploads", "./uploads")
 

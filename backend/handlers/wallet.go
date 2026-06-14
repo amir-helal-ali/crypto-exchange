@@ -122,11 +122,21 @@ func WithdrawCurrency(c *gin.Context) {
         }
 
         err := database.DB.Transaction(func(dbTx *gorm.DB) error {
-                // Lock wallet row for concurrent safety
+                // Lock wallet row with FOR UPDATE for concurrent safety
                 var lockedWallet models.Wallet
-                if err := dbTx.Where("user_id = ? AND currency = ?", userID, input.Currency).First(&lockedWallet).Error; err != nil {
+                if err := dbTx.Set("gorm:query_option", "FOR UPDATE").
+                        Where("user_id = ? AND currency = ?", userID, input.Currency).First(&lockedWallet).Error; err != nil {
                         return fmt.Errorf("محفظة %s غير موجودة", input.Currency)
                 }
+
+                // Use centralized validation
+                validationErrors := ValidateWithdrawal(input.Currency, input.Amount, input.Address, lockedWallet.Balance)
+                if validationErrors.HasErrors() {
+                        for _, msg := range validationErrors {
+                                return fmt.Errorf("%s", msg)
+                        }
+                }
+
                 if lockedWallet.Balance < input.Amount {
                         return fmt.Errorf("رصيد %s غير كافٍ (المطلوب: %.8f، المتاح: %.8f)", input.Currency, input.Amount, lockedWallet.Balance)
                 }
@@ -191,6 +201,16 @@ func DepositCurrency(c *gin.Context) {
         }
 
         input.Currency = strings.ToUpper(strings.TrimSpace(input.Currency))
+        input.TxID = strings.TrimSpace(input.TxID)
+
+        // Use centralized validation
+        validationErrors := ValidateDeposit(input.Currency, input.Amount, input.TxID)
+        if validationErrors.HasErrors() {
+                for _, msg := range validationErrors {
+                        c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+                        return
+                }
+        }
 
         if input.Amount <= 0 {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "Amount must be greater than zero"})
@@ -236,8 +256,8 @@ func ChangePassword(c *gin.Context) {
                 return
         }
 
-        // Enforce strong password
-        if err := validatePasswordStrength(input.NewPassword); err != nil {
+        // Enforce strong password using centralized validation
+        if err := ValidatePasswordStrength(input.NewPassword); err != nil {
                 c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
                 return
         }
@@ -258,7 +278,23 @@ func ChangePassword(c *gin.Context) {
                 c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
                 return
         }
-        database.DB.Model(&user).Update("password_hash", string(hashedPassword))
 
-        c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password changed successfully"})
+        // Update password and invalidate all sessions in a transaction
+        txErr := database.DB.Transaction(func(dbTx *gorm.DB) error {
+                if err := dbTx.Model(&user).Update("password_hash", string(hashedPassword)).Error; err != nil {
+                        return err
+                }
+                // Revoke all refresh tokens to force re-login on all devices
+                if err := dbTx.Where("user_id = ?", userID).Delete(&models.RefreshToken{}).Error; err != nil {
+                        return err
+                }
+                return nil
+        })
+
+        if txErr != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل تحديث كلمة المرور"})
+                return
+        }
+
+        c.JSON(http.StatusOK, gin.H{"success": true, "message": "تم تغيير كلمة المرور بنجاح. يرجى تسجيل الدخول مرة أخرى على جميع الأجهزة."})
 }

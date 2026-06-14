@@ -45,6 +45,15 @@ func PlaceOrder(c *gin.Context) {
         input.Symbol = strings.ToUpper(strings.TrimSpace(input.Symbol))
         base, quote := matching.ParseSymbol(input.Symbol)
 
+        // Use centralized validation for order input
+        validationErrors := ValidateOrderInput(input.Symbol, input.Side, input.Type, input.Price, input.StopPrice, input.Quantity)
+        if validationErrors.HasErrors() {
+                for _, msg := range validationErrors {
+                        c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+                        return
+                }
+        }
+
         // Validate price requirements based on order type
         if input.Type == "LIMIT" || input.Type == "STOP_LIMIT" {
                 if input.Price <= 0 {
@@ -126,7 +135,7 @@ func PlaceOrder(c *gin.Context) {
                 })
 
                 // Send notification
-                handlers.NotifyOrderFilled(userID, input.Symbol, input.Side, "MARKET", input.Quantity, marketPrice, order.ID)
+                NotifyOrderFilled(userID, input.Symbol, input.Side, "MARKET", input.Quantity, marketPrice, order.ID)
 
                 return
         }
@@ -280,6 +289,6 @@ func CancelOrder(c *gin.Context) {
         // Send notification - fetch the order details for the notification
         var cancelledOrder models.Order
         if err := database.DB.First(&cancelledOrder, orderID).Error; err == nil {
-                handlers.NotifyOrderCancelled(userID, cancelledOrder.Symbol, cancelledOrder.Side, cancelledOrder.Quantity, cancelledOrder.ID)
+                NotifyOrderCancelled(userID, cancelledOrder.Symbol, cancelledOrder.Side, cancelledOrder.Quantity, cancelledOrder.ID)
         }
 }

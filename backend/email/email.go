@@ -120,3 +120,72 @@ func SendVerificationEmail(to string, verificationLink string) error {
 
         return Send(to, "تأكيد البريد الإلكتروني - EgMoney", htmlBody)
 }
+
+// SendPasswordResetEmail sends an email with a password reset link.
+func SendPasswordResetEmail(to string, resetLink string) error {
+        if !IsConfigured() {
+                return fmt.Errorf("SMTP not configured")
+        }
+
+        htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center;margin:0">
+<div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
+        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
+        <h2 style="color:#fff;font-size:18px;margin:16px 0">إعادة تعيين كلمة المرور</h2>
+        <p style="color:#a1a1aa;font-size:14px;line-height:1.8">تلقينا طلباً لإعادة تعيين كلمة مرورك. اضغط على الزر أدناه لاختيار كلمة مرور جديدة.</p>
+        <p style="color:#a1a1aa;font-size:14px;line-height:1.8">هذا الرابط صالح لمدة ساعة واحدة.</p>
+        <a href="%s" style="display:inline-block;background:#10b981;color:#fff;padding:14px 36px;border-radius:12px;text-decoration:none;font-size:16px;font-weight:600;margin:20px 0">إعادة تعيين كلمة المرور</a>
+        <p style="color:#52525b;font-size:12px;margin-top:24px;line-height:1.6">إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد. لن يتغير شيء في حسابك.</p>
+        <p style="color:#52525b;font-size:11px;margin-top:12px">أو انسخ الرابط التالي في المتصفح:<br><span style="color:#71717a;word-break:break-all;direction:ltr;display:inline-block">%s</span></p>
+</div>
+</body>
+</html>`, resetLink, resetLink)
+
+        return Send(to, "إعادة تعيين كلمة المرور - EgMoney", htmlBody)
+}
+
+// Send2FAEnabledEmail sends a confirmation email when 2FA is enabled.
+func Send2FAEnabledEmail(to string) error {
+        if !IsConfigured() {
+                return fmt.Errorf("SMTP not configured")
+        }
+
+        htmlBody := `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center;margin:0">
+<div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
+        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
+        <h2 style="color:#fff;font-size:18px;margin:16px 0">تم تفعيل المصادقة الثنائية</h2>
+        <p style="color:#a1a1aa;font-size:14px;line-height:1.8">تم تفعيل المصادقة الثنائية (2FA) بنجاح على حسابك. حسابك الآن أكثر أماناً.</p>
+        <p style="color:#a1a1aa;font-size:14px;line-height:1.8">من الآن فصاعداً، ستحتاج إلى رمز التحقق من تطبيق المصادقة عند تسجيل الدخول.</p>
+        <p style="color:#52525b;font-size:12px;margin-top:24px;line-height:1.6">إذا لم تقم بتفعيل هذه الميزة، يرجى التواصل مع فريق الدعم فوراً.</p>
+</div>
+</body>
+</html>`
+
+        return Send(to, "تم تفعيل المصادقة الثنائية - EgMoney", htmlBody)
+}
+
+// SendWelcomeEmail sends a welcome email after successful registration and email verification.
+func SendWelcomeEmail(to string, username string) error {
+        if !IsConfigured() {
+                return fmt.Errorf("SMTP not configured")
+        }
+
+        htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center;margin:0">
+<div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
+        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
+        <h2 style="color:#fff;font-size:18px;margin:16px 0">مرحباً بك %s!</h2>
+        <p style="color:#a1a1aa;font-size:14px;line-height:1.8">شكراً لانضمامك إلى EgMoney! تم تفعيل حسابك بنجاح.</p>
+        <p style="color:#a1a1aa;font-size:14px;line-height:1.8">يمكنك الآن البدء في التداول وإدارة محفظتك الرقمية. ننصحك بتفعيل المصادقة الثنائية (2FA) لحماية حسابك بشكل أفضل.</p>
+        <a href="#" style="display:inline-block;background:#10b981;color:#fff;padding:14px 36px;border-radius:12px;text-decoration:none;font-size:16px;font-weight:600;margin:20px 0">ابدأ التداول الآن</a>
+        <p style="color:#52525b;font-size:12px;margin-top:24px;line-height:1.6">إذا كانت لديك أي أسئلة، فلا تتردد في التواصل مع فريق الدعم.</p>
+</div>
+</body>
+</html>`, username)
+
+        return Send(to, "مرحباً بك في EgMoney!", htmlBody)
+}

@@ -105,40 +105,6 @@ func generateVerificationToken() (string, error) {
         return hex.EncodeToString(tokenBytes), nil
 }
 
-// validatePasswordStrength enforces strong passwords for a crypto exchange.
-// Requirements: min 8 chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special char.
-func validatePasswordStrength(password string) error {
-        if len(password) < 8 {
-                return fmt.Errorf("كلمة المرور يجب أن تكون 8 أحرف على الأقل")
-        }
-        var hasUpper, hasLower, hasDigit, hasSpecial bool
-        for _, ch := range password {
-                switch {
-                case ch >= 'A' && ch <= 'Z':
-                        hasUpper = true
-                case ch >= 'a' && ch <= 'z':
-                        hasLower = true
-                case ch >= '0' && ch <= '9':
-                        hasDigit = true
-                case strings.ContainsRune("!@#$%^&*()_+-=[]{}|;':\",./<>?`~", ch):
-                        hasSpecial = true
-                }
-        }
-        if !hasUpper {
-                return fmt.Errorf("كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل")
-        }
-        if !hasLower {
-                return fmt.Errorf("كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل")
-        }
-        if !hasDigit {
-                return fmt.Errorf("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل")
-        }
-        if !hasSpecial {
-                return fmt.Errorf("كلمة المرور يجب أن تحتوي على رمز خاص واحد على الأقل (!@#$%...)")
-        }
-        return nil
-}
-
 // sendVerificationEmailToUser creates a verification token and sends the email
 func sendVerificationEmailToUser(userID uint, userEmail string) error {
         token, err := generateVerificationToken()
@@ -190,7 +156,7 @@ func Register(c *gin.Context) {
         input.Email = strings.TrimSpace(strings.ToLower(input.Email))
 
         // Enforce strong password for crypto exchange
-        if err := validatePasswordStrength(input.Password); err != nil {
+        if err := ValidatePasswordStrength(input.Password); err != nil {
                 c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
                 return
         }
@@ -363,6 +329,16 @@ func VerifyEmail(c *gin.Context) {
                 "success": true,
                 "message": "تم تأكيد بريدك الإلكتروني بنجاح. يمكنك الآن تسجيل الدخول.",
         })
+
+        // Send welcome email after successful verification
+        var verifiedUser models.User
+        if err := database.DB.First(&verifiedUser, verificationToken.UserID).Error; err == nil {
+                if email.IsConfigured() {
+                        if err := email.SendWelcomeEmail(verifiedUser.Email, verifiedUser.Username); err != nil {
+                                fmt.Printf("Welcome email send error: %v\n", err)
+                        }
+                }
+        }
 }
 
 // ResendVerification handles POST /api/auth/resend-verification
@@ -528,15 +504,7 @@ func ForgotPassword(c *gin.Context) {
         resetLink := fmt.Sprintf("%s/reset-password?token=%s", baseURL, token)
 
         if email.IsConfigured() {
-                html := fmt.Sprintf(`<!DOCTYPE html><html dir="rtl"><body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center">
-                        <div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
-                        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
-                        <h2 style="color:#fff;font-size:18px;margin:16px 0">إعادة تعيين كلمة المرور</h2>
-                        <p style="color:#a1a1aa;font-size:14px;line-height:1.6">اضغط على الزر أدناه لإعادة تعيين كلمة المرور. هذا الرابط صالح لمدة ساعة واحدة.</p>
-                        <a href="%s" style="display:inline-block;background:#10b981;color:#fff;padding:12px 32px;border-radius:12px;text-decoration:none;font-size:14px;margin:16px 0">إعادة تعيين كلمة المرور</a>
-                        <p style="color:#52525b;font-size:12px;margin-top:24px">إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد.</p>
-                        </div></body></html>`, resetLink)
-                if err := email.Send(user.Email, "إعادة تعيين كلمة المرور - EgMoney", html); err != nil {
+                if err := email.SendPasswordResetEmail(user.Email, resetLink); err != nil {
                         fmt.Printf("Email send error: %v\n", err)
                 }
         } else {
@@ -557,7 +525,7 @@ func ResetPassword(c *gin.Context) {
         }
 
         // Enforce strong password
-        if err := validatePasswordStrength(input.NewPassword); err != nil {
+        if err := ValidatePasswordStrength(input.NewPassword); err != nil {
                 c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
                 return
         }
@@ -761,14 +729,7 @@ func Enable2FA(c *gin.Context) {
 
         // Send email notification
         if email.IsConfigured() {
-                html := `<!DOCTYPE html><html dir="rtl"><body style="font-family:Arial,sans-serif;background:#0a0a0f;padding:40px;text-align:center">
-                        <div style="max-width:480px;margin:auto;background:rgba(255,255,255,0.05);backdrop-filter:blur(20px);border-radius:24px;padding:40px;border:1px solid rgba(255,255,255,0.1)">
-                        <h1 style="color:#10b981;font-size:24px;margin-bottom:8px">EgMoney</h1>
-                        <h2 style="color:#fff;font-size:18px;margin:16px 0">تم تفعيل المصادقة الثنائية</h2>
-                        <p style="color:#a1a1aa;font-size:14px;line-height:1.6">تم تفعيل المصادقة الثنائية (2FA) على حسابك بنجاح. ستُطلب رمز المصادقة عند كل تسجيل دخول.</p>
-                        <p style="color:#ef4444;font-size:13px;line-height:1.6;margin-top:16px">إذا لم تقم بتفعيل هذه الميزة، يرجى تغيير كلمة المرور فوراً والتواصل مع الدعم.</p>
-                        </div></body></html>`
-                if err := email.Send(user.Email, "تم تفعيل المصادقة الثنائية - EgMoney", html); err != nil {
+                if err := email.Send2FAEnabledEmail(user.Email); err != nil {
                         fmt.Printf("[WARN] Failed to send 2FA enabled email to %s: %v\n", user.Email, err)
                 }
         }

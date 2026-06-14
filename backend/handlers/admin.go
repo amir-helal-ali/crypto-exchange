@@ -188,17 +188,21 @@ func GetAllTransactions(c *gin.Context) {
         database.DB.Model(&models.Transaction{}).Count(&total)
 
         var txns []models.Transaction
-        database.DB.Order("created_at DESC").Limit(limit).Offset(offset).Find(&txns)
+        database.DB.Preload("User").Order("created_at DESC").Limit(limit).Offset(offset).Find(&txns)
 
         formatted := make([]gin.H, len(txns))
         for i, t := range txns {
-                var user models.User
-                database.DB.Select("id", "email", "username").First(&user, t.UserID)
+                username := "—"
+                email := "—"
+                if t.User != nil {
+                        username = t.User.Username
+                        email = t.User.Email
+                }
                 formatted[i] = gin.H{
                         "id":        t.ID,
                         "user_id":   t.UserID,
-                        "username":  user.Username,
-                        "email":     user.Email,
+                        "username":  username,
+                        "email":     email,
                         "type":      t.Type,
                         "currency":  t.Currency,
                         "amount":    t.Amount,
@@ -263,7 +267,8 @@ func ReviewTransaction(c *gin.Context) {
                         // For deposits: credit funds to user's wallet
                         if lockedTxn.Type == "deposit" {
                                 var wallet models.Wallet
-                                if err := dbTx.Where("user_id = ? AND currency = ?", lockedTxn.UserID, lockedTxn.Currency).First(&wallet).Error; err != nil {
+                                if err := dbTx.Set("gorm:query_option", "FOR UPDATE").
+                                        Where("user_id = ? AND currency = ?", lockedTxn.UserID, lockedTxn.Currency).First(&wallet).Error; err != nil {
                                         return fmt.Errorf("محفظة المستخدم غير موجودة")
                                 }
                                 wallet.Balance += lockedTxn.Amount
@@ -279,7 +284,8 @@ func ReviewTransaction(c *gin.Context) {
                         // For withdrawals: return funds to user's wallet (were deducted at request time)
                         if lockedTxn.Type == "withdraw" {
                                 var wallet models.Wallet
-                                if err := dbTx.Where("user_id = ? AND currency = ?", lockedTxn.UserID, lockedTxn.Currency).First(&wallet).Error; err == nil {
+                                if err := dbTx.Set("gorm:query_option", "FOR UPDATE").
+                                        Where("user_id = ? AND currency = ?", lockedTxn.UserID, lockedTxn.Currency).First(&wallet).Error; err == nil {
                                         wallet.Balance += lockedTxn.Amount
                                         if err := dbTx.Save(&wallet).Error; err != nil {
                                                 return fmt.Errorf("فشل إعادة الرصيد: %v", err)
@@ -342,4 +348,64 @@ func ReviewTransaction(c *gin.Context) {
                         NotifyWithdrawalRejected(txn.UserID, txn.Currency, txn.Amount)
                 }
         }
+}
+
+// GetFeeSchedules returns all fee schedules
+func GetFeeSchedules(c *gin.Context) {
+        var fees []models.FeeSchedule
+        database.DB.Order("user_type, order_type").Find(&fees)
+        c.JSON(http.StatusOK, gin.H{"success": true, "data": fees})
+}
+
+// UpdateFeeSchedule updates a specific fee schedule
+func UpdateFeeSchedule(c *gin.Context) {
+        feeID := c.Param("id")
+        adminID, _ := c.Get("user_id")
+
+        var input struct {
+                MakerFee *float64 `json:"maker_fee"`
+                TakerFee *float64 `json:"taker_fee"`
+                MinFee   *float64 `json:"min_fee"`
+        }
+        if err := c.ShouldBindJSON(&input); err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }
+
+        var fee models.FeeSchedule
+        if err := database.DB.First(&fee, feeID).Error; err != nil {
+                c.JSON(http.StatusNotFound, gin.H{"error": "Fee schedule not found"})
+                return
+        }
+
+        updates := map[string]interface{}{}
+        if input.MakerFee != nil {
+                updates["maker_fee"] = *input.MakerFee
+        }
+        if input.TakerFee != nil {
+                updates["taker_fee"] = *input.TakerFee
+        }
+        if input.MinFee != nil {
+                updates["min_fee"] = *input.MinFee
+        }
+
+        if len(updates) == 0 {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
+                return
+        }
+
+        if err := database.DB.Model(&fee).Updates(updates).Error; err != nil {
+                c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update fee schedule"})
+                return
+        }
+
+        database.DB.Create(&models.AuditLog{
+                UserID:    adminID.(uint),
+                Action:    "UPDATE_FEE_SCHEDULE",
+                Details:   fmt.Sprintf("Updated fee schedule #%s: %v", feeID, updates),
+                IPAddress: c.ClientIP(),
+                CreatedAt: time.Now(),
+        })
+
+        c.JSON(http.StatusOK, gin.H{"success": true, "message": "تم تحديث جدول الرسوم بنجاح", "data": fee})
 }

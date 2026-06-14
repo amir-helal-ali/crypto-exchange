@@ -88,6 +88,15 @@ func SubmitKYC(c *gin.Context) {
                 return
         }
 
+        // Use centralized validation
+        validationErrors := ValidateKYCSubmission(input.FullName, input.DocumentType, input.DocumentNumber, input.DocumentURL)
+        if validationErrors.HasErrors() {
+                for _, msg := range validationErrors {
+                        c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+                        return
+                }
+        }
+
         // Validate document URL is from our server (security: prevent external URLs)
         if !strings.HasPrefix(input.DocumentURL, "/uploads/kyc/") {
                 c.JSON(http.StatusBadRequest, gin.H{"error": "رابط المستند غير صالح. يرجى رفع الملف أولاً."})

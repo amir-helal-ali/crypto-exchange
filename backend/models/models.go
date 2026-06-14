@@ -81,6 +81,8 @@ type Transaction struct {
         Address   string    `gorm:"size:500" json:"address"`
         TxID      string    `gorm:"size:255" json:"tx_id"`
         CreatedAt time.Time `json:"created_at"`
+
+        User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
 type PasswordResetToken struct {

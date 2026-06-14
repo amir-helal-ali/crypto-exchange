@@ -87,6 +87,21 @@ export async function authFetch(
   }
 
   if (response.status === 401) {
+    // Try to parse the response to get the error code
+    let errorCode = "";
+    try {
+      const cloned = response.clone();
+      const errData = await cloned.json();
+      errorCode = errData.code || "";
+    } catch {}
+
+    // If the token is invalid (not just expired), don't try to refresh
+    if (errorCode === "INVALID_TOKEN" || errorCode === "AUTH_REQUIRED") {
+      forceLogout();
+      throw new Error("Invalid authentication token");
+    }
+
+    // Token expired or unknown 401 — try to refresh
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         failedQueue.push({

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
-  FileText,
+  ScrollText,
   Search,
   Download,
   Filter,
@@ -14,6 +14,7 @@ import {
   User,
   Shield,
   Calendar,
+  Activity,
 } from "lucide-react";
 import { authGet } from "@/lib/api";
 
@@ -69,6 +70,33 @@ const ACTION_COLORS: Record<string, { bg: string; text: string }> = {
   TWO_FA_DISABLED: { bg: "bg-yellow-500/10", text: "text-yellow-400" },
   PROFILE_UPDATED: { bg: "bg-blue-500/10", text: "text-blue-400" },
   PASSWORD_CHANGED: { bg: "bg-yellow-500/10", text: "text-yellow-400" },
+};
+
+// Action category icons
+const ACTION_ICONS: Record<string, string> = {
+  REGISTER: "📝",
+  LOGIN: "🔑",
+  LOGIN_2FA: "🔐",
+  LOGOUT: "🚪",
+  EMAIL_VERIFIED: "✉️",
+  PASSWORD_RESET_REQUESTED: "🔄",
+  PASSWORD_RESET_COMPLETED: "✅",
+  UPDATE_USER_ROLE: "👑",
+  KYC_SUBMITTED: "📋",
+  KYC_APPROVED: "✅",
+  KYC_REJECTED: "❌",
+  DEPOSIT_APPROVED: "💰",
+  DEPOSIT_REJECTED: "🚫",
+  WITHDRAWAL_APPROVED: "💸",
+  WITHDRAWAL_REJECTED: "🚫",
+  ORDER_PLACED: "📊",
+  ORDER_CANCELLED: "🗑️",
+  ORDER_FILLED: "✅",
+  ORDER_TRIGGERED: "⚡",
+  TWO_FA_ENABLED: "🔒",
+  TWO_FA_DISABLED: "🔓",
+  PROFILE_UPDATED: "👤",
+  PASSWORD_CHANGED: "🔑",
 };
 
 interface AuditLog {
@@ -181,48 +209,94 @@ export default function AuditLogsPage() {
   // Get unique action types from labels for filter dropdown
   const actionOptions = Object.keys(ACTION_LABELS).sort();
 
+  // Stats
+  const authActions = logs.filter(l => ["LOGIN", "LOGIN_2FA", "LOGOUT", "REGISTER"].includes(l.action)).length;
+  const adminActions = logs.filter(l => ["UPDATE_USER_ROLE", "KYC_APPROVED", "KYC_REJECTED", "DEPOSIT_APPROVED", "DEPOSIT_REJECTED", "WITHDRAWAL_APPROVED", "WITHDRAWAL_REJECTED"].includes(l.action)).length;
+  const tradeActions = logs.filter(l => ["ORDER_PLACED", "ORDER_CANCELLED", "ORDER_FILLED", "ORDER_TRIGGERED"].includes(l.action)).length;
+
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-3">
-            <FileText className="h-7 w-7 text-emerald-500" />
-            سجلات التدقيق
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            عرض وتصفية جميع الأنشطة على المنصة ({total.toLocaleString("ar-EG")} سجل)
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`btn-ghost gap-2 ${showFilters || hasActiveFilters ? "bg-primary/10 text-primary" : ""}`}
-          >
-            <Filter className="h-4 w-4" />
-            تصفية
-            {hasActiveFilters && (
-              <span className="w-2 h-2 rounded-full bg-primary inline-block" />
-            )}
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="btn-primary gap-2"
-          >
-            {exporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            تصدير CSV
-          </button>
+    <div className="space-y-6 animate-fade-in">
+      {/* ─── Header ─── */}
+      <div className="animate-slide-in-down">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+              <ScrollText className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold">سجلات التدقيق</h1>
+              <p className="text-sm text-muted-foreground">
+                عرض وتصفية جميع الأنشطة على المنصة ({total.toLocaleString("ar-EG")} سجل)
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`btn-ghost gap-2 ${showFilters || hasActiveFilters ? "bg-primary/10 text-primary" : ""}`}
+            >
+              <Filter className="h-4 w-4" />
+              تصفية
+              {hasActiveFilters && (
+                <span className="w-2 h-2 rounded-full bg-primary inline-block" />
+              )}
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="btn-primary gap-2"
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              تصدير CSV
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Filters Panel */}
+      {/* ─── Stats Row ─── */}
+      <div className="grid grid-cols-3 gap-3 animate-slide-in-up delay-100">
+        <div className="stat-card stat-card-blue">
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-blue-500/10">
+              <Shield className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{authActions}</p>
+              <p className="text-[11px] text-muted-foreground">أحداث المصادقة</p>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card stat-card-purple">
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-purple-500/10">
+              <User className="h-5 w-5 text-purple-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{adminActions}</p>
+              <p className="text-[11px] text-muted-foreground">إجراءات إدارية</p>
+            </div>
+          </div>
+        </div>
+        <div className="stat-card stat-card-emerald">
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10">
+              <Activity className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{tradeActions}</p>
+              <p className="text-[11px] text-muted-foreground">عمليات التداول</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Filters Panel ─── */}
       {showFilters && (
-        <div className="glass-panel rounded-2xl p-6 space-y-4">
+        <div className="glass-panel rounded-2xl p-6 space-y-4 animate-scale-in">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold flex items-center gap-2">
               <Filter className="h-4 w-4 text-emerald-500" />
@@ -231,7 +305,7 @@ export default function AuditLogsPage() {
             {hasActiveFilters && (
               <button
                 onClick={handleClearFilters}
-                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
               >
                 <X className="h-3 w-3" />
                 مسح الكل
@@ -321,13 +395,12 @@ export default function AuditLogsPage() {
         </div>
       )}
 
-      {/* Logs Table */}
-      <div className="glass-panel rounded-2xl overflow-hidden">
-        {/* Desktop Table */}
+      {/* ─── Logs Table ─── */}
+      <div className="glass-panel rounded-2xl overflow-hidden animate-slide-in-up delay-200">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/50">
+              <tr className="border-b border-border/50 bg-muted/10">
                 <th className="text-right p-4 font-medium text-muted-foreground">الوقت</th>
                 <th className="text-right p-4 font-medium text-muted-foreground">المستخدم</th>
                 <th className="text-right p-4 font-medium text-muted-foreground">الإجراء</th>
@@ -338,20 +411,20 @@ export default function AuditLogsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-emerald-500 mx-auto mb-2" />
+                  <td colSpan={5} className="text-center py-16">
+                    <Loader2 className="h-8 w-8 animate-spin text-emerald-500 mx-auto mb-3" />
                     <p className="text-muted-foreground text-sm">جاري التحميل...</p>
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12">
-                    <FileText className="h-10 w-10 text-muted-foreground/50 mx-auto mb-2" />
-                    <p className="text-muted-foreground">لا توجد سجلات مطابقة</p>
+                  <td colSpan={5} className="text-center py-16">
+                    <ScrollText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-muted-foreground font-medium">لا توجد سجلات مطابقة</p>
                     {hasActiveFilters && (
                       <button
                         onClick={handleClearFilters}
-                        className="text-sm text-primary hover:underline mt-2"
+                        className="text-sm text-primary hover:underline mt-2 transition-colors"
                       >
                         مسح عوامل التصفية
                       </button>
@@ -367,28 +440,29 @@ export default function AuditLogsPage() {
                   return (
                     <tr
                       key={log.id}
-                      className="border-b border-border/30 hover:bg-muted/10 transition-colors"
+                      className="border-b border-border/20 hover:bg-muted/5 transition-colors"
                     >
                       <td className="p-4 whitespace-nowrap">
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(log.createdAt).toLocaleDateString("ar-EG", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </span>
-                        <br />
-                        <span className="text-xs text-muted-foreground/70">
-                          {new Date(log.createdAt).toLocaleTimeString("ar-EG", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-foreground font-medium">
+                            {new Date(log.createdAt).toLocaleDateString("ar-EG", {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </span>
+                          <span className="text-xs text-muted-foreground/70 mt-0.5">
+                            {new Date(log.createdAt).toLocaleTimeString("ar-EG", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })}
+                          </span>
+                        </div>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                             <User className="h-3.5 w-3.5 text-primary" />
                           </div>
                           <span className="font-medium text-sm">
@@ -398,8 +472,9 @@ export default function AuditLogsPage() {
                       </td>
                       <td className="p-4">
                         <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium ${colorConfig.bg} ${colorConfig.text}`}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium ${colorConfig.bg} ${colorConfig.text}`}
                         >
+                          <span className="text-[11px]">{ACTION_ICONS[log.action] || "📋"}</span>
                           {ACTION_LABELS[log.action] || log.action}
                         </span>
                       </td>
@@ -410,7 +485,7 @@ export default function AuditLogsPage() {
                       </td>
                       <td className="p-4">
                         <span
-                          className="text-xs font-mono text-muted-foreground/70"
+                          className="text-xs font-mono text-muted-foreground/70 bg-muted/30 px-2 py-1 rounded"
                           dir="ltr"
                         >
                           {log.ipAddress || "-"}
