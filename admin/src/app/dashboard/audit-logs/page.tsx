@@ -15,8 +15,7 @@ import {
   Shield,
   Calendar,
 } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet } from "@/lib/api";
 
 // Action type labels in Arabic
 const ACTION_LABELS: Record<string, string> = {
@@ -111,9 +110,7 @@ export default function AuditLogsPage() {
       if (dateFrom) params.set("date_from", dateFrom);
       if (dateTo) params.set("date_to", dateTo);
 
-      const res = await fetch(`${API}/api/v1/admin/audit-logs?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authGet(`/api/v1/admin/audit-logs?${params}`);
       const data = await res.json();
       if (res.ok && data.success) {
         setLogs(Array.isArray(data.data) ? data.data : []);
@@ -148,8 +145,6 @@ export default function AuditLogsPage() {
 
   const handleExport = async () => {
     setExporting(true);
-    const token = localStorage.getItem("token");
-    if (!token) return;
 
     try {
       const params = new URLSearchParams();
@@ -158,9 +153,7 @@ export default function AuditLogsPage() {
       if (dateFrom) params.set("date_from", dateFrom);
       if (dateTo) params.set("date_to", dateTo);
 
-      const res = await fetch(`${API}/api/v1/admin/audit-logs/export?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authGet(`/api/v1/admin/audit-logs/export?${params}`);
 
       if (!res.ok) {
         toast.error("فشل تصدير السجلات");

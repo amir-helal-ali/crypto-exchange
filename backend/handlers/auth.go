@@ -105,6 +105,40 @@ func generateVerificationToken() (string, error) {
         return hex.EncodeToString(tokenBytes), nil
 }
 
+// validatePasswordStrength enforces strong passwords for a crypto exchange.
+// Requirements: min 8 chars, at least 1 uppercase, 1 lowercase, 1 digit, 1 special char.
+func validatePasswordStrength(password string) error {
+        if len(password) < 8 {
+                return fmt.Errorf("كلمة المرور يجب أن تكون 8 أحرف على الأقل")
+        }
+        var hasUpper, hasLower, hasDigit, hasSpecial bool
+        for _, ch := range password {
+                switch {
+                case ch >= 'A' && ch <= 'Z':
+                        hasUpper = true
+                case ch >= 'a' && ch <= 'z':
+                        hasLower = true
+                case ch >= '0' && ch <= '9':
+                        hasDigit = true
+                case strings.ContainsRune("!@#$%^&*()_+-=[]{}|;':\",./<>?`~", ch):
+                        hasSpecial = true
+                }
+        }
+        if !hasUpper {
+                return fmt.Errorf("كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل")
+        }
+        if !hasLower {
+                return fmt.Errorf("كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل")
+        }
+        if !hasDigit {
+                return fmt.Errorf("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل")
+        }
+        if !hasSpecial {
+                return fmt.Errorf("كلمة المرور يجب أن تحتوي على رمز خاص واحد على الأقل (!@#$%...)")
+        }
+        return nil
+}
+
 // sendVerificationEmailToUser creates a verification token and sends the email
 func sendVerificationEmailToUser(userID uint, userEmail string) error {
         token, err := generateVerificationToken()
@@ -142,7 +176,7 @@ func Register(c *gin.Context) {
         var input struct {
                 Email    string `json:"email" binding:"required,email"`
                 Username string `json:"username" binding:"required,min=3,max=50"`
-                Password string `json:"password" binding:"required,min=6"`
+                Password string `json:"password" binding:"required,min=8"`
                 FullName string `json:"full_name"`
                 Country  string `json:"country"`
                 Phone    string `json:"phone"`
@@ -154,6 +188,12 @@ func Register(c *gin.Context) {
 
         input.Username = strings.TrimSpace(input.Username)
         input.Email = strings.TrimSpace(strings.ToLower(input.Email))
+
+        // Enforce strong password for crypto exchange
+        if err := validatePasswordStrength(input.Password); err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }
 
         hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
         if err != nil {
@@ -509,9 +549,15 @@ func ForgotPassword(c *gin.Context) {
 func ResetPassword(c *gin.Context) {
         var input struct {
                 Token       string `json:"token" binding:"required"`
-                NewPassword string `json:"new_password" binding:"required,min=6"`
+                NewPassword string `json:"new_password" binding:"required,min=8"`
         }
         if err := c.ShouldBindJSON(&input); err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+                return
+        }
+
+        // Enforce strong password
+        if err := validatePasswordStrength(input.NewPassword); err != nil {
                 c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
                 return
         }

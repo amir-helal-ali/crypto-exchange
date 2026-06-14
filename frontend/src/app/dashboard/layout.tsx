@@ -11,6 +11,7 @@ const NAV = [
   { href: "/dashboard/exchange", icon: TrendingUp, label: "التداول" },
   { href: "/dashboard/wallet", icon: Wallet, label: "المحفظة" },
   { href: "/dashboard/history", icon: Clock, label: "سجل الصفقات" },
+  { href: "/dashboard/notifications", icon: Bell, label: "الإشعارات" },
   { href: "/dashboard/kyc", icon: FileText, label: "التحقق" },
   { href: "/dashboard/security", icon: Shield, label: "الأمان" },
   { href: "/dashboard/profile", icon: User, label: "الملف الشخصي" },

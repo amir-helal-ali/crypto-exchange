@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Search, Check, X, Copy, CheckCircle2 } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet, authPut } from "@/lib/api";
 
 export default function AdminTransactionsPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -20,7 +19,7 @@ export default function AdminTransactionsPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
     setLoading(true);
-    fetch(`${API}/api/v1/admin/transactions?page=${page}&limit=20`, { headers: { Authorization: `Bearer ${token}` } })
+    authGet(`/api/v1/admin/transactions?page=${page}&limit=20`)
       .then(r => r.json()).then(d => {
         const data = d.data;
         setTransactions(Array.isArray(data) ? data : []);
@@ -31,16 +30,11 @@ export default function AdminTransactionsPage() {
   useEffect(() => { fetchTransactions(); }, [page]);
 
   const handleReview = async (id: number, action: "approve" | "reject") => {
-    const token = localStorage.getItem("token");
     setReviewingId(id);
     try {
       const body: any = { action };
       if (action === "approve" && txInputs[id]) body.tx_id = txInputs[id];
-      const res = await fetch(`${API}/api/v1/admin/transactions/${id}/review`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-      });
+      const res = await authPut(`/api/v1/admin/transactions/${id}/review`, body);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل المراجعة"); return; }
       toast.success(data.message || (action === "approve" ? "تمت الموافقة على المعاملة" : "تم رفض المعاملة"));

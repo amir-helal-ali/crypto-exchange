@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Check, X, Search } from "lucide-react";
 import PromptDialog from "@/components/PromptDialog";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet, authPut } from "@/lib/api";
 
 export default function AdminKYCPage() {
   const [requests, setRequests] = useState<any[]>([]);
@@ -17,7 +16,7 @@ export default function AdminKYCPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
     setLoading(true);
-    fetch(`${API}/api/v1/admin/kyc`, { headers: { Authorization: `Bearer ${token}` } })
+    authGet("/api/v1/admin/kyc")
       .then(r => r.json()).then(d => {
         const data = d.data;
         setRequests(Array.isArray(data) ? data : []);
@@ -28,17 +27,12 @@ export default function AdminKYCPage() {
   useEffect(() => { fetchKYC(); }, []);
 
   const handleReview = async (id: number, status: string, rejectionReason = "") => {
-    const token = localStorage.getItem("token");
     try {
       const body: any = { status };
       if (status === "REJECTED" && rejectionReason) {
         body.rejection_reason = rejectionReason;
       }
-      const res = await fetch(`${API}/api/v1/admin/kyc/${id}/review`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-      });
+      const res = await authPut(`/api/v1/admin/kyc/${id}/review`, body);
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل المراجعة"); return; }
       toast.success(status === "APPROVED" ? "تم توثيق المستخدم" : "تم رفض الطلب");

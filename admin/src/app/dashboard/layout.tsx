@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { LayoutDashboard, Users, ShieldCheck, Wallet, LogOut, Menu, ChevronDown, FileText, Image, ScrollText } from "lucide-react";
+import { authPost } from "@/lib/api";
 
 const NAV = [
   { href: "/dashboard", icon: LayoutDashboard, label: "الإحصائيات" },
@@ -41,8 +42,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const refreshToken = localStorage.getItem("refresh_token");
+    try {
+      await authPost("/api/v1/auth/logout", { refresh_token: refreshToken });
+    } catch {}
     localStorage.removeItem("token");
+    localStorage.removeItem("refresh_token");
     localStorage.removeItem("user");
     router.push("/login");
   };

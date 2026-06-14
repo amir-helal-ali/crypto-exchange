@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import QRCode from "qrcode";
 import {
   Shield,
   ShieldCheck,
@@ -41,6 +42,7 @@ export default function SecurityPage() {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [setupLoading, setSetupLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
   const qrRef = useRef<HTMLDivElement>(null);
 
   // Disable 2FA State
@@ -116,6 +118,18 @@ export default function SecurityPage() {
       setTotpSecret(data.secret);
       setOtpauthUrl(data.otpauth_url);
       setSetupStep("setup");
+      // Generate QR code locally (security: never send TOTP secret to external service)
+      try {
+        const dataUrl = await QRCode.toDataURL(data.otpauth_url, {
+          width: 200,
+          margin: 2,
+          color: { dark: "#000000", light: "#ffffff" },
+        });
+        setQrDataUrl(dataUrl);
+      } catch {
+        // Fallback: the URL is still available for manual entry
+        setQrDataUrl("");
+      }
     } catch {
       toast.error("حدث خطأ في الاتصال");
     } finally {
@@ -315,19 +329,23 @@ export default function SecurityPage() {
               </p>
             </div>
 
-            {/* QR Code - using external QR API */}
+            {/* QR Code - generated locally for security */}
             <div className="flex justify-center">
               <div
                 ref={qrRef}
                 className="bg-white rounded-2xl p-4 inline-block"
               >
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`}
-                  alt="2FA QR Code"
-                  width={200}
-                  height={200}
-                  className="rounded-lg"
-                />
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="2FA QR Code"
+                    width={200}
+                    height={200}
+                    className="rounded-lg"
+                  />
+                ) : (
+                  <QrCode className="h-[200px] w-[200px] text-gray-300" />
+                )}
               </div>
             </div>
 

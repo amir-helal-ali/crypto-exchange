@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Plus, Pencil, Trash2, Eye, EyeOff, Upload, Sparkles, X } from "lucide-react";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { authGet, authPost, authPut, authDelete, authUpload } from "@/lib/api";
 
 interface Ad {
   id: number;
@@ -18,8 +19,6 @@ interface Ad {
   created_at: string;
   updated_at: string;
 }
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 const POSITIONS = [
   { value: "hero", label: "الهيرو (أعلى الصفحة)" },
@@ -47,9 +46,7 @@ export default function AdsPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/v1/admin/ads`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authGet("/api/v1/admin/ads");
       if (res.ok) {
         const d = await res.json();
         const data = d.data;
@@ -65,15 +62,10 @@ export default function AdsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const token = localStorage.getItem("token");
     const fd = new FormData();
     fd.append("image", file);
     try {
-      const res = await fetch(`${API}/api/v1/admin/ads/upload`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
+      const res = await authUpload("/api/v1/admin/ads/upload", fd);
       if (res.ok) {
         const data = await res.json();
         setForm(prev => ({ ...prev, image_url: data.url }));
@@ -90,13 +82,8 @@ export default function AdsPage() {
   const handleSuggest = async () => {
     setSuggesting(true);
     setSuggestions([]);
-    const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${API}/api/v1/admin/ads/suggest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ topic: form.title || "", position: form.position }),
-      });
+      const res = await authPost("/api/v1/admin/ads/suggest", { topic: form.title || "", position: form.position });
       if (res.ok) {
         const d = await res.json();
         const data = d.data;
@@ -122,19 +109,12 @@ export default function AdsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    const url = editing
-      ? `${API}/api/v1/admin/ads/${editing.id}`
-      : `${API}/api/v1/admin/ads`;
-    const method = editing ? "PUT" : "POST";
+    if (!localStorage.getItem("token")) return;
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(form),
-      });
+      const res = editing
+        ? await authPut(`/api/v1/admin/ads/${editing.id}`, form)
+        : await authPost("/api/v1/admin/ads", form);
 
       if (res.ok) {
         toast.success(editing ? "تم تحديث الإعلان" : "تم إضافة الإعلان");
@@ -151,13 +131,9 @@ export default function AdsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
+    if (!localStorage.getItem("token")) return;
     try {
-      const res = await fetch(`${API}/api/v1/admin/ads/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authDelete(`/api/v1/admin/ads/${id}`);
       if (res.ok) {
         toast.success("تم حذف الإعلان");
         fetchAds();
@@ -183,14 +159,9 @@ export default function AdsPage() {
   };
 
   const toggleActive = async (ad: Ad) => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
+    if (!localStorage.getItem("token")) return;
     try {
-      const res = await fetch(`${API}/api/v1/admin/ads/${ad.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...ad, active: !ad.active }),
-      });
+      const res = await authPut(`/api/v1/admin/ads/${ad.id}`, { ...ad, active: !ad.active });
       if (res.ok) {
         toast.success(ad.active ? "تم إخفاء الإعلان" : "تم تفعيل الإعلان");
         fetchAds();

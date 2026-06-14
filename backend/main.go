@@ -71,7 +71,7 @@ func seedAdmin() {
 
         adminPass := os.Getenv("ADMIN_PASSWORD")
         if adminPass == "" {
-                adminPass = "Admin@123456"
+                logg.Fatal("ADMIN_PASSWORD environment variable is not set. Refusing to use default password in production.", nil)
         }
         hash, _ := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
         admin := models.User{
@@ -122,8 +122,22 @@ func main() {
 
         r.Use(handlers.CORSMiddleware())
 
+        // Security headers middleware
+        r.Use(func(c *gin.Context) {
+                c.Header("X-Content-Type-Options", "nosniff")
+                c.Header("X-Frame-Options", "DENY")
+                c.Header("X-XSS-Protection", "1; mode=block")
+                c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+                c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss://stream.binance.com:9443 https:; font-src 'self'; frame-ancestors 'none'")
+                c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+                c.Next()
+        })
+
         rl := handlers.NewRateLimiter(120, time.Minute)
         r.Use(rl.Middleware())
+
+        // Stricter rate limiting for auth endpoints (5 requests per minute per IP)
+        authRL := handlers.NewRateLimiter(5, time.Minute)
 
         r.MaxMultipartMemory = 5 << 20
 
@@ -142,13 +156,13 @@ func main() {
         v1.GET("/market/prices", handlers.GetPrices)
         v1.GET("/market/klines", handlers.GetKlines)
 
-        v1.POST("/auth/register", handlers.Register)
-        v1.POST("/auth/login", handlers.Login)
-        v1.POST("/auth/forgot-password", handlers.ForgotPassword)
-        v1.POST("/auth/reset-password", handlers.ResetPassword)
+        v1.POST("/auth/register", authRL.Middleware(), handlers.Register)
+        v1.POST("/auth/login", authRL.Middleware(), handlers.Login)
+        v1.POST("/auth/forgot-password", authRL.Middleware(), handlers.ForgotPassword)
+        v1.POST("/auth/reset-password", authRL.Middleware(), handlers.ResetPassword)
         v1.GET("/auth/verify-email", handlers.VerifyEmail)
-        v1.POST("/auth/resend-verification", handlers.ResendVerification)
-        v1.POST("/auth/verify-2fa", handlers.Verify2FA)
+        v1.POST("/auth/resend-verification", authRL.Middleware(), handlers.ResendVerification)
+        v1.POST("/auth/verify-2fa", authRL.Middleware(), handlers.Verify2FA)
         v1.POST("/auth/refresh", handlers.RefreshAccessToken)
 
         // Authenticated auth routes

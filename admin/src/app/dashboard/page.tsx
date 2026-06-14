@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LayoutDashboard, Users, Wallet, Clock, TrendingUp } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet } from "@/lib/api";
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
@@ -15,8 +14,8 @@ export default function AdminDashboard() {
     if (!token) return;
 
     Promise.all([
-      fetch(`${API}/api/v1/admin/stats`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch(`${API}/api/v1/admin/audit-logs`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      authGet("/api/v1/admin/stats").then(r => r.json()),
+      authGet("/api/v1/admin/audit-logs").then(r => r.json()),
     ]).then(([statsData, logsData]) => {
       setStats(statsData);
       setAuditLogs(Array.isArray(logsData) ? logsData : Array.isArray(logsData.logs) ? logsData.logs : []);

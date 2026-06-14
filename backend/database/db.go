@@ -1,122 +1,122 @@
 package database
 
 import (
-	"log"
-	"os"
-	"time"
+        "log"
+        "os"
+        "time"
 
-	"crypto-exchange-backend/models"
+        "crypto-exchange-backend/models"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+        "gorm.io/driver/postgres"
+        "gorm.io/gorm"
+        "gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
 
 func Connect() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=postgres user=egmoney password=EgMoney@2024Secure! dbname=crypto_exchange port=5432 sslmode=disable"
-	}
+        dsn := os.Getenv("DATABASE_URL")
+        if dsn == "" {
+                log.Fatal("CRITICAL: DATABASE_URL environment variable is not set. Refusing to start with hardcoded credentials.")
+        }
 
-	var err error
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
+        var err error
+        DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+                Logger: logger.Default.LogMode(logger.Silent),
+        })
+        if err != nil {
+                log.Fatalf("Failed to connect to database: %v", err)
+        }
 
-	sqlDB, err := DB.DB()
-	if err != nil {
-		log.Fatalf("Failed to get DB instance: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(25)
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+        sqlDB, err := DB.DB()
+        if err != nil {
+                log.Fatalf("Failed to get DB instance: %v", err)
+        }
+        sqlDB.SetMaxOpenConns(25)
+        sqlDB.SetMaxIdleConns(10)
+        sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
-	err = DB.AutoMigrate(
-		&models.User{}, &models.Order{}, &models.Wallet{}, &models.AuditLog{},
-		&models.KYCRequest{}, &models.Transaction{}, &models.Ad{},
-		&models.PasswordResetToken{}, &models.EmailVerificationToken{},
-		&models.RefreshToken{}, &models.Notification{}, &models.FeeSchedule{},
-	)
-	if err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
-	}
+        err = DB.AutoMigrate(
+                &models.User{}, &models.Order{}, &models.Wallet{}, &models.AuditLog{},
+                &models.KYCRequest{}, &models.Transaction{}, &models.Ad{},
+                &models.PasswordResetToken{}, &models.EmailVerificationToken{},
+                &models.RefreshToken{}, &models.Notification{}, &models.FeeSchedule{},
+        )
+        if err != nil {
+                log.Fatalf("Failed to migrate database: %v", err)
+        }
 
-	// Create additional indexes for frequently queried columns
-	createIndexes()
+        // Create additional indexes for frequently queried columns
+        createIndexes()
 
-	log.Println("Database connected and migrated successfully")
+        log.Println("Database connected and migrated successfully")
 }
 
 // createIndexes adds performance-critical indexes that GORM tag-based
 // indexes may not cover, especially composite and partial indexes.
 func createIndexes() {
-	indexes := []struct {
-		name string
-		sql  string
-	}{
-		// Orders: most common query patterns
-		{
-			name: "idx_orders_user_status",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders(user_id, status)`,
-		},
-		{
-			name: "idx_orders_symbol_status",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_orders_symbol_status ON orders(symbol, status)`,
-		},
-		{
-			name: "idx_orders_status_created",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC)`,
-		},
-		// Transactions: admin list + user filter
-		{
-			name: "idx_transactions_user_type",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_transactions_user_type ON transactions(user_id, type)`,
-		},
-		{
-			name: "idx_transactions_status_created",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_transactions_status_created ON transactions(status, created_at DESC)`,
-		},
-		// Audit logs: admin search + user history
-		{
-			name: "idx_audit_logs_user_action",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_audit_logs_user_action ON audit_logs(user_id, action)`,
-		},
-		{
-			name: "idx_audit_logs_created_desc",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_audit_logs_created_desc ON audit_logs(created_at DESC)`,
-		},
-		// Refresh tokens: cleanup + session validation
-		{
-			name: "idx_refresh_tokens_user_revoked",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_revoked ON refresh_tokens(user_id, revoked)`,
-		},
-		// Email verification tokens: cleanup + validation
-		{
-			name: "idx_email_tokens_user_created",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_email_tokens_user_created ON email_verification_tokens(user_id, created_at)`,
-		},
-		// Password reset tokens: cleanup
-		{
-			name: "idx_password_reset_tokens_expires",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_tokens(expires_at)`,
-		},
-		// Notifications: user inbox
-		{
-			name: "idx_notifications_user_read",
-			sql:  `CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read, created_at DESC)`,
-		},
-	}
+        indexes := []struct {
+                name string
+                sql  string
+        }{
+                // Orders: most common query patterns
+                {
+                        name: "idx_orders_user_status",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders(user_id, status)`,
+                },
+                {
+                        name: "idx_orders_symbol_status",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_orders_symbol_status ON orders(symbol, status)`,
+                },
+                {
+                        name: "idx_orders_status_created",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC)`,
+                },
+                // Transactions: admin list + user filter
+                {
+                        name: "idx_transactions_user_type",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_transactions_user_type ON transactions(user_id, type)`,
+                },
+                {
+                        name: "idx_transactions_status_created",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_transactions_status_created ON transactions(status, created_at DESC)`,
+                },
+                // Audit logs: admin search + user history
+                {
+                        name: "idx_audit_logs_user_action",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_audit_logs_user_action ON audit_logs(user_id, action)`,
+                },
+                {
+                        name: "idx_audit_logs_created_desc",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_audit_logs_created_desc ON audit_logs(created_at DESC)`,
+                },
+                // Refresh tokens: cleanup + session validation
+                {
+                        name: "idx_refresh_tokens_user_revoked",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_revoked ON refresh_tokens(user_id, revoked)`,
+                },
+                // Email verification tokens: cleanup + validation
+                {
+                        name: "idx_email_tokens_user_created",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_email_tokens_user_created ON email_verification_tokens(user_id, created_at)`,
+                },
+                // Password reset tokens: cleanup
+                {
+                        name: "idx_password_reset_tokens_expires",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_tokens(expires_at)`,
+                },
+                // Notifications: user inbox
+                {
+                        name: "idx_notifications_user_read",
+                        sql:  `CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read, created_at DESC)`,
+                },
+        }
 
-	for _, idx := range indexes {
-		if err := DB.Exec(idx.sql).Error; err != nil {
-			log.Printf("[DB] Warning: Failed to create index %s: %v", idx.name, err)
-		}
-	}
+        for _, idx := range indexes {
+                if err := DB.Exec(idx.sql).Error; err != nil {
+                        log.Printf("[DB] Warning: Failed to create index %s: %v", idx.name, err)
+                }
+        }
 
-	log.Println("[DB] Database indexes verified")
+        log.Println("[DB] Database indexes verified")
 }

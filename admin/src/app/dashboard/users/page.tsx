@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { Search, Shield, ShieldOff } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+import { authGet, authPut } from "@/lib/api";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -15,7 +14,7 @@ export default function AdminUsersPage() {
     const token = localStorage.getItem("token");
     if (!token) return;
     setLoading(true);
-    fetch(`${API}/api/v1/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
+    authGet("/api/v1/admin/users")
       .then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : Array.isArray(d.users) ? d.users : [])).catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -23,13 +22,8 @@ export default function AdminUsersPage() {
   useEffect(() => { fetchUsers(); }, []);
 
   const handleRoleChange = async (userId: number, role: string) => {
-    const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`${API}/api/v1/admin/user/${userId}/role`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role }),
-      });
+      const res = await authPut(`/api/v1/admin/user/${userId}/role`, { role });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || "فشل تحديث الدور"); return; }
       toast.success("تم تحديث دور المستخدم");

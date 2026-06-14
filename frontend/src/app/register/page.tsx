@@ -168,11 +168,12 @@ export default function RegisterPage() {
             <div>
               <label className="block text-sm font-medium mb-1.5">كلمة المرور</label>
               <div className="relative">
-                <input type={show ? "text" : "password"} className="input-field pl-10" placeholder="••••••••" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required minLength={6} />
+                <input type={show ? "text" : "password"} className="input-field pl-10" placeholder="••••••••" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required minLength={8} />
                 <button type="button" onClick={() => setShow(!show)} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <p className="text-xs text-muted-foreground mt-1">8 أحرف على الأقل، حرف كبير + صغير + رقم + رمز خاص</p>
             </div>
             <button type="submit" disabled={loading} className="btn-primary w-full gap-2">
               {loading ? <span className="spinner h-4 w-4" /> : <UserPlus className="h-4 w-4" />}

@@ -3,6 +3,7 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 WORKDIR /app
 COPY package.json ./
+COPY public ./public
 RUN npm install
 COPY . .
 RUN npm run build

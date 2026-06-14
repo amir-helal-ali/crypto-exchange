@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import toast from "react-hot-toast";
 import { CheckCircle, XCircle, Mail, ArrowLeft, RefreshCw, LogIn } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
@@ -64,10 +65,10 @@ export default function VerifyEmailPage() {
       if (res.status === 429) {
         setResendCooldown(60);
       }
-      alert(data.message || data.error || "تم إرسال رابط التحقق");
+      toast.success(data.message || "تم إرسال رابط التحقق");
       setResendCooldown(60);
     } catch {
-      alert("حدث خطأ في الاتصال");
+      toast.error("حدث خطأ في الاتصال");
     } finally {
       setResendLoading(false);
     }
