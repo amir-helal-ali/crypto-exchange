@@ -8,13 +8,26 @@ import (
 	"time"
 
 	"crypto-exchange-backend/database"
+	"crypto-exchange-backend/matching"
 	"crypto-exchange-backend/models"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
+// PlaceOrder handles all order types with proper fund reservation and execution.
+//
+// Financial flow:
+//   - MARKET orders: immediately execute at Binance market price (deduct source → credit destination)
+//   - LIMIT orders: reserve funds (deduct from source) → wait for price match → fill via engine
+//   - STOP_LIMIT orders: reserve funds → wait for trigger → create LIMIT order (funds already reserved)
+//   - TAKE_PROFIT orders: reserve funds → wait for trigger → fill immediately at market price via engine
+//
+// Anti-double-spending: Funds are deducted from wallet at order creation time.
+// This ensures the user cannot spend the same funds twice on different orders.
 func PlaceOrder(c *gin.Context) {
 	userID := c.GetUint("user_id")
+
 	var input struct {
 		Symbol    string  `json:"symbol" binding:"required"`
 		Side      string  `json:"side" binding:"required,oneof=BUY SELL"`
@@ -30,56 +43,157 @@ func PlaceOrder(c *gin.Context) {
 	}
 
 	input.Symbol = strings.ToUpper(strings.TrimSpace(input.Symbol))
+	base, quote := matching.ParseSymbol(input.Symbol)
 
-	if (input.Type == "LIMIT" || input.Type == "STOP_LIMIT" || input.Type == "TAKE_PROFIT") && input.Price <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Price is required for limit/stop orders"})
+	// Validate price requirements based on order type
+	if input.Type == "LIMIT" || input.Type == "STOP_LIMIT" {
+		if input.Price <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Price is required for limit/stop orders"})
+			return
+		}
+	}
+
+	if input.Type == "STOP_LIMIT" || input.Type == "TAKE_PROFIT" {
+		if input.StopPrice <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Stop price is required for stop/take-profit orders"})
+			return
+		}
+	}
+
+	if input.Quantity <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Quantity must be greater than zero"})
 		return
 	}
 
-	if (input.Type == "STOP_LIMIT" || input.Type == "TAKE_PROFIT") && input.StopPrice <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Stop price is required for stop/take-profit orders"})
-		return
-	}
-
-	status := "PENDING"
-	filledQty := 0.0
+	// ==================== MARKET ORDER ====================
+	// Execute immediately at current Binance price with full fund transfer
 	if input.Type == "MARKET" {
-		status = "FILLED"
-		filledQty = input.Quantity
+		marketPrice, err := matching.GetMarketPrice(input.Symbol)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "سعر السوق غير متاح حالياً، يرجى المحاولة لاحقاً"})
+			return
+		}
+
+		order := models.Order{
+			UserID:   userID,
+			Symbol:   input.Symbol,
+			Side:     input.Side,
+			Type:     "MARKET",
+			Price:    marketPrice,
+			Quantity: input.Quantity,
+			Status:   "PENDING", // Temporary, will be updated to FILLED in transaction
+		}
+
+		// Calculate reservation amount based on side
+		if input.Side == "BUY" {
+			order.ReservedAmount = marketPrice * input.Quantity
+		} else {
+			order.ReservedAmount = input.Quantity
+		}
+
+		err = database.DB.Transaction(func(dbTx *gorm.DB) error {
+			// Step 1: Reserve (deduct) funds from source wallet
+			if err := matching.ReserveFunds(dbTx, &order); err != nil {
+				return err
+			}
+
+			// Step 2: Create order record in DB (needed for ExecuteFill to have an ID)
+			if err := dbTx.Create(&order).Error; err != nil {
+				return err
+			}
+
+			// Step 3: Execute fill — credit destination wallet, refund excess (if any), update to FILLED
+			return matching.ExecuteFill(dbTx, &order, marketPrice)
+		})
+
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		database.DB.Create(&models.AuditLog{
+			UserID:    userID,
+			Action:    "PLACE_ORDER",
+			Details:   fmt.Sprintf("Executed MARKET %s %s: %.8f %s at %.2f %s", input.Side, input.Symbol, input.Quantity, base, marketPrice, quote),
+			IPAddress: c.ClientIP(),
+			CreatedAt: time.Now(),
+		})
+
+		c.JSON(http.StatusCreated, gin.H{
+			"success": true,
+			"message": fmt.Sprintf("تم تنفيذ الأمر السوقي بنجاح: %s %.8f %s بسعر %.2f %s", func() string { if input.Side == "BUY" { return "شراء" } else { return "بيع" } }(), input.Quantity, base, marketPrice, quote),
+			"data":    order,
+		})
+		return
 	}
+
+	// ==================== LIMIT / STOP_LIMIT / TAKE_PROFIT ====================
+	// Reserve funds and create PENDING order for the engine to process later
 
 	order := models.Order{
-		UserID:         userID,
-		Symbol:         input.Symbol,
-		Side:           input.Side,
-		Type:           input.Type,
-		Price:          input.Price,
-		StopPrice:      input.StopPrice,
-		Quantity:       input.Quantity,
-		FilledQuantity: filledQty,
-		Status:         status,
+		UserID:    userID,
+		Symbol:    input.Symbol,
+		Side:      input.Side,
+		Type:      input.Type,
+		Price:     input.Price,
+		StopPrice: input.StopPrice,
+		Quantity:  input.Quantity,
+		Status:    "PENDING",
 	}
 
-	if err := database.DB.Create(&order).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to place order"})
+	// Calculate reservation amount
+	switch input.Side {
+	case "BUY":
+		// For BUY orders, reserve quote currency (USDT)
+		if input.Type == "TAKE_PROFIT" {
+			// TAKE_PROFIT has no separate limit price, use stopPrice for reservation
+			order.ReservedAmount = input.StopPrice * input.Quantity
+			order.Price = input.StopPrice
+		} else {
+			// LIMIT and STOP_LIMIT use the specified price
+			order.ReservedAmount = input.Price * input.Quantity
+		}
+	case "SELL":
+		// For SELL orders, reserve base currency (BTC, ETH, etc.)
+		order.ReservedAmount = input.Quantity
+	}
+
+	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
+		// Step 1: Reserve (deduct) funds from source wallet
+		if err := matching.ReserveFunds(dbTx, &order); err != nil {
+			return err
+		}
+
+		// Step 2: Create order record in DB
+		return dbTx.Create(&order).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	reservedCurrency := quote
+	if input.Side == "SELL" {
+		reservedCurrency = base
 	}
 
 	database.DB.Create(&models.AuditLog{
 		UserID:    userID,
 		Action:    "PLACE_ORDER",
-		Details:   fmt.Sprintf("Placed %s %s order for %s (Qty: %.4f)", input.Side, input.Type, input.Symbol, input.Quantity),
+		Details:   fmt.Sprintf("Placed %s %s %s order: %.8f %s (reserved: %.8f %s)", input.Side, input.Type, input.Symbol, input.Quantity, base, order.ReservedAmount, reservedCurrency),
 		IPAddress: c.ClientIP(),
 		CreatedAt: time.Now(),
 	})
 
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
-		"message": "Order placed successfully",
+		"message": fmt.Sprintf("تم وضع الأمر بنجاح. تم حجز %.8f %s", order.ReservedAmount, reservedCurrency),
 		"data":    order,
 	})
 }
 
+// GetOrders returns the user's orders with pagination
 func GetOrders(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	page, limit := getPagination(c)
@@ -94,6 +208,7 @@ func GetOrders(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": orders, "total": total, "page": page, "limit": limit})
 }
 
+// getPagination extracts page and limit from query parameters
 func getPagination(c *gin.Context) (int, int) {
 	page := 1
 	limit := 50
@@ -106,31 +221,44 @@ func getPagination(c *gin.Context) (int, int) {
 	return page, limit
 }
 
+// CancelOrder cancels a pending order and returns the reserved funds to the user's wallet.
+// Only PENDING orders can be cancelled. FILLED, CANCELLED, or TRIGGERED orders cannot.
 func CancelOrder(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	orderID := c.Param("id")
 
-	var order models.Order
-	if err := database.DB.Where("id = ? AND user_id = ?", orderID, userID).First(&order).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
+		var order models.Order
+		if err := dbTx.Where("id = ? AND user_id = ?", orderID, userID).First(&order).Error; err != nil {
+			return fmt.Errorf("الأمر غير موجود")
+		}
+
+		if order.Status != "PENDING" {
+			return fmt.Errorf("يمكن إلغاء الأوامر المعلقة فقط")
+		}
+
+		if order.ReservedAmount > 0 {
+			if err := matching.ReleaseFunds(dbTx, &order); err != nil {
+				return fmt.Errorf("فشل إعادة الرصيد المحجوز: %v", err)
+			}
+		}
+
+		order.Status = "CANCELLED"
+		return dbTx.Save(&order).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	if order.Status != "PENDING" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Only pending orders can be cancelled"})
-		return
-	}
-
-	order.Status = "CANCELLED"
-	database.DB.Save(&order)
 
 	database.DB.Create(&models.AuditLog{
 		UserID:    userID,
 		Action:    "CANCEL_ORDER",
-		Details:   fmt.Sprintf("Cancelled order #%d for %s", order.ID, order.Symbol),
+		Details:   fmt.Sprintf("Cancelled order #%s, reserved funds returned", orderID),
 		IPAddress: c.ClientIP(),
 		CreatedAt: time.Now(),
 	})
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Order cancelled successfully"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "تم إلغاء الأمر وإعادة الرصيد المحجوز بنجاح"})
 }

@@ -72,20 +72,27 @@ func getPrice(symbol string) (float64, bool) {
 	return p, ok
 }
 
+// processOrders processes all pending orders: STOP_LIMIT, TAKE_PROFIT, and LIMIT
 func processOrders() {
-	var orders []models.Order
-	database.DB.Where("status = ? AND type IN ?", "PENDING", []string{"STOP_LIMIT", "TAKE_PROFIT"}).Find(&orders)
-
-	if len(orders) == 0 {
-		return
+	// Process conditional trigger orders (STOP_LIMIT and TAKE_PROFIT)
+	var triggerOrders []models.Order
+	database.DB.Where("status = ? AND type IN ?", "PENDING", []string{"STOP_LIMIT", "TAKE_PROFIT"}).Find(&triggerOrders)
+	for i := range triggerOrders {
+		processTriggerOrder(&triggerOrders[i])
 	}
 
-	for _, order := range orders {
-		processOrder(&order)
+	// Process LIMIT orders (fill when price condition is met)
+	var limitOrders []models.Order
+	database.DB.Where("status = ? AND type = ?", "PENDING", "LIMIT").Find(&limitOrders)
+	for i := range limitOrders {
+		processLimitOrder(&limitOrders[i])
 	}
 }
 
-func processOrder(order *models.Order) {
+// processTriggerOrder handles STOP_LIMIT and TAKE_PROFIT orders.
+// STOP_LIMIT: triggers when price crosses stopPrice → creates a new LIMIT order
+// TAKE_PROFIT: triggers when price crosses stopPrice → fills immediately at market price
+func processTriggerOrder(order *models.Order) {
 	price, ok := getPrice(order.Symbol)
 	if !ok {
 		return
@@ -113,41 +120,41 @@ func processOrder(order *models.Order) {
 	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
 		var locked models.Order
 		if err := dbTx.Where("id = ? AND status = ?", order.ID, "PENDING").First(&locked).Error; err != nil {
-			return err
+			return err // Order already processed or not found
 		}
 
-		if order.Type == "STOP_LIMIT" {
+		if locked.Type == "STOP_LIMIT" {
+			// Mark original order as TRIGGERED
 			locked.Status = "TRIGGERED"
 			if err := dbTx.Save(&locked).Error; err != nil {
 				return err
 			}
 
+			// Create new LIMIT order with inherited reservation
 			newOrder := models.Order{
-				UserID:   locked.UserID,
-				Symbol:   locked.Symbol,
-				Side:     locked.Side,
-				Type:     "LIMIT",
-				Price:    locked.Price,
-				Quantity: locked.Quantity,
-				Status:   "PENDING",
+				UserID:         locked.UserID,
+				Symbol:         locked.Symbol,
+				Side:           locked.Side,
+				Type:           "LIMIT",
+				Price:          locked.Price,
+				Quantity:       locked.Quantity,
+				ReservedAmount: locked.ReservedAmount,
+				Status:         "PENDING",
 			}
 			if err := dbTx.Create(&newOrder).Error; err != nil {
 				return err
 			}
-		} else if order.Type == "TAKE_PROFIT" {
-			locked.Status = "FILLED"
-			locked.FilledQuantity = locked.Quantity
-			locked.Price = price
-			if err := dbTx.Save(&locked).Error; err != nil {
-				return err
-			}
+
+		} else if locked.Type == "TAKE_PROFIT" {
+			// Fill immediately at current market price with fund transfer
+			return ExecuteFill(dbTx, &locked, price)
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		log.Printf("MatchingEngine: failed to process order #%d: %v", order.ID, err)
+		log.Printf("MatchingEngine: failed to process trigger order #%d: %v", order.ID, err)
 		return
 	}
 
@@ -160,10 +167,58 @@ func processOrder(order *models.Order) {
 		UserID:    order.UserID,
 		Action:    action,
 		Details:   fmt.Sprintf("Order #%d %s %s triggered at price %.2f (stop: %.2f)", order.ID, order.Side, order.Symbol, price, order.StopPrice),
+		IPAddress: "system",
 		CreatedAt: time.Now(),
 	})
 
 	log.Printf("MatchingEngine: order #%d %s %s %s triggered at %.2f", order.ID, order.Side, order.Symbol, order.Type, price)
+}
+
+// processLimitOrder handles LIMIT orders.
+// LIMIT BUY:  fills when market price <= order.Price
+// LIMIT SELL: fills when market price >= order.Price
+// When filled, funds are transferred between wallets via ExecuteFill.
+func processLimitOrder(order *models.Order) {
+	price, ok := getPrice(order.Symbol)
+	if !ok {
+		return
+	}
+
+	shouldFill := false
+	if order.Side == "BUY" && price <= order.Price {
+		shouldFill = true
+	} else if order.Side == "SELL" && price >= order.Price {
+		shouldFill = true
+	}
+
+	if !shouldFill {
+		return
+	}
+
+	err := database.DB.Transaction(func(dbTx *gorm.DB) error {
+		var locked models.Order
+		if err := dbTx.Where("id = ? AND status = ?", order.ID, "PENDING").First(&locked).Error; err != nil {
+			return err // Order already processed or not found
+		}
+
+		// Execute fill with fund transfer at current market price
+		return ExecuteFill(dbTx, &locked, price)
+	})
+
+	if err != nil {
+		log.Printf("MatchingEngine: failed to fill LIMIT order #%d: %v", order.ID, err)
+		return
+	}
+
+	database.DB.Create(&models.AuditLog{
+		UserID:    order.UserID,
+		Action:    "LIMIT_ORDER_FILLED",
+		Details:   fmt.Sprintf("LIMIT %s %s filled at market price %.2f (limit: %.2f, reserved: %.8f)", order.Side, order.Symbol, price, order.Price, order.ReservedAmount),
+		IPAddress: "system",
+		CreatedAt: time.Now(),
+	})
+
+	log.Printf("MatchingEngine: LIMIT order #%d %s %s filled at %.2f (limit was %.2f)", order.ID, order.Side, order.Symbol, price, order.Price)
 }
 
 func Start(interval time.Duration) {
