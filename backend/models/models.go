@@ -3,16 +3,20 @@ package models
 import "time"
 
 type User struct {
-        ID           uint      `gorm:"primaryKey" json:"id"`
-        Email        string    `gorm:"uniqueIndex;not null;size:255" json:"email"`
-        Username     string    `gorm:"uniqueIndex;not null;size:100" json:"username"`
-        PasswordHash string    `gorm:"not null" json:"-"`
-        FullName     string    `gorm:"default:''" json:"full_name"`
-        Country      string    `gorm:"default:''" json:"country"`
-        Phone        string    `gorm:"default:''" json:"phone"`
-        Role         string    `gorm:"default:USER;size:20" json:"role"`
-        CreatedAt    time.Time `json:"created_at"`
-        UpdatedAt    time.Time `json:"updated_at"`
+        ID             uint      `gorm:"primaryKey" json:"id"`
+        Email          string    `gorm:"uniqueIndex;not null;size:255" json:"email"`
+        Username       string    `gorm:"uniqueIndex;not null;size:100" json:"username"`
+        PasswordHash   string    `gorm:"not null" json:"-"`
+        FullName       string    `gorm:"default:''" json:"full_name"`
+        Country        string    `gorm:"default:''" json:"country"`
+        Phone          string    `gorm:"default:''" json:"phone"`
+        Role           string    `gorm:"default:USER;size:20" json:"role"`
+        EmailVerified  bool      `gorm:"default:false" json:"email_verified"`
+        TwoFASecret    string    `gorm:"size:100" json:"-"`
+        TwoFAEnabled   bool      `gorm:"default:false" json:"two_fa_enabled"`
+        TwoFABackupCodes string  `gorm:"type:text" json:"-"`
+        CreatedAt      time.Time `json:"created_at"`
+        UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Wallet struct {
@@ -33,7 +37,9 @@ type Order struct {
         Quantity       float64   `gorm:"not null" json:"quantity"`
         FilledQuantity float64   `gorm:"default:0" json:"filled_quantity"`
         AvgFillPrice   float64   `gorm:"default:0" json:"avg_fill_price"`
-        ReservedAmount float64   `gorm:"default:0" json:"reserved_amount"`
+        ReservedAmount float64   `gorm:"default:0;type:decimal(36,18)" json:"reserved_amount"`
+        Fee            float64   `gorm:"default:0;type:decimal(36,18)" json:"fee"`
+        FeeCurrency    string    `gorm:"size:20" json:"fee_currency"`
         Status         string    `gorm:"default:PENDING;size:20;index" json:"status"`
         CreatedAt      time.Time `json:"created_at"`
         UpdatedAt      time.Time `json:"updated_at"`
@@ -84,6 +90,48 @@ type PasswordResetToken struct {
         ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
         Used      bool      `gorm:"default:false" json:"-"`
         CreatedAt time.Time `json:"created_at"`
+}
+
+type EmailVerificationToken struct {
+        ID        uint      `gorm:"primaryKey" json:"id"`
+        UserID    uint      `gorm:"not null;index" json:"user_id"`
+        Token     string    `gorm:"uniqueIndex;not null;size:64" json:"-"`
+        ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
+        Used      bool      `gorm:"default:false" json:"-"`
+        CreatedAt time.Time `json:"created_at"`
+}
+
+type RefreshToken struct {
+        ID        uint      `gorm:"primaryKey" json:"id"`
+        UserID    uint      `gorm:"not null;index" json:"user_id"`
+        Token     string    `gorm:"uniqueIndex;not null;size:64" json:"-"`
+        UserAgent string    `gorm:"size:500" json:"user_agent"`
+        IPAddress string    `gorm:"size:45" json:"ip_address"`
+        ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
+        Revoked   bool      `gorm:"default:false" json:"-"`
+        CreatedAt time.Time `json:"created_at"`
+}
+
+type Notification struct {
+        ID        uint      `gorm:"primaryKey" json:"id"`
+        UserID    uint      `gorm:"not null;index" json:"user_id"`
+        Type      string    `gorm:"not null;size:50;index" json:"type"`
+        Title     string    `gorm:"not null;size:255" json:"title"`
+        Body      string    `gorm:"type:text" json:"body"`
+        Data      string    `gorm:"type:text" json:"data"`
+        Read      bool      `gorm:"default:false" json:"read"`
+        CreatedAt time.Time `json:"created_at"`
+}
+
+type FeeSchedule struct {
+        ID        uint      `gorm:"primaryKey" json:"id"`
+        UserType  string    `gorm:"not null;size:20" json:"user_type"`
+        OrderType string    `gorm:"not null;size:20" json:"order_type"`
+        MakerFee  float64   `gorm:"type:decimal(10,6);default:0" json:"maker_fee"`
+        TakerFee  float64   `gorm:"type:decimal(10,6);default:0" json:"taker_fee"`
+        MinFee    float64   `gorm:"type:decimal(36,18);default:0" json:"min_fee"`
+        CreatedAt time.Time `json:"created_at"`
+        UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Ad struct {
