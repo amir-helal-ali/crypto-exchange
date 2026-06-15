@@ -1,0 +1,582 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState, useRef } from "react";
+     4→import { useRouter, usePathname } from "next/navigation";
+     5→import Link from "next/link";
+     6→import toast from "react-hot-toast";
+     7→import {
+     8→  LayoutDashboard,
+     9→  TrendingUp,
+    10→  Wallet,
+    11→  Clock,
+    12→  User,
+    13→  LogOut,
+    14→  Menu,
+    15→  X,
+    16→  ChevronDown,
+    17→  Shield,
+    18→  FileText,
+    19→  Bell,
+    20→  Check,
+    21→  CheckCheck,
+    22→  ArrowUpRight,
+    23→  ArrowDownRight,
+    24→  ShieldCheck,
+    25→  AlertTriangle,
+    26→  Ban,
+    27→  Banknote,
+    28→  SendHorizonal,
+    29→  Zap,
+    30→  Home,
+    31→} from "lucide-react";
+    32→import { authGet, authPut } from "@/lib/api";
+    33→
+    34→/* ─────────── Navigation Config ─────────── */
+    35→const NAV_SECTIONS = [
+    36→  {
+    37→    items: [
+    38→      { href: "/dashboard", icon: LayoutDashboard, label: "لوحة التحكم" },
+    39→      { href: "/dashboard/exchange", icon: TrendingUp, label: "التداول" },
+    40→      { href: "/dashboard/wallet", icon: Wallet, label: "المحفظة" },
+    41→      { href: "/dashboard/history", icon: Clock, label: "سجل الصفقات" },
+    42→    ],
+    43→  },
+    44→  {
+    45→    title: "الحساب",
+    46→    items: [
+    47→      { href: "/dashboard/notifications", icon: Bell, label: "الإشعارات" },
+    48→      { href: "/dashboard/kyc", icon: FileText, label: "التحقق" },
+    49→      { href: "/dashboard/security", icon: Shield, label: "الأمان" },
+    50→      { href: "/dashboard/profile", icon: User, label: "الملف الشخصي" },
+    51→    ],
+    52→  },
+    53→];
+    54→
+    55→const TICKER_SYMBOLS = [
+    56→  { symbol: "BTCUSDT", label: "BTC", color: "text-amber-400" },
+    57→  { symbol: "ETHUSDT", label: "ETH", color: "text-blue-400" },
+    58→  { symbol: "BNBUSDT", label: "BNB", color: "text-yellow-400" },
+    59→  { symbol: "SOLUSDT", label: "SOL", color: "text-purple-400" },
+    60→];
+    61→
+    62→/* ─────────── Types ─────────── */
+    63→interface Notification {
+    64→  id: number;
+    65→  type: string;
+    66→  title: string;
+    67→  body: string;
+    68→  data: string;
+    69→  read: boolean;
+    70→  created_at: string;
+    71→}
+    72→
+    73→/* ─────────── Icon Map (lucide-react) ─────────── */
+    74→const NOTIF_ICON_MAP: Record<string, { icon: any; bg: string; fg: string }> = {
+    75→  ORDER_FILLED: { icon: Check, bg: "bg-emerald-500/15", fg: "text-emerald-400" },
+    76→  ORDER_CANCELLED: { icon: Ban, bg: "bg-red-500/15", fg: "text-red-400" },
+    77→  ORDER_TRIGGERED: { icon: Zap, bg: "bg-amber-500/15", fg: "text-amber-400" },
+    78→  DEPOSIT_APPROVED: { icon: Banknote, bg: "bg-emerald-500/15", fg: "text-emerald-400" },
+    79→  WITHDRAWAL_APPROVED: { icon: SendHorizonal, bg: "bg-teal-500/15", fg: "text-teal-400" },
+    80→  WITHDRAWAL_REJECTED: { icon: AlertTriangle, bg: "bg-red-500/15", fg: "text-red-400" },
+    81→  KYC_APPROVED: { icon: ShieldCheck, bg: "bg-emerald-500/15", fg: "text-emerald-400" },
+    82→  KYC_REJECTED: { icon: AlertTriangle, bg: "bg-orange-500/15", fg: "text-orange-400" },
+    83→};
+    84→const DEFAULT_NOTIF_ICON = { icon: Bell, bg: "bg-primary/15", fg: "text-primary" };
+    85→
+    86→/* ─────────── Component ─────────── */
+    87→export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+    88→  const router = useRouter();
+    89→  const pathname = usePathname();
+    90→  const [user, setUser] = useState<any>(null);
+    91→  const [sidebarOpen, setSidebarOpen] = useState(false);
+    92→  const [prices, setPrices] = useState<Record<string, { price: string; change: number }>>({});
+    93→  const [prevPrices, setPrevPrices] = useState<Record<string, string>>({});
+    94→  const [userMenuOpen, setUserMenuOpen] = useState(false);
+    95→  const [notifOpen, setNotifOpen] = useState(false);
+    96→  const [notifications, setNotifications] = useState<Notification[]>([]);
+    97→  const [unreadCount, setUnreadCount] = useState(0);
+    98→  const menuRef = useRef<HTMLDivElement>(null);
+    99→  const notifRef = useRef<HTMLDivElement>(null);
+   100→
+   101→  /* ── Auth & Price WebSocket ── */
+   102→  useEffect(() => {
+   103→    const token = localStorage.getItem("token");
+   104→    if (!token) { router.push("/login"); return; }
+   105→    try { setUser(JSON.parse(localStorage.getItem("user") || "{}")); } catch { router.push("/login"); }
+   106→
+   107→    const ws = new WebSocket("wss://stream.binance.com:9443/ws/!miniTicker@arr");
+   108→    ws.onmessage = (e) => {
+   109→      const data = JSON.parse(e.data);
+   110→      if (Array.isArray(data)) {
+   111→        const updates: Record<string, { price: string; change: number }> = {};
+   112→        const newPrev: Record<string, string> = {};
+   113→        data.forEach((t: any) => {
+   114→          if (["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"].includes(t.s)) {
+   115→            const prev = prevPrices[t.s];
+   116→            const change = prev ? (parseFloat(t.c) - parseFloat(prev)) / parseFloat(prev) * 100 : 0;
+   117→            updates[t.s] = { price: t.c, change };
+   118→            newPrev[t.s] = t.c;
+   119→          }
+   120→        });
+   121→        setPrices(prev => {
+   122→          const merged = { ...prev };
+   123→          Object.keys(updates).forEach(k => {
+   124→            merged[k] = { ...prev[k], ...updates[k] };
+   125→          });
+   126→          return merged;
+   127→        });
+   128→        setPrevPrices(p => ({ ...p, ...newPrev }));
+   129→      }
+   130→    };
+   131→    return () => ws.close();
+   132→  }, [router]);
+   133→
+   134→  /* ── Notifications + User WebSocket ── */
+   135→  useEffect(() => {
+   136→    const fetchNotifs = async () => {
+   137→      try {
+   138→        const res = await authGet("/api/v1/notifications?limit=20");
+   139→        if (res.ok) {
+   140→          const data = await res.json();
+   141→          setNotifications(data.data || []);
+   142→          setUnreadCount(data.unread_count || 0);
+   143→        }
+   144→      } catch {}
+   145→    };
+   146→    fetchNotifs();
+   147→    const interval = setInterval(fetchNotifs, 30000);
+   148→
+   149→    const token = localStorage.getItem("token");
+   150→    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+   151→    const wsUrl = apiUrl.replace(/^http/, "ws") + "/ws/user?token=" + token;
+   152→    let userWs: WebSocket | null = null;
+   153→    let reconnectTimer: number;
+   154→
+   155→    const connectUserWs = () => {
+   156→      try {
+   157→        userWs = new WebSocket(wsUrl);
+   158→        userWs.onmessage = (e) => {
+   159→          try {
+   160→            const event = JSON.parse(e.data);
+   161→            if (event.type === "order_fill") {
+   162→              toast.success(`تم تنفيذ الأمر: ${event.data.side === "BUY" ? "شراء" : "بيع"} ${event.data.quantity} ${event.data.symbol}`);
+   163→            } else if (event.type === "order_trigger") {
+   164→              toast(`تم تفعيل الأمر الشرطي: ${event.data.symbol}`, { icon: "⚡" });
+   165→            } else if (event.type === "deposit_approved") {
+   166→              toast.success(`تم تأكيد الإيداع: ${event.data.amount} ${event.data.currency}`);
+   167→            } else if (event.type === "withdrawal_approved") {
+   168→              toast.success(`تم تأكيد السحب: ${event.data.amount} ${event.data.currency}`);
+   169→            } else if (event.type === "withdrawal_rejected") {
+   170→              toast.error(`تم رفض السحب: ${event.data.amount} ${event.data.currency}`);
+   171→            } else if (event.type === "kyc_APPROVED") {
+   172→              toast.success("تمت الموافقة على التحقق من الهوية");
+   173→            } else if (event.type === "kyc_REJECTED") {
+   174→              toast.error("تم رفض طلب التحقق من الهوية");
+   175→            }
+   176→            fetchNotifs();
+   177→          } catch {}
+   178→        };
+   179→        userWs.onclose = () => { reconnectTimer = window.setTimeout(connectUserWs, 5000); };
+   180→        userWs.onerror = () => { userWs?.close(); };
+   181→      } catch {}
+   182→    };
+   183→    connectUserWs();
+   184→
+   185→    return () => {
+   186→      clearInterval(interval);
+   187→      clearTimeout(reconnectTimer);
+   188→      userWs?.close();
+   189→    };
+   190→  }, []);
+   191→
+   192→  /* ── Click Outside ── */
+   193→  useEffect(() => {
+   194→    const handleClickOutside = (e: MouseEvent) => {
+   195→      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+   196→      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+   197→    };
+   198→    document.addEventListener("mousedown", handleClickOutside);
+   199→    return () => document.removeEventListener("mousedown", handleClickOutside);
+   200→  }, []);
+   201→
+   202→  /* ── Handlers ── */
+   203→  const handleLogout = async () => {
+   204→    const refreshToken = localStorage.getItem("refresh_token");
+   205→    const token = localStorage.getItem("token");
+   206→    try {
+   207→      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/v1/auth/logout`, {
+   208→        method: "POST",
+   209→        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+   210→        body: JSON.stringify({ refresh_token: refreshToken }),
+   211→      });
+   212→    } catch {}
+   213→    localStorage.removeItem("token");
+   214→    localStorage.removeItem("refresh_token");
+   215→    localStorage.removeItem("user");
+   216→    router.push("/login");
+   217→  };
+   218→
+   219→  const handleMarkRead = async (id: number) => {
+   220→    try {
+   221→      await authPut(`/api/v1/notifications/${id}/read`);
+   222→      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+   223→      setUnreadCount(prev => Math.max(0, prev - 1));
+   224→    } catch {}
+   225→  };
+   226→
+   227→  const handleMarkAllRead = async () => {
+   228→    try {
+   229→      await authPut("/api/v1/notifications/read-all");
+   230→      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+   231→      setUnreadCount(0);
+   232→    } catch {}
+   233→  };
+   234→
+   235→  const formatTimeAgo = (dateStr: string) => {
+   236→    const diff = Date.now() - new Date(dateStr).getTime();
+   237→    const mins = Math.floor(diff / 60000);
+   238→    if (mins < 1) return "الآن";
+   239→    if (mins < 60) return `منذ ${mins} دقيقة`;
+   240→    const hours = Math.floor(mins / 60);
+   241→    if (hours < 24) return `منذ ${hours} ساعة`;
+   242→    const days = Math.floor(hours / 24);
+   243→    return `منذ ${days} يوم`;
+   244→  };
+   245→
+   246→  const formatPrice = (val: string | undefined) => {
+   247→    if (!val) return "—";
+   248→    const n = parseFloat(val);
+   249→    if (n >= 1000) return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+   250→    return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+   251→  };
+   252→
+   253→  /* ── Loading ── */
+   254→  if (!user) return (
+   255→    <div className="min-h-screen bg-background flex items-center justify-center">
+   256→      <div className="flex flex-col items-center gap-4">
+   257→        <div className="spinner h-10 w-10" />
+   258→        <span className="text-sm text-muted-foreground animate-pulse">جاري التحميل...</span>
+   259→      </div>
+   260→    </div>
+   261→  );
+   262→
+   263→  /* ── Render ── */
+   264→  return (
+   265→    <div className="min-h-screen bg-background">
+   266→      {/* ═══════════════ HEADER ═══════════════ */}
+   267→      <header className="fixed top-0 left-0 right-0 z-40 h-16 border-b border-border/30"
+   268→        style={{ background: "rgba(10, 12, 18, 0.75)", backdropFilter: "blur(24px) saturate(1.8)", WebkitBackdropFilter: "blur(24px) saturate(1.8)" }}
+   269→      >
+   270→        <div className="flex items-center justify-between h-full px-4 lg:px-6">
+   271→          {/* Right side: Logo + Mobile toggle */}
+   272→          <div className="flex items-center gap-3">
+   273→            <button
+   274→              onClick={() => setSidebarOpen(!sidebarOpen)}
+   275→              className="btn-ghost p-2 md:hidden rounded-xl"
+   276→              aria-label="فتح القائمة"
+   277→            >
+   278→              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+   279→            </button>
+   280→            <Link href="/dashboard" className="flex items-center gap-2.5 group">
+   281→              <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center glow-emerald">
+   282→                <span className="text-primary font-black text-sm">E</span>
+   283→              </div>
+   284→              <span className="text-lg font-bold gradient-text hidden sm:block tracking-tight">EgMoney</span>
+   285→            </Link>
+   286→          </div>
+   287→
+   288→          {/* Center: Live Price Ticker */}
+   289→          <div className="hidden md:flex items-center gap-1 lg:gap-5">
+   290→            {TICKER_SYMBOLS.map(({ symbol, label, color }) => {
+   291→              const pData = prices[symbol];
+   292→              const price = pData?.price;
+   293→              const change = pData?.change ?? 0;
+   294→              const isUp = change >= 0;
+   295→              return (
+   296→                <div key={symbol} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-muted/20 transition-colors">
+   297→                  <span className={`text-[11px] font-semibold ${color}`}>{label}</span>
+   298→                  <span className="text-xs font-semibold text-foreground tabular-nums">
+   299→                    ${formatPrice(price)}
+   300→                  </span>
+   301→                  <span className={`text-[10px] font-semibold tabular-nums flex items-center gap-0.5 ${isUp ? "text-emerald-400" : "text-red-400"}`}>
+   302→                    {isUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+   303→                    {Math.abs(change).toFixed(2)}%
+   304→                  </span>
+   305→                </div>
+   306→              );
+   307→            })}
+   308→          </div>
+   309→
+   310→          {/* Left side: Notifications + User */}
+   311→          <div className="flex items-center gap-2">
+   312→            {/* Notification Bell */}
+   313→            <div className="relative" ref={notifRef}>
+   314→              <button
+   315→                onClick={() => setNotifOpen(!notifOpen)}
+   316→                className="btn-ghost p-2.5 rounded-xl relative group"
+   317→                aria-label="الإشعارات"
+   318→              >
+   319→                <Bell className="h-5 w-5 transition-transform group-hover:rotate-12 duration-200" />
+   320→                {unreadCount > 0 && (
+   321→                  <span className="absolute top-1 right-1 h-4 min-w-[16px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]">
+   322→                    {unreadCount > 99 ? "99+" : unreadCount}
+   323→                  </span>
+   324→                )}
+   325→              </button>
+   326→
+   327→              {/* Notifications Dropdown */}
+   328→              {notifOpen && (
+   329→                <div className="absolute left-0 mt-3 w-80 glass-panel-strong rounded-2xl shadow-2xl border border-border/30 z-50 max-h-[420px] flex flex-col animate-slide-in-down overflow-hidden">
+   330→                  {/* Header */}
+   331→                  <div className="flex items-center justify-between p-4 border-b border-border/20">
+   332→                    <div className="flex items-center gap-2">
+   333→                      <h3 className="font-bold text-sm">الإشعارات</h3>
+   334→                      {unreadCount > 0 && (
+   335→                        <span className="text-[10px] font-semibold bg-primary/15 text-primary px-2 py-0.5 rounded-full">
+   336→                          {unreadCount} جديد
+   337→                        </span>
+   338→                      )}
+   339→                    </div>
+   340→                    {unreadCount > 0 && (
+   341→                      <button
+   342→                        onClick={handleMarkAllRead}
+   343→                        className="text-[11px] text-primary hover:text-primary/80 transition-colors flex items-center gap-1 font-medium"
+   344→                      >
+   345→                        <CheckCheck className="h-3.5 w-3.5" />
+   346→                        تعيين الكل كمقروء
+   347→                      </button>
+   348→                    )}
+   349→                  </div>
+   350→
+   351→                  {/* Notification List */}
+   352→                  <div className="overflow-y-auto flex-1 max-h-80 custom-scrollbar">
+   353→                    {notifications.length === 0 ? (
+   354→                      <div className="p-8 text-center">
+   355→                        <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+   356→                        <p className="text-sm text-muted-foreground">لا توجد إشعارات</p>
+   357→                      </div>
+   358→                    ) : (
+   359→                      notifications.map((notif, i) => {
+   360→                        const iconData = NOTIF_ICON_MAP[notif.type] || DEFAULT_NOTIF_ICON;
+   361→                        const NotifIcon = iconData.icon;
+   362→                        return (
+   363→                          <div
+   364→                            key={notif.id}
+   365→                            className={`p-3.5 border-b border-border/10 cursor-pointer transition-all duration-200 hover:bg-muted/15 ${!notif.read ? "bg-primary/[0.04]" : ""}`}
+   366→                            onClick={() => !notif.read && handleMarkRead(notif.id)}
+   367→                            style={{ animationDelay: `${i * 40}ms` }}
+   368→                          >
+   369→                            <div className="flex items-start gap-3">
+   370→                              {/* Icon */}
+   371→                              <div className={`shrink-0 h-8 w-8 rounded-lg ${iconData.bg} flex items-center justify-center`}>
+   372→                                <NotifIcon className={`h-4 w-4 ${iconData.fg}`} />
+   373→                              </div>
+   374→                              {/* Content */}
+   375→                              <div className="flex-1 min-w-0">
+   376→                                <div className="flex items-center gap-2">
+   377→                                  <p className="text-sm font-semibold truncate">{notif.title}</p>
+   378→                                  {!notif.read && (
+   379→                                    <span className="shrink-0 h-2 w-2 rounded-full bg-primary shadow-[0_0_6px_rgba(16,185,129,0.5)] animate-pulse" />
+   380→                                  )}
+   381→                                </div>
+   382→                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{notif.body}</p>
+   383→                                <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatTimeAgo(notif.created_at)}</p>
+   384→                              </div>
+   385→                            </div>
+   386→                          </div>
+   387→                        );
+   388→                      })
+   389→                    )}
+   390→                  </div>
+   391→
+   392→                  {/* Footer */}
+   393→                  {notifications.length > 0 && (
+   394→                    <div className="p-3 border-t border-border/20">
+   395→                      <Link
+   396→                        href="/dashboard/notifications"
+   397→                        onClick={() => setNotifOpen(false)}
+   398→                        className="block text-center text-xs font-medium text-primary hover:text-primary/80 transition-colors py-1"
+   399→                      >
+   400→                        عرض جميع الإشعارات
+   401→                      </Link>
+   402→                    </div>
+   403→                  )}
+   404→                </div>
+   405→              )}
+   406→            </div>
+   407→
+   408→            {/* User Menu */}
+   409→            <div className="relative" ref={menuRef}>
+   410→              <button
+   411→                onClick={() => setUserMenuOpen(!userMenuOpen)}
+   412→                className="flex items-center gap-2.5 btn-ghost px-2 py-1.5 rounded-xl group"
+   413→              >
+   414→                {/* Avatar with gradient ring */}
+   415→                <div className="relative">
+   416→                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-400 via-teal-400 to-emerald-600 p-[2px]">
+   417→                    <div className="h-full w-full rounded-full bg-card flex items-center justify-center">
+   418→                      <span className="text-xs font-bold text-primary">{user.username?.charAt(0)?.toUpperCase() || "U"}</span>
+   419→                    </div>
+   420→                  </div>
+   421→                  <span className="absolute -bottom-0.5 -left-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-card status-dot-online" />
+   422→                </div>
+   423→                <div className="hidden sm:flex flex-col items-start">
+   424→                  <span className="text-sm font-semibold leading-tight">{user.username}</span>
+   425→                  <span className="text-[10px] text-muted-foreground leading-tight">
+   426→                    {user.role === "ADMIN" ? "مدير" : "مستخدم"}
+   427→                  </span>
+   428→                </div>
+   429→                <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${userMenuOpen ? "rotate-180" : ""}`} />
+   430→              </button>
+   431→
+   432→              {/* User Dropdown */}
+   433→              {userMenuOpen && (
+   434→                <div className="absolute left-0 mt-3 w-56 glass-panel-strong rounded-2xl p-2 shadow-2xl border border-border/30 z-50 animate-slide-in-down overflow-hidden">
+   435→                  {/* User Info */}
+   436→                  <div className="px-3 py-3 mb-1">
+   437→                    <div className="flex items-center gap-3">
+   438→                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-emerald-400 via-teal-400 to-emerald-600 p-[2px]">
+   439→                        <div className="h-full w-full rounded-full bg-card flex items-center justify-center">
+   440→                          <span className="text-sm font-bold text-primary">{user.username?.charAt(0)?.toUpperCase() || "U"}</span>
+   441→                        </div>
+   442→                      </div>
+   443→                      <div className="flex-1 min-w-0">
+   444→                        <p className="text-sm font-semibold truncate">{user.username}</p>
+   445→                        <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
+   446→                      </div>
+   447→                    </div>
+   448→                    <div className="mt-2 flex items-center gap-1.5">
+   449→                      <span className="text-[10px] font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+   450→                        {user.role === "ADMIN" ? "مدير النظام" : "مستخدم"}
+   451→                      </span>
+   452→                    </div>
+   453→                  </div>
+   454→
+   455→                  <div className="h-px bg-border/20 mx-2" />
+   456→
+   457→                  {/* Menu Items */}
+   458→                  <Link
+   459→                    href="/dashboard/profile"
+   460→                    className="flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-xl hover:bg-muted/20 transition-colors group"
+   461→                    onClick={() => setUserMenuOpen(false)}
+   462→                  >
+   463→                    <User className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+   464→                    <span>الملف الشخصي</span>
+   465→                  </Link>
+   466→                  <Link
+   467→                    href="/dashboard/security"
+   468→                    className="flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-xl hover:bg-muted/20 transition-colors group"
+   469→                    onClick={() => setUserMenuOpen(false)}
+   470→                  >
+   471→                    <Shield className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+   472→                    <span>الأمان والحماية</span>
+   473→                  </Link>
+   474→
+   475→                  <div className="h-px bg-border/20 mx-2 my-1" />
+   476→
+   477→                  <button
+   478→                    onClick={handleLogout}
+   479→                    className="flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-xl text-red-400 hover:bg-red-500/10 transition-colors group"
+   480→                  >
+   481→                    <LogOut className="h-4 w-4 group-hover:text-red-400 transition-colors" />
+   482→                    <span className="font-medium">تسجيل الخروج</span>
+   483→                  </button>
+   484→                </div>
+   485→              )}
+   486→            </div>
+   487→          </div>
+   488→        </div>
+   489→      </header>
+   490→
+   491→      {/* ═══════════════ SIDEBAR ═══════════════ */}
+   492→      {/* Mobile Overlay */}
+   493→      {sidebarOpen && (
+   494→        <div
+   495→          className="fixed inset-0 bg-black/60 z-30 md:hidden animate-fade-in"
+   496→          onClick={() => setSidebarOpen(false)}
+   497→          style={{ backdropFilter: "blur(4px)" }}
+   498→        />
+   499→      )}
+   500→
+   501→      <aside
+   502→        className={`fixed top-16 right-0 bottom-0 z-30 w-64 border-l border-border/20 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${
+   503→          sidebarOpen ? "translate-x-0" : "translate-x-full"
+   504→        }`}
+   505→        style={{ background: "rgba(10, 12, 18, 0.88)", backdropFilter: "blur(20px) saturate(1.5)", WebkitBackdropFilter: "blur(20px) saturate(1.5)" }}
+   506→      >
+   507→        <div className="flex flex-col h-full">
+   508→          {/* Logo Section */}
+   509→          <div className="px-5 pt-6 pb-4">
+   510→            <div className="flex items-center gap-3">
+   511→              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 flex items-center justify-center border border-emerald-500/10">
+   512→                <span className="text-primary font-black text-base">E</span>
+   513→              </div>
+   514→              <div>
+   515→                <h2 className="text-base font-bold gradient-text tracking-tight">EgMoney</h2>
+   516→                <p className="text-[10px] text-muted-foreground">منصة التداول الرقمية</p>
+   517→              </div>
+   518→            </div>
+   519→          </div>
+   520→
+   521→          {/* Navigation */}
+   522→          <nav className="flex-1 overflow-y-auto custom-scrollbar px-3 pb-4">
+   523→            {NAV_SECTIONS.map((section, si) => (
+   524→              <div key={si}>
+   525→                {section.title && (
+   526→                  <div className="flex items-center gap-2 px-4 pt-5 pb-2">
+   527→                    <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest">{section.title}</span>
+   528→                    <div className="flex-1 h-px bg-border/15" />
+   529→                  </div>
+   530→                )}
+   531→                <div className="space-y-0.5">
+   532→                  {section.items.map((item) => {
+   533→                    const Icon = item.icon;
+   534→                    const isActive = pathname === item.href;
+   535→                    return (
+   536→                      <Link
+   537→                        key={item.href}
+   538→                        href={item.href}
+   539→                        onClick={() => setSidebarOpen(false)}
+   540→                        className={`nav-item ${isActive ? "nav-item-active" : "nav-item-inactive"}`}
+   541→                      >
+   542→                        <Icon className={`h-[18px] w-[18px] transition-colors ${isActive ? "text-primary" : ""}`} />
+   543→                        <span>{item.label}</span>
+   544→                        {isActive && (
+   545→                          <div className="mr-auto h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+   546→                        )}
+   547→                      </Link>
+   548→                    );
+   549→                  })}
+   550→                </div>
+   551→              </div>
+   552→            ))}
+   553→
+   554→            {/* Separator */}
+   555→            <div className="my-4 mx-3 h-px bg-border/20" />
+   556→
+   557→            {/* Home Link */}
+   558→            <Link
+   559→              href="/"
+   560→              className="nav-item nav-item-inactive"
+   561→              onClick={() => setSidebarOpen(false)}
+   562→            >
+   563→              <Home className="h-[18px] w-[18px]" />
+   564→              <span>الصفحة الرئيسية</span>
+   565→            </Link>
+   566→          </nav>
+   567→
+   568→          {/* Bottom Gradient Line */}
+   569→          <div className="px-4 pb-4">
+   570→            <div className="h-px bg-gradient-to-l from-transparent via-emerald-500/30 to-transparent" />
+   571→          </div>
+   572→        </div>
+   573→      </aside>
+   574→
+   575→      {/* ═══════════════ MAIN CONTENT ═══════════════ */}
+   576→      <main className="pt-16 pr-0 md:pr-64 min-h-screen transition-all duration-300">
+   577→        <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
+   578→      </main>
+   579→    </div>
+   580→  );
+   581→}
+   582→
