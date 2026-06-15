@@ -287,7 +287,7 @@ export default function AdminTransactionsPage() {
                         </span>
                       </td>
                       <td className="p-4 text-muted-foreground text-xs whitespace-nowrap">
-                        {tx.created_at ? new Date(tx.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" }) : "—"}
+                        {new Date(tx.createdAt || tx.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" })}
                       </td>
                       <td className="p-4">
                         {tx.status === "PENDING" && (

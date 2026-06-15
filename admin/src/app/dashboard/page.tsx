@@ -92,14 +92,10 @@ export default function AdminDashboard() {
       authGet("/api/v1/admin/audit-logs").then((r) => r.json()),
     ])
       .then(([statsData, logsData]) => {
-        setStats(statsData);
-        setAuditLogs(
-          Array.isArray(logsData)
-            ? logsData
-            : Array.isArray(logsData.logs)
-            ? logsData.logs
-            : []
-        );
+        // API returns { success: true, data: { ... } }
+        setStats(statsData?.data || statsData);
+        const logs = logsData?.data || logsData;
+        setAuditLogs(Array.isArray(logs) ? logs : []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -272,18 +268,18 @@ export default function AdminDashboard() {
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
-                          {(log.admin_email || log.admin || "A")
+                          {(log.username || "A")
                             .charAt(0)
                             .toUpperCase()}
                         </div>
                         <span className="text-muted-foreground text-xs">
-                          {log.admin_email || log.admin || "admin"}
+                          {log.username || "admin"}
                         </span>
                       </div>
                     </td>
                     <td className="p-4 text-xs text-muted-foreground whitespace-nowrap">
                       {new Date(
-                        log.created_at || log.CreatedAt
+                        log.createdAt || log.created_at
                       ).toLocaleDateString("ar-EG", {
                         year: "numeric",
                         month: "short",

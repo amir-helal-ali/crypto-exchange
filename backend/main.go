@@ -137,8 +137,8 @@ func main() {
         rl := handlers.NewRateLimiter(120, time.Minute)
         r.Use(rl.Middleware())
 
-        // Stricter rate limiting for auth endpoints (5 requests per minute per IP)
-        authRL := handlers.NewRateLimiter(5, time.Minute)
+        // Stricter rate limiting for auth endpoints (20 requests per minute per IP)
+        authRL := handlers.NewRateLimiter(20, time.Minute)
 
         r.MaxMultipartMemory = 5 << 20
 
@@ -219,6 +219,7 @@ func main() {
                 admin.GET("/kyc", handlers.GetAllKYCRequests)
                 admin.PUT("/kyc/:id/review", handlers.ReviewKYC)
                 admin.PUT("/user/:id/role", handlers.UpdateUserRole)
+                admin.PUT("/user/:id/verify-email", handlers.AdminVerifyEmail)
                 admin.GET("/transactions", handlers.GetAllTransactions)
                 admin.PUT("/transactions/:id/review", handlers.ReviewTransaction)
                 admin.GET("/ads", handlers.GetAllAds)

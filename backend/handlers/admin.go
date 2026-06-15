@@ -46,7 +46,7 @@ func GetAllUsers(c *gin.Context) {
         var total int64
         database.DB.Model(&models.User{}).Count(&total)
         var users []models.User
-        database.DB.Select("id", "email", "username", "role", "created_at").Order("created_at DESC").Limit(limit).Offset(offset).Find(&users)
+        database.DB.Select("id", "email", "username", "role", "email_verified", "two_fa_enabled", "created_at").Order("created_at DESC").Limit(limit).Offset(offset).Find(&users)
 
         c.JSON(http.StatusOK, gin.H{"success": true, "data": users, "total": total, "page": page, "limit": limit})
 }
@@ -80,6 +80,36 @@ func UpdateUserRole(c *gin.Context) {
         })
 
         c.JSON(http.StatusOK, gin.H{"success": true, "message": "User role updated successfully"})
+}
+
+// AdminVerifyEmail allows an admin to manually verify a user's email address.
+// This is useful when the email verification system is not working or for testing.
+func AdminVerifyEmail(c *gin.Context) {
+        userID := c.Param("id")
+        adminID, _ := c.Get("user_id")
+
+        var user models.User
+        if err := database.DB.First(&user, userID).Error; err != nil {
+                c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+                return
+        }
+
+        if user.EmailVerified {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "البريد الإلكتروني موثق بالفعل"})
+                return
+        }
+
+        database.DB.Model(&user).Update("email_verified", true)
+
+        database.DB.Create(&models.AuditLog{
+                UserID:    adminID.(uint),
+                Action:    "ADMIN_VERIFY_EMAIL",
+                Details:   fmt.Sprintf("Admin verified email for user %s (ID: %s, email: %s)", user.Username, userID, user.Email),
+                IPAddress: c.ClientIP(),
+                CreatedAt: time.Now(),
+        })
+
+        c.JSON(http.StatusOK, gin.H{"success": true, "message": "تم توثيق البريد الإلكتروني بنجاح"})
 }
 
 // buildAuditQuery constructs the base GORM query for audit logs with optional filters.

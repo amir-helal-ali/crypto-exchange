@@ -12,6 +12,8 @@ import {
   UserX,
   Mail,
   Calendar,
+  MailCheck,
+  MailX,
 } from "lucide-react";
 import { authGet, authPut } from "@/lib/api";
 
@@ -28,9 +30,11 @@ export default function AdminUsersPage() {
     setLoading(true);
     authGet("/api/v1/admin/users")
       .then((r) => r.json())
-      .then((d) =>
-        setUsers(Array.isArray(d) ? d : Array.isArray(d.users) ? d.users : [])
-      )
+      .then((d) => {
+        // API returns { success: true, data: [...], total: N }
+        const usersList = d?.data || d;
+        setUsers(Array.isArray(usersList) ? usersList : []);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -54,6 +58,21 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleVerifyEmail = async (userId: number) => {
+    try {
+      const res = await authPut(`/api/v1/admin/user/${userId}/verify-email`);
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "فشل توثيق البريد");
+        return;
+      }
+      toast.success("تم توثيق البريد الإلكتروني بنجاح");
+      fetchUsers();
+    } catch {
+      toast.error("حدث خطأ في الاتصال");
+    }
+  };
+
   const filtered = users.filter((u) => {
     const matchesSearch =
       u.username?.toLowerCase().includes(search.toLowerCase()) ||
@@ -66,6 +85,7 @@ export default function AdminUsersPage() {
   const totalUsers = users.length;
   const adminCount = users.filter((u) => u.role === "ADMIN").length;
   const verifiedCount = users.filter((u) => u.kyc_status === "VERIFIED").length;
+  const emailVerifiedCount = users.filter((u) => u.email_verified).length;
 
   const getKycBadge = (status: string) => {
     switch (status) {
@@ -122,7 +142,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* ─── Stats Row ─── */}
-      <div className="grid grid-cols-3 gap-3 animate-slide-in-up delay-100">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-slide-in-up delay-100">
         <div className="glass-panel rounded-xl p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-blue-500/10">
             <Users className="h-4 w-4 text-blue-500" />
@@ -143,11 +163,20 @@ export default function AdminUsersPage() {
         </div>
         <div className="glass-panel rounded-xl p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-emerald-500/10">
-            <UserCheck className="h-4 w-4 text-emerald-500" />
+            <MailCheck className="h-4 w-4 text-emerald-500" />
+          </div>
+          <div>
+            <p className="text-lg font-bold">{emailVerifiedCount}</p>
+            <p className="text-[11px] text-muted-foreground">بريد موثق</p>
+          </div>
+        </div>
+        <div className="glass-panel rounded-xl p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-teal-500/10">
+            <UserCheck className="h-4 w-4 text-teal-500" />
           </div>
           <div>
             <p className="text-lg font-bold">{verifiedCount}</p>
-            <p className="text-[11px] text-muted-foreground">موثقين</p>
+            <p className="text-[11px] text-muted-foreground">KYC موثق</p>
           </div>
         </div>
       </div>
@@ -216,6 +245,9 @@ export default function AdminUsersPage() {
                     الدور
                   </th>
                   <th className="text-right p-4 text-muted-foreground font-medium text-xs">
+                    البريد
+                  </th>
+                  <th className="text-right p-4 text-muted-foreground font-medium text-xs">
                     KYC
                   </th>
                   <th className="text-right p-4 text-muted-foreground font-medium text-xs hidden lg:table-cell">
@@ -271,6 +303,25 @@ export default function AdminUsersPage() {
                         )}
                         {u.role === "ADMIN" ? "مدير" : "مستخدم"}
                       </span>
+                    </td>
+
+                    {/* Email Verified */}
+                    <td className="p-4">
+                      {u.email_verified ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg font-medium border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                          <MailCheck className="h-3 w-3" />
+                          موثق
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleVerifyEmail(u.id)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border bg-yellow-500/10 text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/20 transition-all duration-200"
+                          title="توثيق البريد الإلكتروني"
+                        >
+                          <MailX className="h-3 w-3" />
+                          توثيق
+                        </button>
+                      )}
                     </td>
 
                     {/* KYC */}
