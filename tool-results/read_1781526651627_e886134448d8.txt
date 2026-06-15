@@ -1,0 +1,1220 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState, useRef, useCallback } from "react";
+     4→import toast from "react-hot-toast";
+     5→import {
+     6→  TrendingUp,
+     7→  TrendingDown,
+     8→  ArrowUpDown,
+     9→  X,
+    10→  RefreshCw,
+    11→  Minus,
+    12→  BarChart3,
+    13→  BookOpen,
+    14→  Wallet,
+    15→  Activity,
+    16→  Clock,
+    17→  ChevronDown,
+    18→  Settings2,
+    19→  Maximize2,
+    20→} from "lucide-react";
+    21→import { authGet, authPost } from "@/lib/api";
+    22→import ProChart, { ProChartHandle, Candle } from "@/components/ProChart";
+    23→
+    24→/* ─────────── Constants ─────────── */
+    25→
+    26→const PAIRS = [
+    27→  "BTCUSDT",
+    28→  "ETHUSDT",
+    29→  "BNBUSDT",
+    30→  "SOLUSDT",
+    31→  "XRPUSDT",
+    32→  "ADAUSDT",
+    33→  "DOGEUSDT",
+    34→  "DOTUSDT",
+    35→];
+    36→
+    37→const CURRENCY_NAMES: Record<string, string> = {
+    38→  BTC: "بيتكوين",
+    39→  ETH: "إيثريوم",
+    40→  BNB: "بي إن بي",
+    41→  SOL: "سولانا",
+    42→  XRP: "إكس آر بي",
+    43→  ADA: "كاردانو",
+    44→  DOGE: "دوجكوين",
+    45→  DOT: "بولكادوت",
+    46→};
+    47→
+    48→const CURRENCY_ICONS: Record<string, string> = {
+    49→  BTC: "₿",
+    50→  ETH: "Ξ",
+    51→  BNB: "◆",
+    52→  SOL: "◎",
+    53→  XRP: "✕",
+    54→  ADA: "₳",
+    55→  DOGE: "Ð",
+    56→  DOT: "●",
+    57→};
+    58→
+    59→const STATUS_LABELS: Record<string, string> = {
+    60→  PENDING: "معلق",
+    61→  FILLED: "منفذ",
+    62→  CANCELLED: "ملغي",
+    63→  TRIGGERED: "مفعّل",
+    64→};
+    65→
+    66→const STATUS_COLORS: Record<string, string> = {
+    67→  PENDING: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+    68→  FILLED: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    69→  CANCELLED: "bg-red-500/10 text-red-400 border-red-500/20",
+    70→  TRIGGERED: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    71→};
+    72→
+    73→const TIMEFRAMES = [
+    74→  { value: "1m", label: "1 د" },
+    75→  { value: "5m", label: "5 د" },
+    76→  { value: "15m", label: "15 د" },
+    77→  { value: "1h", label: "1 س" },
+    78→  { value: "4h", label: "4 س" },
+    79→  { value: "1d", label: "يومي" },
+    80→];
+    81→
+    82→const ORDER_TYPE_LABELS: Record<string, string> = {
+    83→  MARKET: "سوقي",
+    84→  LIMIT: "محدد",
+    85→  STOP_LIMIT: "وقف محدد",
+    86→  TAKE_PROFIT: "جني أرباح",
+    87→};
+    88→
+    89→/* ─────────── Component ─────────── */
+    90→
+    91→export default function ExchangePage() {
+    92→  const [selectedPair, setSelectedPair] = useState("BTCUSDT");
+    93→  const [prices, setPrices] = useState<Record<string, any>>({});
+    94→  const [orderBook, setOrderBook] = useState<{
+    95→    bids: [string, string][];
+    96→    asks: [string, string][];
+    97→  }>({ bids: [], asks: [] });
+    98→  const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+    99→  const [orderType, setOrderType] = useState<
+   100→    "MARKET" | "LIMIT" | "STOP_LIMIT" | "TAKE_PROFIT"
+   101→  >("MARKET");
+   102→  const [form, setForm] = useState({ quantity: "", price: "", stopPrice: "" });
+   103→  const [orders, setOrders] = useState<any[]>([]);
+   104→  const [wallets, setWallets] = useState<any[]>([]);
+   105→  const [feeSchedules, setFeeSchedules] = useState<any[]>([]);
+   106→  const [loading, setLoading] = useState(false);
+   107→  const [timeframe, setTimeframe] = useState("15m");
+   108→  const [candles, setCandles] = useState<Candle[]>([]);
+   109→  const [marketTrades, setMarketTrades] = useState<any[]>([]);
+   110→  const [showPairDropdown, setShowPairDropdown] = useState(false);
+   111→  const [crosshairData, setCrosshairData] = useState<Candle | null>(null);
+   112→  const [bottomTab, setBottomTab] = useState<"orders" | "trades">("orders");
+   113→
+   114→  const chartRef = useRef<ProChartHandle>(null);
+   115→  const wsRef = useRef<WebSocket | null>(null);
+   116→  const prevPrices = useRef<Record<string, number>>({});
+   117→  const pairDropdownRef = useRef<HTMLDivElement>(null);
+   118→
+   119→  /* ─────── Data Fetching ─────── */
+   120→
+   121→  const fetchOrders = useCallback(async () => {
+   122→    try {
+   123→      const r = await authGet("/api/v1/exchange/orders");
+   124→      const d = await r.json();
+   125→      setOrders(Array.isArray(d.data) ? d.data : []);
+   126→    } catch {}
+   127→  }, []);
+   128→
+   129→  const fetchWallets = useCallback(async () => {
+   130→    try {
+   131→      const r = await authGet("/api/v1/wallet/balances");
+   132→      const d = await r.json();
+   133→      setWallets(Array.isArray(d.data) ? d.data : []);
+   134→    } catch {}
+   135→  }, []);
+   136→
+   137→  const fetchFees = useCallback(async () => {
+   138→    try {
+   139→      const r = await fetch(
+   140→        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/v1/fees`
+   141→      );
+   142→      if (r.ok) {
+   143→        const d = await r.json();
+   144→        setFeeSchedules(Array.isArray(d.data) ? d.data : []);
+   145→      }
+   146→    } catch {}
+   147→  }, []);
+   148→
+   149→  const fetchKlines = useCallback(async () => {
+   150→    try {
+   151→      const res = await fetch(
+   152→        `https://api.binance.com/api/v3/klines?symbol=${selectedPair}&interval=${timeframe}&limit=500`
+   153→      );
+   154→      if (!res.ok) return;
+   155→      const data = await res.json();
+   156→      const candleData: Candle[] = data.map((k: any) => ({
+   157→        time: Math.floor(k[0] / 1000),
+   158→        open: parseFloat(k[1]),
+   159→        high: parseFloat(k[2]),
+   160→        low: parseFloat(k[3]),
+   161→        close: parseFloat(k[4]),
+   162→        volume: parseFloat(k[5]),
+   163→      }));
+   164→      setCandles(candleData);
+   165→    } catch (e) {
+   166→      console.error("Failed to fetch klines:", e);
+   167→    }
+   168→  }, [selectedPair, timeframe]);
+   169→
+   170→  const fetchMarketTrades = useCallback(async () => {
+   171→    try {
+   172→      const res = await fetch(
+   173→        `https://api.binance.com/api/v3/trades?symbol=${selectedPair}&limit=20`
+   174→      );
+   175→      if (!res.ok) return;
+   176→      const data = await res.json();
+   177→      setMarketTrades(
+   178→        data.map((t: any) => ({
+   179→          id: t.id,
+   180→          price: parseFloat(t.price),
+   181→          qty: parseFloat(t.qty),
+   182→          time: t.time,
+   183→          isBuyerMaker: t.isBuyerMaker,
+   184→        }))
+   185→      );
+   186→    } catch {}
+   187→  }, [selectedPair]);
+   188→
+   189→  useEffect(() => {
+   190→    fetchOrders();
+   191→    fetchWallets();
+   192→    fetchFees();
+   193→    fetchKlines();
+   194→    fetchMarketTrades();
+   195→  }, [fetchOrders, fetchWallets, fetchFees, fetchKlines, fetchMarketTrades]);
+   196→
+   197→  /* ─────── Binance WebSocket (Ticker + Depth) ─────── */
+   198→
+   199→  useEffect(() => {
+   200→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   201→    const streams = [
+   202→      `${selectedPair.toLowerCase()}@ticker`,
+   203→      `${selectedPair.toLowerCase()}@depth20@100ms`,
+   204→    ];
+   205→    ws.onopen = () =>
+   206→      ws.send(JSON.stringify({ method: "SUBSCRIBE", params: streams, id: 1 }));
+   207→    ws.onmessage = (e) => {
+   208→      const d = JSON.parse(e.data);
+   209→      if (d.e === "24hrTicker") {
+   210→        prevPrices.current[selectedPair] =
+   211→          prices[selectedPair]?.price || parseFloat(d.c);
+   212→        setPrices((prev: any) => ({
+   213→          ...prev,
+   214→          [selectedPair]: {
+   215→            price: parseFloat(d.c),
+   216→            high: parseFloat(d.h),
+   217→            low: parseFloat(d.l),
+   218→            volume: d.v,
+   219→            change: d.P,
+   220→            quoteVolume: d.q,
+   221→            openPrice: d.o,
+   222→          },
+   223→        }));
+   224→      } else if (d.e === "depthUpdate") {
+   225→        if (d.bids)
+   226→          setOrderBook({ bids: d.bids.slice(0, 15), asks: d.asks.slice(0, 15) });
+   227→      }
+   228→    };
+   229→    wsRef.current = ws;
+   230→    return () => ws.close();
+   231→  }, [selectedPair]);
+   232→
+   233→  /* ─────── Real-time Kline WebSocket ─────── */
+   234→
+   235→  useEffect(() => {
+   236→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   237→    ws.onopen = () =>
+   238→      ws.send(
+   239→        JSON.stringify({
+   240→          method: "SUBSCRIBE",
+   241→          params: [`${selectedPair.toLowerCase()}@kline_${timeframe}`],
+   242→          id: 1,
+   243→        })
+   244→      );
+   245→    ws.onmessage = (e) => {
+   246→      const d = JSON.parse(e.data);
+   247→      if (d.e === "kline" && chartRef.current) {
+   248→        const k = d.k;
+   249→        chartRef.current.updateLastCandle({
+   250→          time: Math.floor(k.t / 1000),
+   251→          open: parseFloat(k.o),
+   252→          high: parseFloat(k.h),
+   253→          low: parseFloat(k.l),
+   254→          close: parseFloat(k.c),
+   255→          volume: parseFloat(k.v),
+   256→        });
+   257→      }
+   258→    };
+   259→    return () => ws.close();
+   260→  }, [selectedPair, timeframe]);
+   261→
+   262→  /* ─────── Real-time Trade WebSocket ─────── */
+   263→
+   264→  useEffect(() => {
+   265→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   266→    ws.onopen = () =>
+   267→      ws.send(
+   268→        JSON.stringify({
+   269→          method: "SUBSCRIBE",
+   270→          params: [`${selectedPair.toLowerCase()}@trade`],
+   271→          id: 1,
+   272→        })
+   273→      );
+   274→    ws.onmessage = (e) => {
+   275→      const d = JSON.parse(e.data);
+   276→      if (d.e === "trade") {
+   277→        setMarketTrades((prev) => {
+   278→          const newTrade = {
+   279→            id: d.t,
+   280→            price: parseFloat(d.p),
+   281→            qty: parseFloat(d.q),
+   282→            time: d.T,
+   283→            isBuyerMaker: d.m,
+   284→          };
+   285→          const updated = [newTrade, ...prev].slice(0, 30);
+   286→          return updated;
+   287→        });
+   288→      }
+   289→    };
+   290→    return () => ws.close();
+   291→  }, [selectedPair]);
+   292→
+   293→  /* ─────── Close pair dropdown on outside click ─────── */
+   294→
+   295→  useEffect(() => {
+   296→    function handleClick(e: MouseEvent) {
+   297→      if (
+   298→        pairDropdownRef.current &&
+   299→        !pairDropdownRef.current.contains(e.target as Node)
+   300→      ) {
+   301→        setShowPairDropdown(false);
+   302→      }
+   303→    }
+   304→    document.addEventListener("mousedown", handleClick);
+   305→    return () => document.removeEventListener("mousedown", handleClick);
+   306→  }, []);
+   307→
+   308→  /* ─────── Order Handlers ─────── */
+   309→
+   310→  const handleSubmit = async (e: React.FormEvent) => {
+   311→    e.preventDefault();
+   312→    setLoading(true);
+   313→    try {
+   314→      const body: any = {
+   315→        symbol: selectedPair,
+   316→        side,
+   317→        type: orderType,
+   318→        quantity: form.quantity,
+   319→      };
+   320→      if (orderType === "LIMIT" || orderType === "STOP_LIMIT")
+   321→        body.price = form.price;
+   322→      if (orderType === "STOP_LIMIT" || orderType === "TAKE_PROFIT")
+   323→        body.stop_price = form.stopPrice;
+   324→      const res = await authPost("/api/v1/exchange/order", body);
+   325→      const data = await res.json();
+   326→      if (!res.ok) {
+   327→        toast.error(data.error || "فشل تنفيذ الأمر");
+   328→        return;
+   329→      }
+   330→      toast.success(data.message || "تم تنفيذ الأمر بنجاح");
+   331→      setForm({ quantity: "", price: "", stopPrice: "" });
+   332→      fetchOrders();
+   333→      fetchWallets();
+   334→    } catch {
+   335→      toast.error("حدث خطأ في الاتصال");
+   336→    } finally {
+   337→      setLoading(false);
+   338→    }
+   339→  };
+   340→
+   341→  const handleCancel = async (orderId: number) => {
+   342→    try {
+   343→      const res = await authPost(`/api/v1/exchange/order/${orderId}/cancel`);
+   344→      const data = await res.json();
+   345→      if (!res.ok) {
+   346→        toast.error(data.error || "فشل إلغاء الأمر");
+   347→        return;
+   348→      }
+   349→      toast.success(data.message || "تم إلغاء الأمر بنجاح");
+   350→      fetchOrders();
+   351→      fetchWallets();
+   352→    } catch {
+   353→      toast.error("حدث خطأ في الاتصال");
+   354→    }
+   355→  };
+   356→
+   357→  /* ─────── Computed Values ─────── */
+   358→
+   359→  const base = selectedPair.replace("USDT", "");
+   360→  const p = prices[selectedPair];
+   361→  const prevPrice = prevPrices.current[selectedPair];
+   362→  const priceColor =
+   363→    p && prevPrice
+   364→      ? p.price >= prevPrice
+   365→        ? "text-emerald-400"
+   366→        : "text-red-400"
+   367→      : "text-foreground";
+   368→
+   369→  const baseWallet = wallets.find((w: any) => w.currency === base);
+   370→  const quoteWallet = wallets.find((w: any) => w.currency === "USDT");
+   371→
+   372→  const getFeeRate = () => {
+   373→    const userType = "USER";
+   374→    const schedule = feeSchedules.find(
+   375→      (f: any) => f.user_type === userType && f.order_type === orderType
+   376→    );
+   377→    if (schedule) {
+   378→      return orderType === "MARKET" || orderType === "TAKE_PROFIT"
+   379→        ? schedule.taker_fee
+   380→        : schedule.maker_fee || schedule.taker_fee;
+   381→    }
+   382→    return orderType === "MARKET" || orderType === "TAKE_PROFIT"
+   383→      ? 0.0025
+   384→      : 0.0015;
+   385→  };
+   386→
+   387→  const feeRate = getFeeRate();
+   388→  const estimatedFee =
+   389→    form.quantity && parseFloat(form.quantity) > 0 && p?.price
+   390→      ? (orderType === "MARKET"
+   391→          ? p.price
+   392→          : parseFloat(form.price || "0")) *
+   393→        parseFloat(form.quantity) *
+   394→        feeRate
+   395→      : 0;
+   396→
+   397→  const estimatedTotal =
+   398→    form.quantity && parseFloat(form.quantity) > 0
+   399→      ? (orderType === "MARKET"
+   400→          ? p?.price || 0
+   401→          : parseFloat(form.price || "0")) * parseFloat(form.quantity)
+   402→      : 0;
+   403→
+   404→  /* Order book depth calculations */
+   405→  const maxBidQty = orderBook.bids?.length
+   406→    ? Math.max(...orderBook.bids.map((b) => parseFloat(b[1])))
+   407→    : 1;
+   408→  const maxAskQty = orderBook.asks?.length
+   409→    ? Math.max(...orderBook.asks.map((a) => parseFloat(a[1])))
+   410→    : 1;
+   411→
+   412→  const spread =
+   413→    orderBook.asks?.[0]?.[0] && orderBook.bids?.[0]?.[0]
+   414→      ? parseFloat(orderBook.asks[0][0]) - parseFloat(orderBook.bids[0][0])
+   415→      : 0;
+   416→  const spreadPercent =
+   417→    spread && orderBook.bids?.[0]?.[0]
+   418→      ? (spread / parseFloat(orderBook.bids[0][0])) * 100
+   419→      : 0;
+   420→
+   421→  /* Total bid/ask volume */
+   422→  const totalBidVol = orderBook.bids?.reduce(
+   423→    (s, b) => s + parseFloat(b[1]),
+   424→    0
+   425→  );
+   426→  const totalAskVol = orderBook.asks?.reduce(
+   427→    (s, a) => s + parseFloat(a[1]),
+   428→    0
+   429→  );
+   430→
+   431→  /* ─────── Crosshair handler ─────── */
+   432→  const handleCrosshairMove = useCallback(
+   433→    (data: { candle: Candle | null; x: number; y: number } | null) => {
+   434→      setCrosshairData(data?.candle || null);
+   435→    },
+   436→    []
+   437→  );
+   438→
+   439→  /* ─────── Render ─────── */
+   440→
+   441→  return (
+   442→    <div className="flex flex-col h-[calc(100vh-4rem)] gap-2 animate-fade-in overflow-hidden">
+   443→      {/* ═══════ TOP BAR ═══════ */}
+   444→      <div className="glass-panel rounded-xl px-3 py-2 flex items-center gap-3 shrink-0">
+   445→        {/* Pair Selector */}
+   446→        <div className="relative" ref={pairDropdownRef}>
+   447→          <button
+   448→            onClick={() => setShowPairDropdown(!showPairDropdown)}
+   449→            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/30 hover:bg-muted/40 transition-all border border-border/30"
+   450→          >
+   451→            <span className="text-primary text-base">{CURRENCY_ICONS[base]}</span>
+   452→            <span className="text-sm font-bold">{base}/USDT</span>
+   453→            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+   454→          </button>
+   455→
+   456→          {showPairDropdown && (
+   457→            <div className="absolute top-full mt-1 right-0 w-56 glass-panel-strong rounded-xl border border-border/50 overflow-hidden z-50 shadow-2xl">
+   458→              {PAIRS.map((pair) => {
+   459→                const pairBase = pair.replace("USDT", "");
+   460→                const isActive = selectedPair === pair;
+   461→                const pairPrice = prices[pair];
+   462→                return (
+   463→                  <button
+   464→                    key={pair}
+   465→                    onClick={() => {
+   466→                      setSelectedPair(pair);
+   467→                      setShowPairDropdown(false);
+   468→                    }}
+   469→                    className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-all hover:bg-muted/30 ${
+   470→                      isActive ? "bg-primary/10 text-primary" : ""
+   471→                    }`}
+   472→                  >
+   473→                    <div className="flex items-center gap-2">
+   474→                      <span className="text-sm">{CURRENCY_ICONS[pairBase]}</span>
+   475→                      <span className="font-bold">{pairBase}/USDT</span>
+   476→                    </div>
+   477→                    {pairPrice && (
+   478→                      <span
+   479→                        className={`font-medium tabular-nums ${
+   480→                          parseFloat(pairPrice.change) >= 0
+   481→                            ? "text-emerald-400"
+   482→                            : "text-red-400"
+   483→                        }`}
+   484→                      >
+   485→                        {parseFloat(pairPrice.change) >= 0 ? "+" : ""}
+   486→                        {parseFloat(pairPrice.change).toFixed(2)}%
+   487→                      </span>
+   488→                    )}
+   489→                  </button>
+   490→                );
+   491→              })}
+   492→            </div>
+   493→          )}
+   494→        </div>
+   495→
+   496→        {/* Current Price */}
+   497→        <div className="flex items-center gap-2">
+   498→          <span className={`text-xl font-bold tabular-nums ${priceColor}`}>
+   499→            {p?.price?.toLocaleString(undefined, {
+   500→              minimumFractionDigits: 2,
+   501→              maximumFractionDigits: 8,
+   502→            }) || "—"}
+   503→          </span>
+   504→          {p && (
+   505→            <span
+   506→              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+   507→                parseFloat(p.change) >= 0
+   508→                  ? "bg-emerald-500/10 text-emerald-400"
+   509→                  : "bg-red-500/10 text-red-400"
+   510→              }`}
+   511→            >
+   512→              {parseFloat(p.change) >= 0 ? (
+   513→                <TrendingUp className="h-2.5 w-2.5" />
+   514→              ) : (
+   515→                <TrendingDown className="h-2.5 w-2.5" />
+   516→              )}
+   517→              {parseFloat(p.change) >= 0 ? "+" : ""}
+   518→              {parseFloat(p.change).toFixed(2)}%
+   519→            </span>
+   520→          )}
+   521→        </div>
+   522→
+   523→        {/* Quick Stats */}
+   524→        {p && (
+   525→          <div className="flex items-center gap-4 text-[11px] mr-auto">
+   526→            <div className="flex flex-col">
+   527→              <span className="text-muted-foreground/50 text-[9px]">24h أعلى</span>
+   528→              <span className="font-medium text-emerald-400 tabular-nums">
+   529→                {p.high?.toLocaleString()}
+   530→              </span>
+   531→            </div>
+   532→            <div className="flex flex-col">
+   533→              <span className="text-muted-foreground/50 text-[9px]">24h أدنى</span>
+   534→              <span className="font-medium text-red-400 tabular-nums">
+   535→                {p.low?.toLocaleString()}
+   536→              </span>
+   537→            </div>
+   538→            <div className="flex flex-col">
+   539→              <span className="text-muted-foreground/50 text-[9px]">حجم 24h</span>
+   540→              <span className="font-medium tabular-nums">
+   541→                {p.quoteVolume
+   542→                  ? parseFloat(p.quoteVolume) > 1e9
+   543→                    ? (parseFloat(p.quoteVolume) / 1e9).toFixed(2) + "B"
+   544→                    : parseFloat(p.quoteVolume) > 1e6
+   545→                      ? (parseFloat(p.quoteVolume) / 1e6).toFixed(2) + "M"
+   546→                      : parseFloat(p.quoteVolume).toFixed(0) + "K"
+   547→                  : "—"}{" "}
+   548→                USDT
+   549→              </span>
+   550→            </div>
+   551→          </div>
+   552→        )}
+   553→
+   554→        {/* Crosshair OHLCV */}
+   555→        {crosshairData && (
+   556→          <div className="flex items-center gap-3 text-[10px] font-mono">
+   557→            <span className="text-muted-foreground">
+   558→              O <span className="text-foreground">{crosshairData.open.toFixed(2)}</span>
+   559→            </span>
+   560→            <span className="text-muted-foreground">
+   561→              H <span className="text-emerald-400">{crosshairData.high.toFixed(2)}</span>
+   562→            </span>
+   563→            <span className="text-muted-foreground">
+   564→              L <span className="text-red-400">{crosshairData.low.toFixed(2)}</span>
+   565→            </span>
+   566→            <span className="text-muted-foreground">
+   567→              C{" "}
+   568→              <span className={crosshairData.close >= crosshairData.open ? "text-emerald-400" : "text-red-400"}>
+   569→                {crosshairData.close.toFixed(2)}
+   570→              </span>
+   571→            </span>
+   572→            <span className="text-muted-foreground">
+   573→              V <span className="text-foreground">{crosshairData.volume.toFixed(2)}</span>
+   574→            </span>
+   575→          </div>
+   576→        )}
+   577→
+   578→        {/* Live indicator */}
+   579→        <div className="flex items-center gap-1 text-[10px] text-emerald-400">
+   580→          <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.6)] animate-pulse" />
+   581→          مباشر
+   582→        </div>
+   583→      </div>
+   584→
+   585→      {/* ═══════ MAIN LAYOUT ═══════ */}
+   586→      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-2 min-h-0">
+   587→        {/* ──── LEFT: Chart + Bottom Panel ──── */}
+   588→        <div className="lg:col-span-8 xl:col-span-9 flex flex-col gap-2 min-h-0">
+   589→          {/* CHART AREA */}
+   590→          <div className="glass-panel rounded-xl overflow-hidden flex-1 flex flex-col min-h-0">
+   591→            {/* Chart Header */}
+   592→            <div className="flex items-center gap-2 px-3 py-2 border-b border-border/20 shrink-0">
+   593→              {/* Timeframe Selector */}
+   594→              <div className="flex items-center gap-0.5 bg-muted/20 rounded-lg p-0.5">
+   595→                {TIMEFRAMES.map((tf) => (
+   596→                  <button
+   597→                    key={tf.value}
+   598→                    onClick={() => setTimeframe(tf.value)}
+   599→                    className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all duration-200 ${
+   600→                      timeframe === tf.value
+   601→                        ? "bg-primary/20 text-primary shadow-sm"
+   602→                        : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+   603→                    }`}
+   604→                  >
+   605→                    {tf.label}
+   606→                  </button>
+   607→                ))}
+   608→              </div>
+   609→
+   610→              {/* Chart Type Icons */}
+   611→              <div className="flex items-center gap-1 mr-2">
+   612→                <button className="p-1 rounded text-primary hover:bg-muted/20 transition-all" title="شموع">
+   613→                  <BarChart3 className="h-3.5 w-3.5" />
+   614→                </button>
+   615→              </div>
+   616→
+   617→              <div className="flex-1" />
+   618→
+   619→              {/* MA Legend */}
+   620→              <div className="flex items-center gap-3 text-[9px]">
+   621→                <span className="flex items-center gap-1">
+   622→                  <span className="inline-block w-3 h-0.5 rounded bg-[#f0b90b]" />
+   623→                  <span className="text-[#f0b90b]">SMA 20</span>
+   624→                </span>
+   625→                <span className="flex items-center gap-1">
+   626→                  <span className="inline-block w-3 h-0.5 rounded bg-[#8b5cf6]" />
+   627→                  <span className="text-[#8b5cf6]">EMA 50</span>
+   628→                </span>
+   629→              </div>
+   630→            </div>
+   631→
+   632→            {/* Custom Chart */}
+   633→            <div className="flex-1 min-h-0 relative">
+   634→              <ProChart
+   635→                ref={chartRef}
+   636→                candles={candles}
+   637→                onCrosshairMove={handleCrosshairMove}
+   638→                className="w-full h-full"
+   639→              />
+   640→            </div>
+   641→          </div>
+   642→
+   643→          {/* BOTTOM PANEL: Orders / Market Trades */}
+   644→          <div className="glass-panel rounded-xl overflow-hidden shrink-0" style={{ height: "200px" }}>
+   645→            {/* Tabs */}
+   646→            <div className="flex items-center border-b border-border/20 px-2 shrink-0">
+   647→              <button
+   648→                onClick={() => setBottomTab("orders")}
+   649→                className={`px-3 py-2 text-[11px] font-medium border-b-2 transition-all ${
+   650→                  bottomTab === "orders"
+   651→                    ? "border-primary text-primary"
+   652→                    : "border-transparent text-muted-foreground hover:text-foreground"
+   653→                }`}
+   654→              >
+   655→                طلباتي ({orders.length})
+   656→              </button>
+   657→              <button
+   658→                onClick={() => setBottomTab("trades")}
+   659→                className={`px-3 py-2 text-[11px] font-medium border-b-2 transition-all ${
+   660→                  bottomTab === "trades"
+   661→                    ? "border-primary text-primary"
+   662→                    : "border-transparent text-muted-foreground hover:text-foreground"
+   663→                }`}
+   664→              >
+   665→                صفقات السوق
+   666→              </button>
+   667→              <div className="flex-1" />
+   668→              {bottomTab === "orders" && (
+   669→                <button
+   670→                  onClick={() => fetchOrders()}
+   671→                  className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-all mr-1"
+   672→                >
+   673→                  <RefreshCw className="h-3 w-3" />
+   674→                </button>
+   675→              )}
+   676→            </div>
+   677→
+   678→            {/* Content */}
+   679→            <div className="overflow-y-auto" style={{ height: "calc(100% - 33px)" }}>
+   680→              {bottomTab === "orders" ? (
+   681→                orders.length === 0 ? (
+   682→                  <div className="flex flex-col items-center justify-center py-6 px-4">
+   683→                    <div className="h-8 w-8 rounded-xl bg-muted/20 flex items-center justify-center mb-2">
+   684→                      <Minus className="h-4 w-4 text-muted-foreground/40" />
+   685→                    </div>
+   686→                    <p className="text-[11px] text-muted-foreground">
+   687→                      لا توجد طلبات حالياً
+   688→                    </p>
+   689→                  </div>
+   690→                ) : (
+   691→                  <table className="w-full text-[11px]">
+   692→                    <thead>
+   693→                      <tr className="text-muted-foreground/60 border-b border-border/10">
+   694→                        <th className="text-right px-3 py-1.5 font-medium">الزوج</th>
+   695→                        <th className="text-right px-3 py-1.5 font-medium">النوع</th>
+   696→                        <th className="text-right px-3 py-1.5 font-medium">الجانب</th>
+   697→                        <th className="text-right px-3 py-1.5 font-medium">السعر</th>
+   698→                        <th className="text-right px-3 py-1.5 font-medium">الكمية</th>
+   699→                        <th className="text-right px-3 py-1.5 font-medium">الحالة</th>
+   700→                        <th className="text-right px-3 py-1.5 font-medium"></th>
+   701→                      </tr>
+   702→                    </thead>
+   703→                    <tbody>
+   704→                      {orders.slice(0, 20).map((order: any, i: number) => (
+   705→                        <tr
+   706→                          key={i}
+   707→                          className="border-b border-border/5 hover:bg-muted/5 transition-colors"
+   708→                        >
+   709→                          <td className="px-3 py-1.5 font-medium">
+   710→                            {order.symbol?.replace("USDT", "")}/USDT
+   711→                          </td>
+   712→                          <td className="px-3 py-1.5 text-muted-foreground">
+   713→                            {ORDER_TYPE_LABELS[order.type] || order.type}
+   714→                          </td>
+   715→                          <td className="px-3 py-1.5">
+   716→                            <span
+   717→                              className={`text-[10px] font-bold ${
+   718→                                order.side === "BUY"
+   719→                                  ? "text-emerald-400"
+   720→                                  : "text-red-400"
+   721→                              }`}
+   722→                            >
+   723→                              {order.side === "BUY" ? "شراء" : "بيع"}
+   724→                            </span>
+   725→                          </td>
+   726→                          <td className="px-3 py-1.5 tabular-nums">
+   727→                            {order.avg_fill_price > 0
+   728→                              ? parseFloat(order.avg_fill_price).toFixed(2)
+   729→                              : order.price
+   730→                                ? parseFloat(order.price).toFixed(2)
+   731→                                : "سوقي"}
+   732→                          </td>
+   733→                          <td className="px-3 py-1.5 tabular-nums">
+   734→                            {parseFloat(order.quantity || "0").toFixed(6)}
+   735→                          </td>
+   736→                          <td className="px-3 py-1.5">
+   737→                            <span
+   738→                              className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${
+   739→                                STATUS_COLORS[order.status] ||
+   740→                                "bg-muted/20 text-muted-foreground border-border/30"
+   741→                              }`}
+   742→                            >
+   743→                              {STATUS_LABELS[order.status] || order.status}
+   744→                            </span>
+   745→                          </td>
+   746→                          <td className="px-3 py-1.5">
+   747→                            {order.status === "PENDING" && (
+   748→                              <button
+   749→                                onClick={() => handleCancel(order.id)}
+   750→                                className="p-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all border border-red-500/15"
+   751→                                title="إلغاء الأمر"
+   752→                              >
+   753→                                <X className="h-2.5 w-2.5" />
+   754→                              </button>
+   755→                            )}
+   756→                          </td>
+   757→                        </tr>
+   758→                      ))}
+   759→                    </tbody>
+   760→                  </table>
+   761→                )
+   762→              ) : (
+   763→                <table className="w-full text-[11px]">
+   764→                  <thead>
+   765→                    <tr className="text-muted-foreground/60 border-b border-border/10">
+   766→                      <th className="text-right px-3 py-1.5 font-medium">السعر (USDT)</th>
+   767→                      <th className="text-right px-3 py-1.5 font-medium">الكمية ({base})</th>
+   768→                      <th className="text-right px-3 py-1.5 font-medium">الوقت</th>
+   769→                    </tr>
+   770→                  </thead>
+   771→                  <tbody>
+   772→                    {marketTrades.map((trade: any, i: number) => (
+   773→                      <tr
+   774→                        key={trade.id || i}
+   775→                        className="border-b border-border/5 hover:bg-muted/5 transition-colors"
+   776→                      >
+   777→                        <td
+   778→                          className={`px-3 py-1 tabular-nums font-medium ${
+   779→                            trade.isBuyerMaker
+   780→                              ? "text-red-400"
+   781→                              : "text-emerald-400"
+   782→                          }`}
+   783→                        >
+   784→                          {trade.price.toFixed(
+   785→                            trade.price >= 1 ? 2 : 6
+   786→                          )}
+   787→                        </td>
+   788→                        <td className="px-3 py-1 tabular-nums text-muted-foreground">
+   789→                          {trade.qty.toFixed(6)}
+   790→                        </td>
+   791→                        <td className="px-3 py-1 text-muted-foreground tabular-nums">
+   792→                          {new Date(trade.time).toLocaleTimeString("ar-EG", {
+   793→                            hour: "2-digit",
+   794→                            minute: "2-digit",
+   795→                            second: "2-digit",
+   796→                          })}
+   797→                        </td>
+   798→                      </tr>
+   799→                    ))}
+   800→                  </tbody>
+   801→                </table>
+   802→              )}
+   803→            </div>
+   804→          </div>
+   805→        </div>
+   806→
+   807→        {/* ──── RIGHT: Order Book + Order Form ──── */}
+   808→        <div className="lg:col-span-4 xl:col-span-3 flex flex-col gap-2 min-h-0">
+   809→          {/* ORDER BOOK */}
+   810→          <div className="glass-panel rounded-xl overflow-hidden flex flex-col" style={{ flex: "1 1 55%" }}>
+   811→            <div className="flex items-center justify-between px-3 py-2 border-b border-border/20 shrink-0">
+   812→              <div className="flex items-center gap-1.5">
+   813→                <BookOpen className="h-3.5 w-3.5 text-primary" />
+   814→                <h3 className="font-bold text-xs">دفتر الأوامر</h3>
+   815→              </div>
+   816→              <div className="flex items-center gap-2 text-[9px]">
+   817→                <span className="text-muted-foreground">
+   818→                  {base}/USDT
+   819→                </span>
+   820→              </div>
+   821→            </div>
+   822→
+   823→            {/* Column Headers */}
+   824→            <div className="flex items-center px-3 py-1 text-[9px] text-muted-foreground/50 font-medium border-b border-border/10 shrink-0">
+   825→              <span className="flex-1">السعر</span>
+   826→              <span className="flex-1 text-center">الكمية</span>
+   827→              <span className="flex-1 text-left">الإجمالي</span>
+   828→            </div>
+   829→
+   830→            {/* Asks (sell orders) */}
+   831→            <div className="flex-1 overflow-y-auto min-h-0">
+   832→              {orderBook.asks
+   833→                ?.slice(0)
+   834→                .reverse()
+   835→                .map((ask: any, i: number) => {
+   836→                  const qty = parseFloat(ask[1]);
+   837→                  const price = parseFloat(ask[0]);
+   838→                  const total = qty * price;
+   839→                  const depthPercent = (qty / maxAskQty) * 100;
+   840→                  return (
+   841→                    <div
+   842→                      key={`ask-${i}`}
+   843→                      className="relative flex items-center px-3 py-[3px] text-[10px] hover:bg-red-500/5 transition-colors cursor-pointer"
+   844→                      onClick={() =>
+   845→                        setForm({ ...form, price: price.toFixed(2) })
+   846→                      }
+   847→                    >
+   848→                      <div
+   849→                        className="absolute top-0 left-0 h-full bg-red-500/[0.06] transition-all duration-300"
+   850→                        style={{ width: `${depthPercent}%` }}
+   851→                      />
+   852→                      <span className="relative flex-1 text-red-400 font-medium tabular-nums">
+   853→                        {price.toFixed(price >= 1 ? 2 : 6)}
+   854→                      </span>
+   855→                      <span className="relative flex-1 text-center text-muted-foreground tabular-nums">
+   856→                        {qty.toFixed(4)}
+   857→                      </span>
+   858→                      <span className="relative flex-1 text-left text-muted-foreground/60 tabular-nums">
+   859→                        {total.toFixed(2)}
+   860→                      </span>
+   861→                    </div>
+   862→                  );
+   863→                })}
+   864→            </div>
+   865→
+   866→            {/* Spread / Current Price */}
+   867→            <div className="flex items-center justify-between px-3 py-1.5 border-y border-border/20 bg-muted/5 shrink-0">
+   868→              <div className="flex items-center gap-2">
+   869→                <span
+   870→                  className={`text-sm font-bold tabular-nums ${priceColor}`}
+   871→                >
+   872→                  {p?.price?.toFixed(p?.price >= 1 ? 2 : 6) || "—"}
+   873→                </span>
+   874→                {p && (
+   875→                  <span
+   876→                    className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+   877→                      parseFloat(p.change) >= 0
+   878→                        ? "bg-emerald-500/10 text-emerald-400"
+   879→                        : "bg-red-500/10 text-red-400"
+   880→                    }`}
+   881→                  >
+   882→                    {parseFloat(p.change) >= 0 ? "+" : ""}
+   883→                    {parseFloat(p.change).toFixed(2)}%
+   884→                  </span>
+   885→                )}
+   886→              </div>
+   887→              {spread > 0 && (
+   888→                <span className="text-[9px] text-muted-foreground tabular-nums">
+   889→                  فجوة: {spread.toFixed(2)} ({spreadPercent.toFixed(3)}%)
+   890→                </span>
+   891→              )}
+   892→            </div>
+   893→
+   894→            {/* Bids (buy orders) */}
+   895→            <div className="flex-1 overflow-y-auto min-h-0">
+   896→              {orderBook.bids?.slice(0, 15).map((bid: any, i: number) => {
+   897→                const qty = parseFloat(bid[1]);
+   898→                const price = parseFloat(bid[0]);
+   899→                const total = qty * price;
+   900→                const depthPercent = (qty / maxBidQty) * 100;
+   901→                return (
+   902→                  <div
+   903→                    key={`bid-${i}`}
+   904→                    className="relative flex items-center px-3 py-[3px] text-[10px] hover:bg-emerald-500/5 transition-colors cursor-pointer"
+   905→                    onClick={() =>
+   906→                      setForm({
+   907→                        ...form,
+   908→                        price: price.toFixed(2),
+   909→                      })
+   910→                    }
+   911→                  >
+   912→                    <div
+   913→                      className="absolute top-0 left-0 h-full bg-emerald-500/[0.06] transition-all duration-300"
+   914→                      style={{ width: `${depthPercent}%` }}
+   915→                    />
+   916→                    <span className="relative flex-1 text-emerald-400 font-medium tabular-nums">
+   917→                      {price.toFixed(price >= 1 ? 2 : 6)}
+   918→                    </span>
+   919→                    <span className="relative flex-1 text-center text-muted-foreground tabular-nums">
+   920→                      {qty.toFixed(4)}
+   921→                    </span>
+   922→                    <span className="relative flex-1 text-left text-muted-foreground/60 tabular-nums">
+   923→                      {total.toFixed(2)}
+   924→                    </span>
+   925→                  </div>
+   926→                );
+   927→              })}
+   928→            </div>
+   929→
+   930→            {/* Bid/Ask volume bar */}
+   931→            <div className="px-3 py-1.5 border-t border-border/10 shrink-0">
+   932→              <div className="flex items-center gap-2 text-[9px]">
+   933→                <span className="text-emerald-400 tabular-nums">
+   934→                  {totalBidVol?.toFixed(2) || "0"} {base}
+   935→                </span>
+   936→                <div className="flex-1 h-1 rounded-full bg-muted/30 overflow-hidden">
+   937→                  <div
+   938→                    className="h-full bg-emerald-500/40 rounded-full transition-all duration-300"
+   939→                    style={{
+   940→                      width: `${
+   941→                        totalBidVol && totalAskVol
+   942→                          ? (totalBidVol / (totalBidVol + totalAskVol)) * 100
+   943→                          : 50
+   944→                      }%`,
+   945→                    }}
+   946→                  />
+   947→                </div>
+   948→                <span className="text-red-400 tabular-nums">
+   949→                  {totalAskVol?.toFixed(2) || "0"} {base}
+   950→                </span>
+   951→              </div>
+   952→            </div>
+   953→          </div>
+   954→
+   955→          {/* ORDER FORM */}
+   956→          <div
+   957→            className={`glass-panel rounded-xl overflow-hidden shrink-0 transition-colors duration-500 ${
+   958→              side === "BUY"
+   959→                ? "ring-1 ring-emerald-500/10"
+   960→                : "ring-1 ring-red-500/10"
+   961→            }`}
+   962→          >
+   963→            {/* Buy/Sell Header Toggle */}
+   964→            <div className="flex p-1 m-2 mb-0 rounded-lg bg-muted/20">
+   965→              {(["BUY", "SELL"] as const).map((s) => (
+   966→                <button
+   967→                  key={s}
+   968→                  onClick={() => setSide(s)}
+   969→                  className={`flex-1 py-2 rounded-md text-xs font-bold transition-all duration-300 ${
+   970→                    side === s
+   971→                      ? s === "BUY"
+   972→                        ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
+   973→                        : "bg-red-500 text-white shadow-lg shadow-red-500/25"
+   974→                      : "text-muted-foreground hover:text-foreground"
+   975→                  }`}
+   976→                >
+   977→                  {s === "BUY" ? "شراء" : "بيع"} {base}
+   978→                </button>
+   979→              ))}
+   980→            </div>
+   981→
+   982→            <div className="p-2.5 space-y-2.5">
+   983→              {/* Order Type Tabs */}
+   984→              <div className="flex items-center gap-0.5 bg-muted/15 rounded-lg p-0.5">
+   985→                {(
+   986→                  ["MARKET", "LIMIT", "STOP_LIMIT", "TAKE_PROFIT"] as const
+   987→                ).map((t) => (
+   988→                  <button
+   989→                    key={t}
+   990→                    onClick={() => setOrderType(t)}
+   991→                    className={`flex-1 py-1.5 px-1 rounded-md text-[9px] font-medium transition-all duration-200 text-center ${
+   992→                      orderType === t
+   993→                        ? side === "BUY"
+   994→                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+   995→                          : "bg-red-500/15 text-red-400 border border-red-500/20"
+   996→                        : "text-muted-foreground hover:text-foreground hover:bg-muted/20 border border-transparent"
+   997→                    }`}
+   998→                  >
+   999→                    {ORDER_TYPE_LABELS[t]}
+  1000→                  </button>
+  1001→                ))}
+  1002→              </div>
+  1003→
+  1004→              {/* Available Balance */}
+  1005→              <div
+  1006→                className={`flex items-center justify-between p-2 rounded-lg border text-[10px] ${
+  1007→                  side === "BUY"
+  1008→                    ? "bg-emerald-500/5 border-emerald-500/10"
+  1009→                    : "bg-red-500/5 border-red-500/10"
+  1010→                }`}
+  1011→              >
+  1012→                <div className="flex items-center gap-1.5">
+  1013→                  <Wallet className="h-3 w-3 text-muted-foreground" />
+  1014→                  <span className="text-muted-foreground">الرصيد المتاح</span>
+  1015→                </div>
+  1016→                <span className="font-medium tabular-nums">
+  1017→                  {side === "BUY"
+  1018→                    ? `${quoteWallet?.balance ? parseFloat(quoteWallet.balance).toFixed(2) : "0.00"}`
+  1019→                    : `${baseWallet?.balance ? parseFloat(baseWallet.balance).toFixed(8) : "0.00000000"}`}{" "}
+  1020→                  <span className="text-muted-foreground">
+  1021→                    {side === "BUY" ? "USDT" : base}
+  1022→                  </span>
+  1023→                </span>
+  1024→              </div>
+  1025→
+  1026→              {/* Form Fields */}
+  1027→              <form onSubmit={handleSubmit} className="space-y-2">
+  1028→                {/* Quantity Input */}
+  1029→                <div>
+  1030→                  <div className="flex items-center justify-between mb-1">
+  1031→                    <label className="text-[10px] text-muted-foreground font-medium">
+  1032→                      الكمية ({base})
+  1033→                    </label>
+  1034→                    <div className="flex items-center gap-0.5">
+  1035→                      {[25, 50, 75, 100].map((pct) => {
+  1036→                        const maxQty =
+  1037→                          side === "BUY"
+  1038→                            ? quoteWallet?.balance && p?.price
+  1039→                              ? (parseFloat(quoteWallet.balance) /
+  1040→                                  (p.price * (1 + feeRate))) *
+  1041→                                (pct / 100)
+  1042→                              : 0
+  1043→                            : baseWallet?.balance
+  1044→                              ? parseFloat(baseWallet.balance) * (pct / 100)
+  1045→                              : 0;
+  1046→                        return (
+  1047→                          <button
+  1048→                            key={pct}
+  1049→                            type="button"
+  1050→                            onClick={() =>
+  1051→                              setForm({
+  1052→                                ...form,
+  1053→                                quantity: maxQty.toFixed(8),
+  1054→                              })
+  1055→                            }
+  1056→                            className={`px-1.5 py-0.5 rounded text-[9px] font-medium transition-all duration-200 ${
+  1057→                              side === "BUY"
+  1058→                                ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+  1059→                                : "bg-red-500/10 text-red-400 hover:bg-red-500/20"
+  1060→                            }`}
+  1061→                          >
+  1062→                            {pct}%
+  1063→                          </button>
+  1064→                        );
+  1065→                      })}
+  1066→                    </div>
+  1067→                  </div>
+  1068→                  <div className="relative">
+  1069→                    <input
+  1070→                      type="number"
+  1071→                      step="any"
+  1072→                      className="input-field text-xs py-2 pl-4 pr-12"
+  1073→                      placeholder="0.00"
+  1074→                      value={form.quantity}
+  1075→                      onChange={(e) =>
+  1076→                        setForm({ ...form, quantity: e.target.value })
+  1077→                      }
+  1078→                      required
+  1079→                    />
+  1080→                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-medium">
+  1081→                      {base}
+  1082→                    </span>
+  1083→                  </div>
+  1084→                </div>
+  1085→
+  1086→                {/* Price Input (LIMIT / STOP_LIMIT) */}
+  1087→                {(orderType === "LIMIT" || orderType === "STOP_LIMIT") && (
+  1088→                  <div>
+  1089→                    <div className="flex items-center justify-between mb-1">
+  1090→                      <label className="text-[10px] text-muted-foreground font-medium">
+  1091→                        السعر (USDT)
+  1092→                      </label>
+  1093→                      {!form.price && p?.price && (
+  1094→                        <button
+  1095→                          type="button"
+  1096→                          onClick={() =>
+  1097→                            setForm({
+  1098→                              ...form,
+  1099→                              price: p.price.toFixed(2),
+  1100→                            })
+  1101→                          }
+  1102→                          className="text-[9px] text-primary hover:underline"
+  1103→                        >
+  1104→                          الحالي: {p.price.toFixed(2)}
+  1105→                        </button>
+  1106→                      )}
+  1107→                    </div>
+  1108→                    <div className="relative">
+  1109→                      <input
+  1110→                        type="number"
+  1111→                        step="any"
+  1112→                        className="input-field text-xs py-2 pl-4 pr-12"
+  1113→                        placeholder="0.00"
+  1114→                        value={form.price}
+  1115→                        onChange={(e) =>
+  1116→                          setForm({ ...form, price: e.target.value })
+  1117→                        }
+  1118→                        required
+  1119→                      />
+  1120→                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-medium">
+  1121→                        USDT
+  1122→                      </span>
+  1123→                    </div>
+  1124→                  </div>
+  1125→                )}
+  1126→
+  1127→                {/* Stop Price (STOP_LIMIT / TAKE_PROFIT) */}
+  1128→                {(orderType === "STOP_LIMIT" ||
+  1129→                  orderType === "TAKE_PROFIT") && (
+  1130→                  <div>
+  1131→                    <label className="text-[10px] text-muted-foreground font-medium mb-1 block">
+  1132→                      سعر الإيقاف (USDT)
+  1133→                    </label>
+  1134→                    <div className="relative">
+  1135→                      <input
+  1136→                        type="number"
+  1137→                        step="any"
+  1138→                        className="input-field text-xs py-2 pl-4 pr-12"
+  1139→                        placeholder="0.00"
+  1140→                        value={form.stopPrice}
+  1141→                        onChange={(e) =>
+  1142→                          setForm({ ...form, stopPrice: e.target.value })
+  1143→                        }
+  1144→                        required
+  1145→                      />
+  1146→                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-medium">
+  1147→                        USDT
+  1148→                      </span>
+  1149→                    </div>
+  1150→                  </div>
+  1151→                )}
+  1152→
+  1153→                {/* Estimated Cost + Fee */}
+  1154→                {form.quantity && parseFloat(form.quantity) > 0 && (
+  1155→                  <div className="bg-muted/10 rounded-lg p-2 space-y-1.5">
+  1156→                    <div className="flex items-center justify-between text-[10px]">
+  1157→                      <span className="text-muted-foreground">
+  1158→                        {side === "BUY"
+  1159→                          ? "التكلفة التقديرية"
+  1160→                          : "القيمة التقديرية"}
+  1161→                      </span>
+  1162→                      <span className="font-medium tabular-nums">
+  1163→                        {estimatedTotal.toFixed(2)} USDT
+  1164→                      </span>
+  1165→                    </div>
+  1166→                    <div className="flex items-center justify-between text-[10px]">
+  1167→                      <span className="text-muted-foreground">
+  1168→                        الرسوم (~{(feeRate * 100).toFixed(2)}%)
+  1169→                      </span>
+  1170→                      <span className="font-medium tabular-nums text-muted-foreground">
+  1171→                        {estimatedFee.toFixed(4)} USDT
+  1172→                      </span>
+  1173→                    </div>
+  1174→                    <div className="border-t border-border/20 pt-1.5 flex items-center justify-between text-[10px]">
+  1175→                      <span className="text-muted-foreground font-medium">
+  1176→                        الإجمالي
+  1177→                      </span>
+  1178→                      <span
+  1179→                        className={`font-bold tabular-nums ${
+  1180→                          side === "BUY" ? "text-emerald-400" : "text-red-400"
+  1181→                        }`}
+  1182→                      >
+  1183→                        {(
+  1184→                          estimatedTotal +
+  1185→                          (side === "BUY" ? estimatedFee : -estimatedFee)
+  1186→                        ).toFixed(2)}{" "}
+  1187→                        USDT
+  1188→                      </span>
+  1189→                    </div>
+  1190→                  </div>
+  1191→                )}
+  1192→
+  1193→                {/* Submit Button */}
+  1194→                <button
+  1195→                  type="submit"
+  1196→                  disabled={loading}
+  1197→                  className={`w-full py-2.5 rounded-lg font-bold text-xs transition-all duration-300 flex items-center justify-center gap-1.5 ${
+  1198→                    side === "BUY"
+  1199→                      ? "bg-emerald-500 text-white hover:bg-emerald-400 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30"
+  1200→                      : "bg-red-500 text-white hover:bg-red-400 shadow-lg shadow-red-500/20 hover:shadow-red-500/30"
+  1201→                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+  1202→                >
+  1203→                  {loading ? (
+  1204→                    <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+  1205→                  ) : (
+  1206→                    <ArrowUpDown className="h-3.5 w-3.5" />
+  1207→                  )}
+  1208→                  {loading
+  1209→                    ? "جاري التنفيذ..."
+  1210→                    : `${side === "BUY" ? "شراء" : "بيع"} ${base}`}
+  1211→                </button>
+  1212→              </form>
+  1213→            </div>
+  1214→          </div>
+  1215→        </div>
+  1216→      </div>
+  1217→    </div>
+  1218→  );
+  1219→}
+  1220→
