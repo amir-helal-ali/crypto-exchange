@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import {
   Wallet,
@@ -16,8 +17,12 @@ import {
   Hash,
   Clock,
   CircleDot,
+  X,
+  ArrowRight,
+  Shield,
+  Zap,
 } from "lucide-react";
-import { authGet, authPost } from "@/lib/api";
+import { authGet } from "@/lib/api";
 
 const CURRENCIES = ["BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "ADA", "DOGE", "DOT"];
 
@@ -45,19 +50,88 @@ const CURRENCY_ICONS: Record<string, string> = {
   DOT: "●",
 };
 
+const CURRENCY_NAMES: Record<string, string> = {
+  BTC: "Bitcoin",
+  ETH: "Ethereum",
+  USDT: "Tether",
+  BNB: "BNB",
+  SOL: "Solana",
+  XRP: "Ripple",
+  ADA: "Cardano",
+  DOGE: "Dogecoin",
+  DOT: "Polkadot",
+};
+
+const CURRENCY_NETWORKS: Record<string, { name: string; network: string; address_example: string }[]> = {
+  BTC: [
+    { name: "Bitcoin", network: "BTC", address_example: "bc1q..." },
+    { name: "BEP20", network: "BSC", address_example: "0x..." },
+  ],
+  ETH: [
+    { name: "Ethereum (ERC20)", network: "ERC20", address_example: "0x..." },
+    { name: "BEP20", network: "BSC", address_example: "0x..." },
+    { name: "Arbitrum", network: "ARB", address_example: "0x..." },
+  ],
+  USDT: [
+    { name: "Ethereum (ERC20)", network: "ERC20", address_example: "0x..." },
+    { name: "TRC20", network: "TRC20", address_example: "T..." },
+    { name: "BEP20", network: "BSC", address_example: "0x..." },
+    { name: "Solana", network: "SOL", address_example: "..." },
+  ],
+  BNB: [
+    { name: "BEP20", network: "BSC", address_example: "0x..." },
+  ],
+  SOL: [
+    { name: "Solana", network: "SOL", address_example: "..." },
+  ],
+  XRP: [
+    { name: "XRP Ledger", network: "XRP", address_example: "r..." },
+  ],
+  ADA: [
+    { name: "Cardano", network: "ADA", address_example: "addr1..." },
+  ],
+  DOGE: [
+    { name: "Dogecoin", network: "DOGE", address_example: "D..." },
+  ],
+  DOT: [
+    { name: "Polkadot", network: "DOT", address_example: "15..." },
+  ],
+};
+
 export default function WalletPage() {
+  const router = useRouter();
   const [balances, setBalances] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [prices, setPrices] = useState<Record<string, string>>({});
-  const [showWithdraw, setShowWithdraw] = useState(false);
-  const [showDeposit, setShowDeposit] = useState(false);
-  const [withdrawForm, setWithdrawForm] = useState({ currency: "USDT", amount: "", address: "" });
-  const [depositForm, setDepositForm] = useState({ currency: "USDT", amount: "", tx_id: "" });
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const [depositLoading, setDepositLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [copiedTxId, setCopiedTxId] = useState(false);
 
+  // Modal states
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+
+  // Deposit modal form
+  const [depositForm, setDepositForm] = useState({
+    currency: "USDT",
+    network: "",
+    amount: "",
+    tx_id: "",
+  });
+
+  // Withdraw modal form
+  const [withdrawForm, setWithdrawForm] = useState({
+    currency: "USDT",
+    network: "",
+    amount: "",
+    address: "",
+  });
+
+  // Initialize network when currency changes
+  const getFirstNetwork = (currency: string) => {
+    const networks = CURRENCY_NETWORKS[currency];
+    return networks && networks.length > 0 ? networks[0].network : "";
+  };
+
+  // Fetch data
   const fetchData = async () => {
     try {
       const [balRes, txRes] = await Promise.all([
@@ -94,48 +168,6 @@ export default function WalletPage() {
     return () => ws.close();
   }, []);
 
-  const handleWithdraw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setWithdrawLoading(true);
-    try {
-      const res = await authPost("/api/v1/wallet/withdraw", withdrawForm);
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || "فشل طلب السحب");
-        return;
-      }
-      toast.success("تم تقديم طلب السحب بنجاح. سيتم مراجعته من قبل الإدارة.");
-      setShowWithdraw(false);
-      setWithdrawForm({ currency: "USDT", amount: "", address: "" });
-      fetchData();
-    } catch {
-      toast.error("حدث خطأ في الاتصال");
-    } finally {
-      setWithdrawLoading(false);
-    }
-  };
-
-  const handleDeposit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setDepositLoading(true);
-    try {
-      const res = await authPost("/api/v1/wallet/deposit", depositForm);
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || "فشل طلب الإيداع");
-        return;
-      }
-      toast.success("تم تقديم طلب الإيداع بنجاح. سيتم مراجعته وإضافة الرصيد بعد التأكيد.");
-      setShowDeposit(false);
-      setDepositForm({ currency: "USDT", amount: "", tx_id: "" });
-      fetchData();
-    } catch {
-      toast.error("حدث خطأ في الاتصال");
-    } finally {
-      setDepositLoading(false);
-    }
-  };
-
   const getCurrencyBalance = (currency: string) => {
     const b = balances.find((b: any) => b.currency === currency);
     return b ? parseFloat(b.balance) : 0;
@@ -153,6 +185,64 @@ export default function WalletPage() {
     if (s === "COMPLETED") return { label: "مكتمل", cls: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" };
     if (s === "PENDING") return { label: "قيد الانتظار", cls: "bg-yellow-500/15 text-yellow-400 border border-yellow-500/20" };
     return { label: "مرفوض", cls: "bg-red-500/15 text-red-400 border border-red-500/20" };
+  };
+
+  // Deposit modal handlers
+  const openDepositModal = () => {
+    const firstNetwork = getFirstNetwork("USDT");
+    setDepositForm({ currency: "USDT", network: firstNetwork, amount: "", tx_id: "" });
+    setShowDepositModal(true);
+    setShowWithdrawModal(false);
+  };
+
+  const handleDepositCurrencyChange = (currency: string) => {
+    const firstNetwork = getFirstNetwork(currency);
+    setDepositForm({ ...depositForm, currency, network: firstNetwork });
+  };
+
+  const handleDepositContinue = () => {
+    if (!depositForm.currency || !depositForm.network || !depositForm.amount || parseFloat(depositForm.amount) <= 0) {
+      toast.error("يرجى ملء جميع الحقول المطلوبة");
+      return;
+    }
+    const params = new URLSearchParams({
+      network: depositForm.network,
+      amount: depositForm.amount,
+    });
+    if (depositForm.tx_id) params.set("tx_id", depositForm.tx_id);
+    setShowDepositModal(false);
+    router.push(`/dashboard/wallet/deposit/${depositForm.currency}?${params.toString()}`);
+  };
+
+  // Withdraw modal handlers
+  const openWithdrawModal = () => {
+    const firstNetwork = getFirstNetwork("USDT");
+    setWithdrawForm({ currency: "USDT", network: firstNetwork, amount: "", address: "" });
+    setShowWithdrawModal(true);
+    setShowDepositModal(false);
+  };
+
+  const handleWithdrawCurrencyChange = (currency: string) => {
+    const firstNetwork = getFirstNetwork(currency);
+    setWithdrawForm({ ...withdrawForm, currency, network: firstNetwork });
+  };
+
+  const handleWithdrawContinue = () => {
+    if (!withdrawForm.currency || !withdrawForm.network || !withdrawForm.amount || parseFloat(withdrawForm.amount) <= 0) {
+      toast.error("يرجى ملء جميع الحقول المطلوبة");
+      return;
+    }
+    if (!withdrawForm.address) {
+      toast.error("يرجى إدخال عنوان المحفظة");
+      return;
+    }
+    const params = new URLSearchParams({
+      network: withdrawForm.network,
+      amount: withdrawForm.amount,
+      address: withdrawForm.address,
+    });
+    setShowWithdrawModal(false);
+    router.push(`/dashboard/wallet/withdraw/${withdrawForm.currency}?${params.toString()}`);
   };
 
   return (
@@ -183,6 +273,37 @@ export default function WalletPage() {
         </div>
       </div>
 
+      {/* ── Action Buttons (TOP) ── */}
+      <div className="grid grid-cols-2 gap-4 animate-slide-in-up" style={{ animationDelay: "100ms", animationFillMode: "both" }}>
+        <button
+          onClick={openDepositModal}
+          className="group relative overflow-hidden rounded-2xl glass-panel p-5 flex items-center gap-4 hover:bg-emerald-500/5 transition-all duration-300 border-2 border-transparent hover:border-emerald-500/20"
+        >
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-110 transition-transform">
+            <ArrowDownToLine className="h-6 w-6 text-white" />
+          </div>
+          <div className="text-right flex-1">
+            <p className="font-bold text-base">إيداع</p>
+            <p className="text-xs text-muted-foreground mt-0.5">تحويل عملات إلى محفظتك</p>
+          </div>
+          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-emerald-400 group-hover:translate-x-[-4px] transition-all" />
+        </button>
+
+        <button
+          onClick={openWithdrawModal}
+          className="group relative overflow-hidden rounded-2xl glass-panel p-5 flex items-center gap-4 hover:bg-red-500/5 transition-all duration-300 border-2 border-transparent hover:border-red-500/20"
+        >
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/20 group-hover:scale-110 transition-transform">
+            <Send className="h-6 w-6 text-white" />
+          </div>
+          <div className="text-right flex-1">
+            <p className="font-bold text-base">سحب</p>
+            <p className="text-xs text-muted-foreground mt-0.5">سحب عملات من محفظتك</p>
+          </div>
+          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-red-400 group-hover:translate-x-[-4px] transition-all" />
+        </button>
+      </div>
+
       {/* ── Currency Grid ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {CURRENCIES.map((currency, idx) => {
@@ -209,7 +330,7 @@ export default function WalletPage() {
                   <div>
                     <p className="font-bold text-base">{currency}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {currency === "USDT" ? "Tether" : currency === "BTC" ? "Bitcoin" : currency === "ETH" ? "Ethereum" : currency}
+                      {CURRENCY_NAMES[currency] || currency}
                     </p>
                   </div>
                 </div>
@@ -240,203 +361,6 @@ export default function WalletPage() {
           );
         })}
       </div>
-
-      {/* ── Action Buttons ── */}
-      <div className="flex items-center gap-3 animate-slide-in-up" style={{ animationDelay: "200ms" }}>
-        <button
-          onClick={() => {
-            setShowDeposit(!showDeposit);
-            setShowWithdraw(false);
-          }}
-          className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 border-2 ${
-            showDeposit
-              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
-              : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50"
-          }`}
-        >
-          <ArrowDownToLine className="h-4 w-4" />
-          إيداع
-        </button>
-        <button
-          onClick={() => {
-            setShowWithdraw(!showWithdraw);
-            setShowDeposit(false);
-          }}
-          className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-            showWithdraw ? "btn-primary" : "btn-primary"
-          }`}
-        >
-          <Send className="h-4 w-4" />
-          سحب
-        </button>
-      </div>
-
-      {/* ── Deposit Form ── */}
-      {showDeposit && (
-        <form
-          onSubmit={handleDeposit}
-          className="glass-panel-strong rounded-2xl p-6 space-y-5 animate-scale-in"
-        >
-          <div className="flex items-center gap-3 mb-1">
-            <div className="h-9 w-9 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-              <ArrowDownToLine className="h-5 w-5 text-emerald-500" />
-            </div>
-            <div>
-              <h3 className="font-bold text-lg">طلب إيداع</h3>
-              <p className="text-xs text-muted-foreground">تحويل عملات رقمية إلى محفظتك</p>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/15 flex items-start gap-3">
-            <Info className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              قم بتحويل العملات الرقمية إلى محفظتك الخارجية، ثم قدّم طلب إيداع مع إرفاق رقم المعاملة (TxID). سيتم مراجعة الطلب وإضافة الرصيد بعد التأكيد من قبل الإدارة.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2 text-muted-foreground">العملة</label>
-              <div className="relative">
-                <select
-                  className="input-field appearance-none pr-4"
-                  value={depositForm.currency}
-                  onChange={(e) => setDepositForm({ ...depositForm, currency: e.target.value })}
-                >
-                  {CURRENCIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <ChevronDown className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 text-muted-foreground">الكمية</label>
-              <input
-                type="number"
-                step="any"
-                className="input-field"
-                placeholder="0.00"
-                value={depositForm.amount}
-                onChange={(e) => setDepositForm({ ...depositForm, amount: e.target.value })}
-                required
-                min="0.001"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 text-muted-foreground">رقم المعاملة (TxID)</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="0xabc123..."
-                value={depositForm.tx_id}
-                onChange={(e) => setDepositForm({ ...depositForm, tx_id: e.target.value })}
-                required
-                dir="ltr"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setShowDeposit(false)} className="btn-ghost">إلغاء</button>
-            <button
-              type="submit"
-              disabled={depositLoading}
-              className="btn-primary bg-emerald-600 hover:bg-emerald-500 gap-2 min-w-[140px]"
-            >
-              {depositLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowDownToLine className="h-4 w-4" />
-              )}
-              {depositLoading ? "جاري المعالجة..." : "تأكيد الإيداع"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* ── Withdraw Form ── */}
-      {showWithdraw && (
-        <form
-          onSubmit={handleWithdraw}
-          className="glass-panel-strong rounded-2xl p-6 space-y-5 animate-scale-in"
-        >
-          <div className="flex items-center gap-3 mb-1">
-            <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Send className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-bold text-lg">طلب سحب</h3>
-              <p className="text-xs text-muted-foreground">سحب عملات رقمية من محفظتك</p>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/15 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              سيتم خصم المبلغ من رصيدك فوراً وإنشاء طلب سحب معلق. سيتم معالجة السحب بعد مراجعة الإدارة.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2 text-muted-foreground">العملة</label>
-              <div className="relative">
-                <select
-                  className="input-field appearance-none pr-4"
-                  value={withdrawForm.currency}
-                  onChange={(e) => setWithdrawForm({ ...withdrawForm, currency: e.target.value })}
-                >
-                  {CURRENCIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <ChevronDown className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 text-muted-foreground">الكمية</label>
-              <input
-                type="number"
-                step="any"
-                className="input-field"
-                placeholder="0.00"
-                value={withdrawForm.amount}
-                onChange={(e) => setWithdrawForm({ ...withdrawForm, amount: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 text-muted-foreground">عنوان المحفظة</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="عنوان المحفظة"
-                value={withdrawForm.address}
-                onChange={(e) => setWithdrawForm({ ...withdrawForm, address: e.target.value })}
-                required
-                dir="ltr"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setShowWithdraw(false)} className="btn-ghost">إلغاء</button>
-            <button
-              type="submit"
-              disabled={withdrawLoading}
-              className="btn-primary gap-2 min-w-[140px]"
-            >
-              {withdrawLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              {withdrawLoading ? "جاري المعالجة..." : "تأكيد السحب"}
-            </button>
-          </div>
-        </form>
-      )}
 
       {/* ── Transactions List ── */}
       <div className="glass-panel rounded-2xl overflow-hidden animate-slide-in-up" style={{ animationDelay: "300ms" }}>
@@ -547,6 +471,324 @@ export default function WalletPage() {
           )}
         </div>
       </div>
+
+      {/* ── Deposit Modal ── */}
+      {showDepositModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowDepositModal(false)}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
+
+          {/* Modal Content */}
+          <div
+            className="relative w-full max-w-lg glass-panel-strong rounded-3xl p-6 animate-scale-in z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowDepositModal(false)}
+              className="absolute top-4 left-4 h-8 w-8 rounded-lg flex items-center justify-center hover:bg-muted/50 transition-colors"
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <ArrowDownToLine className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-xl">إيداع عملات رقمية</h3>
+                <p className="text-xs text-muted-foreground">تحويل عملات إلى محفظتك</p>
+              </div>
+            </div>
+
+            {/* Info Box */}
+            <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/15 flex items-start gap-3 mb-5">
+              <Info className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                قم بتحويل العملات الرقمية إلى محفظتك الخارجية، ثم قدّم طلب إيداع مع إرفاق رقم المعاملة (TxID). سيتم مراجعة الطلب وإضافة الرصيد بعد التأكيد من قبل الإدارة.
+              </p>
+            </div>
+
+            {/* Form Fields */}
+            <div className="space-y-4">
+              {/* Currency Selector */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">العملة</label>
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-4 pl-10"
+                    value={depositForm.currency}
+                    onChange={(e) => handleDepositCurrencyChange(e.target.value)}
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>
+                        {CURRENCY_ICONS[c]} {c} - {CURRENCY_NAMES[c]}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className={`h-7 w-7 rounded-lg bg-gradient-to-br ${CURRENCY_COLORS[depositForm.currency]} flex items-center justify-center text-xs font-bold text-white`}>
+                      {CURRENCY_ICONS[depositForm.currency]}
+                    </div>
+                  </div>
+                  <ChevronDown className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Network Selector */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">الشبكة</label>
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-4"
+                    value={depositForm.network}
+                    onChange={(e) => setDepositForm({ ...depositForm, network: e.target.value })}
+                  >
+                    {(CURRENCY_NETWORKS[depositForm.currency] || []).map((net) => (
+                      <option key={net.network} value={net.network}>
+                        {net.name} ({net.network})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                </div>
+                {depositForm.network && (
+                  <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1.5">
+                    <Shield className="h-3 w-3" />
+                    مثال على العنوان: <span dir="ltr" className="text-foreground/70">{CURRENCY_NETWORKS[depositForm.currency]?.find(n => n.network === depositForm.network)?.address_example}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">الكمية</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="any"
+                    className="input-field pl-16"
+                    placeholder="0.00"
+                    value={depositForm.amount}
+                    onChange={(e) => setDepositForm({ ...depositForm, amount: e.target.value })}
+                    min="0.001"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
+                    {depositForm.currency}
+                  </div>
+                </div>
+              </div>
+
+              {/* TxID Input */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">رقم المعاملة (TxID) - اختياري</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="input-field pl-10"
+                    placeholder="0xabc123..."
+                    value={depositForm.tx_id}
+                    onChange={(e) => setDepositForm({ ...depositForm, tx_id: e.target.value })}
+                    dir="ltr"
+                  />
+                  <Hash className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowDepositModal(false)}
+                className="btn-ghost flex-1 py-3"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleDepositContinue}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-500 gap-2 flex-1 py-3"
+              >
+                <ArrowDownToLine className="h-4 w-4" />
+                متابعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Withdraw Modal ── */}
+      {showWithdrawModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowWithdrawModal(false)}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
+
+          {/* Modal Content */}
+          <div
+            className="relative w-full max-w-lg glass-panel-strong rounded-3xl p-6 animate-scale-in z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowWithdrawModal(false)}
+              className="absolute top-4 left-4 h-8 w-8 rounded-lg flex items-center justify-center hover:bg-muted/50 transition-colors"
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/20">
+                <Send className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-xl">سحب عملات رقمية</h3>
+                <p className="text-xs text-muted-foreground">سحب عملات من محفظتك</p>
+              </div>
+            </div>
+
+            {/* Warning Box */}
+            <div className="p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/15 flex items-start gap-3 mb-5">
+              <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                سيتم خصم المبلغ من رصيدك فوراً وإنشاء طلب سحب معلق. سيتم معالجة السحب بعد مراجعة الإدارة. تأكد من صحة العنوان والشبكة.
+              </p>
+            </div>
+
+            {/* Available Balance */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/20 border border-border/30 mb-5">
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">الرصيد المتاح:</span>
+              <span className="text-sm font-bold">
+                {getCurrencyBalance(withdrawForm.currency).toFixed(getCurrencyBalance(withdrawForm.currency) > 1 ? 4 : 8)} {withdrawForm.currency}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                ≈ $
+                {(
+                  (withdrawForm.currency === "USDT"
+                    ? getCurrencyBalance(withdrawForm.currency)
+                    : getCurrencyBalance(withdrawForm.currency) * (prices[withdrawForm.currency] ? parseFloat(prices[withdrawForm.currency]) : 0))
+                ).toFixed(2)}
+              </span>
+            </div>
+
+            {/* Form Fields */}
+            <div className="space-y-4">
+              {/* Currency Selector */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">العملة</label>
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-4 pl-10"
+                    value={withdrawForm.currency}
+                    onChange={(e) => handleWithdrawCurrencyChange(e.target.value)}
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>
+                        {CURRENCY_ICONS[c]} {c} - {CURRENCY_NAMES[c]}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className={`h-7 w-7 rounded-lg bg-gradient-to-br ${CURRENCY_COLORS[withdrawForm.currency]} flex items-center justify-center text-xs font-bold text-white`}>
+                      {CURRENCY_ICONS[withdrawForm.currency]}
+                    </div>
+                  </div>
+                  <ChevronDown className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Network Selector */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">الشبكة</label>
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-4"
+                    value={withdrawForm.network}
+                    onChange={(e) => setWithdrawForm({ ...withdrawForm, network: e.target.value })}
+                  >
+                    {(CURRENCY_NETWORKS[withdrawForm.currency] || []).map((net) => (
+                      <option key={net.network} value={net.network}>
+                        {net.name} ({net.network})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">الكمية</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="any"
+                    className="input-field pl-16"
+                    placeholder="0.00"
+                    value={withdrawForm.amount}
+                    onChange={(e) => setWithdrawForm({ ...withdrawForm, amount: e.target.value })}
+                    min="0.001"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
+                    {withdrawForm.currency}
+                  </div>
+                </div>
+                {/* Quick fill max */}
+                <button
+                  type="button"
+                  onClick={() => setWithdrawForm({ ...withdrawForm, amount: getCurrencyBalance(withdrawForm.currency).toString() })}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 mt-1.5 transition-colors"
+                >
+                  <Zap className="h-3 w-3 inline ml-1" />
+                  استخدام الرصيد الكامل
+                </button>
+              </div>
+
+              {/* Wallet Address Input */}
+              <div>
+                <label className="block text-sm font-medium mb-2 text-muted-foreground">عنوان المحفظة</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder={`أدخل عنوان ${withdrawForm.currency} على شبكة ${withdrawForm.network || "..."}`}
+                  value={withdrawForm.address}
+                  onChange={(e) => setWithdrawForm({ ...withdrawForm, address: e.target.value })}
+                  dir="ltr"
+                />
+                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1.5">
+                  <Shield className="h-3 w-3" />
+                  تأكد من تطابق الشبكة مع العنوان لتجنب فقدان الأموال
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowWithdrawModal(false)}
+                className="btn-ghost flex-1 py-3"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleWithdrawContinue}
+                className="btn-primary bg-red-600 hover:bg-red-500 gap-2 flex-1 py-3"
+                style={{ boxShadow: "0 0 20px rgba(239,68,68,0.15), 0 2px 4px rgba(0,0,0,0.1)" }}
+              >
+                <Send className="h-4 w-4" />
+                متابعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

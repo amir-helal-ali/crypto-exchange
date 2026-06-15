@@ -28,6 +28,11 @@ import {
   SendHorizonal,
   Zap,
   Home,
+  Settings,
+  Users,
+  ArrowRightLeft,
+  Megaphone,
+  Coins,
 } from "lucide-react";
 import { authGet, authPut } from "@/lib/api";
 
@@ -46,11 +51,24 @@ const NAV_SECTIONS = [
     items: [
       { href: "/dashboard/notifications", icon: Bell, label: "الإشعارات" },
       { href: "/dashboard/kyc", icon: FileText, label: "التحقق" },
+      { href: "/dashboard/fees", icon: Coins, label: "الرسوم" },
       { href: "/dashboard/security", icon: Shield, label: "الأمان" },
       { href: "/dashboard/profile", icon: User, label: "الملف الشخصي" },
     ],
   },
 ];
+
+const ADMIN_NAV_SECTION = {
+  title: "الإدارة",
+  items: [
+    { href: "/dashboard/admin", icon: Settings, label: "لوحة الإدارة" },
+    { href: "/dashboard/admin/users", icon: Users, label: "المستخدمين" },
+    { href: "/dashboard/admin/kyc", icon: FileText, label: "طلبات التحقق" },
+    { href: "/dashboard/admin/transactions", icon: ArrowRightLeft, label: "المعاملات" },
+    { href: "/dashboard/admin/ads", icon: Megaphone, label: "الإعلانات" },
+    { href: "/dashboard/admin/fees", icon: Coins, label: "الرسوم" },
+  ],
+};
 
 const TICKER_SYMBOLS = [
   { symbol: "BTCUSDT", label: "BTC", color: "text-amber-400" },
@@ -550,6 +568,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
               </div>
             ))}
+
+            {/* Admin Section - Only for ADMIN users */}
+            {user?.role === "ADMIN" && (
+              <div>
+                <div className="flex items-center gap-2 px-4 pt-5 pb-2">
+                  <span className="text-[10px] font-semibold text-emerald-500/60 uppercase tracking-widest">{ADMIN_NAV_SECTION.title}</span>
+                  <div className="flex-1 h-px bg-emerald-500/15" />
+                </div>
+                <div className="space-y-0.5">
+                  {ADMIN_NAV_SECTION.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={`nav-item ${isActive ? "nav-item-active" : "nav-item-inactive"}`}
+                      >
+                        <Icon className={`h-[18px] w-[18px] transition-colors ${isActive ? "text-primary" : ""}`} />
+                        <span>{item.label}</span>
+                        {isActive && (
+                          <div className="mr-auto h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Separator */}
             <div className="my-4 mx-3 h-px bg-border/20" />

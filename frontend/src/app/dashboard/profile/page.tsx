@@ -17,7 +17,7 @@ import {
   KeyRound,
   UserCircle,
 } from "lucide-react";
-import { authPut, authPost } from "@/lib/api";
+import { authGet, authPut, authPost } from "@/lib/api";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<any>({ username: "", email: "" });
@@ -31,15 +31,46 @@ export default function ProfilePage() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-    const userData = JSON.parse(localStorage.getItem("user") || "{}");
-    setUser(userData);
-    setProfileForm({
-      full_name: userData.full_name || "",
-      country: userData.country || "",
-      phone: userData.phone || "",
-    });
-    setLoading(false);
+    fetchUserInfo();
   }, []);
+
+  const fetchUserInfo = async () => {
+    try {
+      const res = await authGet("/api/v1/user/info");
+      if (res.ok) {
+        const data = await res.json();
+        const userData = data.data || data;
+        setUser(userData);
+        setProfileForm({
+          full_name: userData.full_name || "",
+          country: userData.country || "",
+          phone: userData.phone || "",
+        });
+        // Update localStorage for other components
+        localStorage.setItem("user", JSON.stringify(userData));
+      } else {
+        // Fallback to localStorage if API fails
+        const userData = JSON.parse(localStorage.getItem("user") || "{}");
+        setUser(userData);
+        setProfileForm({
+          full_name: userData.full_name || "",
+          country: userData.country || "",
+          phone: userData.phone || "",
+        });
+      }
+    } catch {
+      // Fallback to localStorage
+      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      setUser(userData);
+      setProfileForm({
+        full_name: userData.full_name || "",
+        country: userData.country || "",
+        phone: userData.phone || "",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
