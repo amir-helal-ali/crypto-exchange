@@ -1,0 +1,1007 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useRef, useState, useCallback } from "react";
+     4→import Link from "next/link";
+     5→import {
+     6→  ArrowLeft,
+     7→  BarChart3,
+     8→  Shield,
+     9→  Globe,
+    10→  HeadphonesIcon,
+    11→  Cpu,
+    12→  TrendingUp,
+    13→  Wallet,
+    14→  Users,
+    15→  Menu,
+    16→  X,
+    17→  XCircle,
+    18→  ChevronDown,
+    19→  Rocket,
+    20→  Lock,
+    21→  Zap,
+    22→  ArrowUpRight,
+    23→  Activity,
+    24→  CreditCard,
+    25→  Star,
+    26→  Twitter,
+    27→  MessageCircle,
+    28→  Send,
+    29→} from "lucide-react";
+    30→
+    31→interface Ad {
+    32→  id: number;
+    33→  title: string;
+    34→  link: string;
+    35→  image_url: string;
+    36→  button_text: string;
+    37→  button_link: string;
+    38→  position: string;
+    39→  active: boolean;
+    40→  sort_order: number;
+    41→}
+    42→
+    43→const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+    44→
+    45→const COINS = [
+    46→  { symbol: "BTCUSDT", name: "Bitcoin", arName: "بيتكوين", color: "#f7931a", desc: "أول وأكبر عملة رقمية في العالم، المخزن الرقمي الآمن للقيمة." },
+    47→  { symbol: "ETHUSDT", name: "Ethereum", arName: "إيثريوم", color: "#627eea", desc: "منصة العقود الذكية الرائدة، تدعم التطبيقات اللامركزية و DeFi." },
+    48→  { symbol: "BNBUSDT", name: "BNB", arName: "بي إن بي", color: "#f0b90b", desc: "عملة منصة بينانس، تستخدم للرسوم المخفضة والمشاريع اللامركزية." },
+    49→  { symbol: "SOLUSDT", name: "Solana", arName: "سولانا", color: "#9945ff", desc: "بلوكتشين عالي السرعة ومنخفض التكلفة، مثالي للتطبيقات اللامركزية." },
+    50→  { symbol: "XRPUSDT", name: "XRP", arName: "إكس آر بي", color: "#00aae4", desc: "حل الدفع الرقمي للتحويلات الدولية السريعة ومنخفضة التكلفة." },
+    51→  { symbol: "ADAUSDT", name: "Cardano", arName: "كاردانو", color: "#0033ad", desc: "منصة بلوكتشين مستدامة وقابلة للتطوير، تركز على الأمان والبحث الأكاديمي." },
+    52→  { symbol: "DOGEUSDT", name: "Dogecoin", arName: "دوجكوين", color: "#c2a633", desc: "عملة رقمية مجتمعية، بدأت كمزحة وأصبحت ظاهرة عالمية." },
+    53→  { symbol: "DOTUSDT", name: "Polkadot", arName: "بولكادوت", color: "#e6007a", desc: "بروتوكول يربط بين سلاسل الكتل المختلفة لتمكين التبادل الآمن للبيانات." },
+    54→];
+    55→
+    56→const FEATURES = [
+    57→  { icon: TrendingUp, title: "تداول فوري", desc: "نفذ صفقاتك في لحظتها بأسعار السوق الحقيقية من Binance" },
+    58→  { icon: Shield, title: "أمان متعدد الطبقات", desc: "تشفير SSL وتخزين بارد للعملات الرقمية لحماية أموالك" },
+    59→  { icon: Globe, title: "بيانات حية", desc: "أسعار وأحجام تداول حقيقية من Binance في الوقت الفعلي" },
+    60→  { icon: HeadphonesIcon, title: "دعم عربي", desc: "فريق دعم متكامل باللغة العربية على مدار الساعة" },
+    61→  { icon: Wallet, title: "محفظة آمنة", desc: "إدارة أصولك الرقمية بسهولة مع محفظة متعددة العملات" },
+    62→  { icon: BarChart3, title: "رسوم بيانية متقدمة", desc: "تحليل فني متكامل مع شموع يابانية ومؤشرات Binance" },
+    63→];
+    64→
+    65→const STEPS = [
+    66→  { step: "01", title: "إنشاء حساب", desc: "سجل ببريدك الإلكتروني وأنشئ حساباً آمناً في أقل من دقيقة", icon: CreditCard },
+    67→  { step: "02", title: "إيداع الأموال", desc: "قم بإيداع العملات الرقمية في محفظتك الآمنة بسهولة", icon: Wallet },
+    68→  { step: "03", title: "ابدأ التداول", desc: "تداول أزواج العملات مع بيانات حية وأدوات متقدمة", icon: Rocket },
+    69→];
+    70→
+    71→const STATS = [
+    72→  { value: 12500, suffix: "+", label: "متداول نشط", icon: Users, color: "emerald" },
+    73→  { value: 2.8, suffix: "B$", label: "حجم التداول", icon: TrendingUp, color: "blue" },
+    74→  { value: 150, suffix: "+", label: "عملات مدعومة", icon: CreditCard, color: "purple" },
+    75→  { value: 99.9, suffix: "%", label: "أمان متعدد الطبقات", icon: Lock, color: "orange" },
+    76→];
+    77→
+    78→/* ─── Intersection Observer Hook ─── */
+    79→function useInView(threshold = 0.15) {
+    80→  const ref = useRef<HTMLDivElement>(null);
+    81→  const [isInView, setIsInView] = useState(false);
+    82→
+    83→  useEffect(() => {
+    84→    const el = ref.current;
+    85→    if (!el) return;
+    86→    const obs = new IntersectionObserver(
+    87→      ([entry]) => { if (entry.isIntersecting) { setIsInView(true); obs.unobserve(el); } },
+    88→      { threshold }
+    89→    );
+    90→    obs.observe(el);
+    91→    return () => obs.disconnect();
+    92→  }, [threshold]);
+    93→
+    94→  return { ref, isInView };
+    95→}
+    96→
+    97→/* ─── Count-Up Hook ─── */
+    98→function useCountUp(target: number, duration: number, start: boolean) {
+    99→  const [value, setValue] = useState(0);
+   100→  useEffect(() => {
+   101→    if (!start) return;
+   102→    let startTime: number | null = null;
+   103→    let raf: number;
+   104→    const animate = (ts: number) => {
+   105→      if (!startTime) startTime = ts;
+   106→      const progress = Math.min((ts - startTime) / duration, 1);
+   107→      const eased = 1 - Math.pow(1 - progress, 3);
+   108→      setValue(eased * target);
+   109→      if (progress < 1) raf = requestAnimationFrame(animate);
+   110→    };
+   111→    raf = requestAnimationFrame(animate);
+   112→    return () => cancelAnimationFrame(raf);
+   113→  }, [target, duration, start]);
+   114→  return value;
+   115→}
+   116→
+   117→/* ─── Animated Particles Component ─── */
+   118→function ParticleField() {
+   119→  const canvasRef = useRef<HTMLCanvasElement>(null);
+   120→
+   121→  useEffect(() => {
+   122→    const canvas = canvasRef.current;
+   123→    if (!canvas) return;
+   124→    const ctx = canvas.getContext("2d");
+   125→    if (!ctx) return;
+   126→
+   127→    let animId: number;
+   128→    const particles: { x: number; y: number; vx: number; vy: number; r: number; opacity: number; color: string }[] = [];
+   129→    const colors = ["#10b981", "#14b8a6", "#627eea", "#9945ff", "#f7931a"];
+   130→
+   131→    const resize = () => {
+   132→      canvas.width = window.innerWidth;
+   133→      canvas.height = window.innerHeight;
+   134→    };
+   135→    resize();
+   136→    window.addEventListener("resize", resize);
+   137→
+   138→    for (let i = 0; i < 60; i++) {
+   139→      particles.push({
+   140→        x: Math.random() * canvas.width,
+   141→        y: Math.random() * canvas.height,
+   142→        vx: (Math.random() - 0.5) * 0.4,
+   143→        vy: (Math.random() - 0.5) * 0.4,
+   144→        r: Math.random() * 2 + 1,
+   145→        opacity: Math.random() * 0.4 + 0.1,
+   146→        color: colors[Math.floor(Math.random() * colors.length)],
+   147→      });
+   148→    }
+   149→
+   150→    const draw = () => {
+   151→      ctx.clearRect(0, 0, canvas.width, canvas.height);
+   152→      particles.forEach((p) => {
+   153→        p.x += p.vx;
+   154→        p.y += p.vy;
+   155→        if (p.x < 0) p.x = canvas.width;
+   156→        if (p.x > canvas.width) p.x = 0;
+   157→        if (p.y < 0) p.y = canvas.height;
+   158→        if (p.y > canvas.height) p.y = 0;
+   159→
+   160→        ctx.beginPath();
+   161→        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+   162→        ctx.fillStyle = p.color;
+   163→        ctx.globalAlpha = p.opacity;
+   164→        ctx.fill();
+   165→      });
+   166→
+   167→      // Draw lines between close particles
+   168→      ctx.globalAlpha = 0.06;
+   169→      ctx.strokeStyle = "#10b981";
+   170→      ctx.lineWidth = 0.5;
+   171→      for (let i = 0; i < particles.length; i++) {
+   172→        for (let j = i + 1; j < particles.length; j++) {
+   173→          const dx = particles[i].x - particles[j].x;
+   174→          const dy = particles[i].y - particles[j].y;
+   175→          const dist = Math.sqrt(dx * dx + dy * dy);
+   176→          if (dist < 150) {
+   177→            ctx.globalAlpha = 0.06 * (1 - dist / 150);
+   178→            ctx.beginPath();
+   179→            ctx.moveTo(particles[i].x, particles[i].y);
+   180→            ctx.lineTo(particles[j].x, particles[j].y);
+   181→            ctx.stroke();
+   182→          }
+   183→        }
+   184→      }
+   185→      ctx.globalAlpha = 1;
+   186→      animId = requestAnimationFrame(draw);
+   187→    };
+   188→    draw();
+   189→
+   190→    return () => {
+   191→      cancelAnimationFrame(animId);
+   192→      window.removeEventListener("resize", resize);
+   193→    };
+   194→  }, []);
+   195→
+   196→  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />;
+   197→}
+   198→
+   199→/* ─── Ad Banner Component ─── */
+   200→function AdBanner({ ads }: { ads: Ad[] }) {
+   201→  const [current, setCurrent] = useState(0);
+   202→
+   203→  useEffect(() => {
+   204→    if (ads.length < 2) return;
+   205→    const timer = setInterval(() => setCurrent((prev) => (prev + 1) % ads.length), 5000);
+   206→    return () => clearInterval(timer);
+   207→  }, [ads.length]);
+   208→
+   209→  if (ads.length === 0) return null;
+   210→
+   211→  return (
+   212→    <div className="relative overflow-hidden rounded-2xl">
+   213→      <div
+   214→        className="flex transition-transform duration-700 ease-in-out"
+   215→        style={{ transform: `translateX(-${current * 100}%)` }}
+   216→      >
+   217→        {ads.map((ad) => (
+   218→          <div key={ad.id} className="min-w-full relative">
+   219→            {ad.image_url ? (
+   220→              <a href={ad.link || "#"} target="_blank" rel="noopener noreferrer" className="block">
+   221→                <img src={ad.image_url} alt={ad.title} className="w-full h-40 sm:h-48 md:h-64 object-cover rounded-2xl" />
+   222→              </a>
+   223→            ) : (
+   224→              <div className="glass-panel rounded-2xl p-6 md:p-10 text-center">
+   225→                <h3 className="text-lg md:text-2xl font-bold gradient-text mb-3">{ad.title}</h3>
+   226→                {ad.button_text && (
+   227→                  <a href={ad.button_link || "#"} target="_blank" rel="noopener noreferrer" className="btn-primary gap-2 inline-flex">
+   228→                    {ad.button_text} <ArrowLeft className="h-4 w-4" />
+   229→                  </a>
+   230→                )}
+   231→              </div>
+   232→            )}
+   233→            {ad.button_text && ad.image_url && (
+   234→              <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+   235→                <a href={ad.button_link || "#"} target="_blank" rel="noopener noreferrer" className="btn-primary text-sm gap-1">
+   236→                  {ad.button_text} <ArrowLeft className="h-3.5 w-3.5" />
+   237→                </a>
+   238→              </div>
+   239→            )}
+   240→          </div>
+   241→        ))}
+   242→      </div>
+   243→      {ads.length > 1 && (
+   244→        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
+   245→          {ads.map((_, i) => (
+   246→            <button
+   247→              key={i}
+   248→              onClick={() => setCurrent(i)}
+   249→              className={`h-2 rounded-full transition-all ${i === current ? "w-6 bg-primary" : "w-2 bg-white/30"}`}
+   250→            />
+   251→          ))}
+   252→        </div>
+   253→      )}
+   254→    </div>
+   255→  );
+   256→}
+   257→
+   258→/* ─── Floating Ad Component ─── */
+   259→function FloatingAd({ ad, onClose }: { ad: Ad; onClose: () => void }) {
+   260→  return (
+   261→    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-lg animate-slide-in-up">
+   262→      <div className="glass-panel-strong rounded-2xl p-4 shadow-2xl border-primary/20 relative">
+   263→        <button
+   264→          onClick={onClose}
+   265→          className="absolute -top-2 -right-2 bg-red-500 rounded-full p-0.5 shadow-lg hover:bg-red-600 transition-colors"
+   266→        >
+   267→          <XCircle className="h-5 w-5 text-white" />
+   268→        </button>
+   269→        <div className="flex items-center gap-4">
+   270→          {ad.image_url ? <img src={ad.image_url} alt="" className="h-16 w-24 rounded-xl object-cover shrink-0" /> : null}
+   271→          <div className="flex-1 min-w-0">
+   272→            <p className="text-sm font-bold mb-1">{ad.title}</p>
+   273→            {ad.button_text && (
+   274→              <a href={ad.button_link || "#"} target="_blank" rel="noopener noreferrer" className="btn-primary text-xs gap-1 inline-flex">
+   275→                {ad.button_text}
+   276→              </a>
+   277→            )}
+   278→          </div>
+   279→        </div>
+   280→      </div>
+   281→    </div>
+   282→  );
+   283→}
+   284→
+   285→/* ─── Stat Item Component ─── */
+   286→function StatItem({ stat, index }: { stat: typeof STATS[0]; index: number }) {
+   287→  const { ref, isInView } = useInView(0.2);
+   288→  const count = useCountUp(stat.value, 2000, isInView);
+   289→  const Icon = stat.icon;
+   290→
+   291→  const colorMap: Record<string, string> = {
+   292→    emerald: "stat-card-emerald",
+   293→    blue: "stat-card-blue",
+   294→    purple: "stat-card-purple",
+   295→    orange: "stat-card-orange",
+   296→  };
+   297→
+   298→  const iconColorMap: Record<string, string> = {
+   299→    emerald: "text-emerald-500 bg-emerald-500/10",
+   300→    blue: "text-blue-500 bg-blue-500/10",
+   301→    purple: "text-purple-500 bg-purple-500/10",
+   302→    orange: "text-orange-500 bg-orange-500/10",
+   303→  };
+   304→
+   305→  const formatValue = (v: number) => {
+   306→    if (v >= 1) return Math.floor(v).toLocaleString();
+   307→    return v.toFixed(1);
+   308→  };
+   309→
+   310→  return (
+   311→    <div ref={ref} className={`stat-card ${colorMap[stat.color]} text-center card-hover`} style={{ animationDelay: `${index * 150}ms` }}>
+   312→      <div className={`inline-flex p-3 rounded-xl mb-3 ${iconColorMap[stat.color]}`}>
+   313→        <Icon className="h-6 w-6" />
+   314→      </div>
+   315→      <div className="text-3xl sm:text-4xl font-bold tabular-nums">
+   316→        {isInView ? formatValue(count) : "0"}
+   317→        <span className="gradient-text">{stat.suffix}</span>
+   318→      </div>
+   319→      <p className="text-sm text-muted-foreground mt-1">{stat.label}</p>
+   320→    </div>
+   321→  );
+   322→}
+   323→
+   324→/* ─── Feature Card Component ─── */
+   325→function FeatureCard({ feature, index }: { feature: typeof FEATURES[0]; index: number }) {
+   326→  const { ref, isInView } = useInView(0.1);
+   327→  const Icon = feature.icon;
+   328→
+   329→  return (
+   330→    <div
+   331→      ref={ref}
+   332→      className={`glass-panel-hover animated-border rounded-2xl p-6 ${
+   333→        isInView ? "animate-slide-in-up opacity-100" : "opacity-0"
+   334→      }`}
+   335→      style={{ animationDelay: `${index * 100}ms`, transition: "opacity 0.3s" }}
+   336→    >
+   337→      <div className="inline-flex p-3 rounded-xl bg-primary/10 mb-4 animate-float" style={{ animationDelay: `${index * 200}ms` }}>
+   338→        <Icon className="h-6 w-6 text-primary" />
+   339→      </div>
+   340→      <h3 className="font-bold text-base mb-2">{feature.title}</h3>
+   341→      <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
+   342→    </div>
+   343→  );
+   344→}
+   345→
+   346→/* ─── Price Card Component ─── */
+   347→function PriceCard({
+   348→  coin,
+   349→  priceData,
+   350→  canvasRef,
+   351→  drawSparkline,
+   352→}: {
+   353→  coin: typeof COINS[0];
+   354→  priceData: { price: number; high: number; low: number; volume: string; change: string } | undefined;
+   355→  canvasRef: (el: HTMLCanvasElement | null) => void;
+   356→  drawSparkline: (symbol: string) => void;
+   357→}) {
+   358→  const [flash, setFlash] = useState<"up" | "down" | null>(null);
+   359→  const prevPriceRef = useRef<number | null>(null);
+   360→
+   361→  useEffect(() => {
+   362→    if (!priceData) return;
+   363→    if (prevPriceRef.current !== null && prevPriceRef.current !== priceData.price) {
+   364→      setFlash(priceData.price > prevPriceRef.current ? "up" : "down");
+   365→      const t = setTimeout(() => setFlash(null), 600);
+   366→      return () => clearTimeout(t);
+   367→    }
+   368→    prevPriceRef.current = priceData.price;
+   369→  }, [priceData?.price]);
+   370→
+   371→  const changeVal = priceData?.change ? parseFloat(priceData.change) : 0;
+   372→  const isPositive = changeVal >= 0;
+   373→
+   374→  return (
+   375→    <div className="glass-panel rounded-2xl p-4 sm:p-5 card-hover group relative overflow-hidden">
+   376→      {/* Glow accent on hover */}
+   377→      <div
+   378→        className="absolute top-0 left-0 w-full h-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+   379→        style={{ background: `linear-gradient(90deg, ${coin.color}80, transparent)` }}
+   380→      />
+   381→
+   382→      <div className="flex items-center justify-between mb-3">
+   383→        <div className="flex items-center gap-3">
+   384→          <div
+   385→            className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ring-2 ring-offset-2 ring-offset-background"
+   386→            style={{ backgroundColor: coin.color + "20", color: coin.color, "--tw-ring-color": coin.color + "40" } as React.CSSProperties}
+   387→          >
+   388→            {coin.name.charAt(0)}
+   389→          </div>
+   390→          <div>
+   391→            <p className="font-bold text-sm">{coin.arName}</p>
+   392→            <p className="text-[11px] text-muted-foreground">{coin.name}</p>
+   393→          </div>
+   394→        </div>
+   395→        <div
+   396→          className={`px-2 py-1 rounded-lg text-[11px] font-bold ${
+   397→            isPositive ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+   398→          }`}
+   399→        >
+   400→          {priceData?.change ? `${isPositive ? "+" : ""}${priceData.change}%` : "—"}
+   401→        </div>
+   402→      </div>
+   403→
+   404→      <div className="flex items-end justify-between">
+   405→        <div>
+   406→          <p
+   407→            className={`text-xl sm:text-2xl font-bold tabular-nums transition-colors duration-300 ${
+   408→              flash === "up" ? "text-emerald-500" : flash === "down" ? "text-red-500" : ""
+   409→            }`}
+   410→          >
+   411→            {priceData?.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "—"}
+   412→          </p>
+   413→          <p className="text-[10px] text-muted-foreground mt-1">
+   414→            حجم: {priceData?.volume ? (parseFloat(priceData.volume) / 1000).toFixed(0) + "K" : "—"}
+   415→          </p>
+   416→        </div>
+   417→        <canvas
+   418→          ref={(el) => { canvasRef(el); if (el) drawSparkline(coin.symbol); }}
+   419→          className="w-24 h-12 rounded-lg"
+   420→        />
+   421→      </div>
+   422→    </div>
+   423→  );
+   424→}
+   425→
+   426→/* ─── Main Landing Page ─── */
+   427→export default function LandingPage() {
+   428→  const canvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
+   429→  const historyRef = useRef<Record<string, number[]>>({});
+   430→  const wsRef = useRef<WebSocket | null>(null);
+   431→  const [mobileMenu, setMobileMenu] = useState(false);
+   432→  const [prices, setPrices] = useState<Record<string, { price: number; high: number; low: number; volume: string; change: string }>>({});
+   433→  const [heroAds, setHeroAds] = useState<Ad[]>([]);
+   434→  const [sectionAds, setSectionAds] = useState<Ad[]>([]);
+   435→  const [bottomAds, setBottomAds] = useState<Ad[]>([]);
+   436→  const [floatingAds, setFloatingAds] = useState<Ad[]>([]);
+   437→  const [dismissedFloating, setDismissedFloating] = useState<Set<number>>(new Set());
+   438→  const [scrolled, setScrolled] = useState(false);
+   439→
+   440→  useEffect(() => {
+   441→    const dismissed = localStorage.getItem("dismissed_ads");
+   442→    if (dismissed) {
+   443→      try {
+   444→        setDismissedFloating(new Set(JSON.parse(dismissed)));
+   445→      } catch {}
+   446→    }
+   447→  }, []);
+   448→
+   449→  useEffect(() => {
+   450→    fetch(`${API}/api/v1/ads`)
+   451→      .then((res) => res.json())
+   452→      .then((data: Ad[]) => {
+   453→        setHeroAds(data.filter((a) => a.active && a.position === "hero"));
+   454→        setSectionAds(data.filter((a) => a.active && a.position === "section"));
+   455→        setBottomAds(data.filter((a) => a.active && a.position === "bottom"));
+   456→        setFloatingAds(data.filter((a) => a.active && a.position === "floating"));
+   457→      })
+   458→      .catch(() => {});
+   459→  }, []);
+   460→
+   461→  useEffect(() => {
+   462→    const onScroll = () => setScrolled(window.scrollY > 50);
+   463→    window.addEventListener("scroll", onScroll, { passive: true });
+   464→    return () => window.removeEventListener("scroll", onScroll);
+   465→  }, []);
+   466→
+   467→  const dismissFloatingAd = (id: number) => {
+   468→    const next = new Set(dismissedFloating);
+   469→    next.add(id);
+   470→    setDismissedFloating(next);
+   471→    localStorage.setItem("dismissed_ads", JSON.stringify([...next]));
+   472→  };
+   473→
+   474→  /* ─── Smooth Scroll ─── */
+   475→  useEffect(() => {
+   476→    document.documentElement.style.scrollBehavior = "smooth";
+   477→    return () => { document.documentElement.style.scrollBehavior = ""; };
+   478→  }, []);
+   479→
+   480→  /* ─── WebSocket ─── */
+   481→  useEffect(() => {
+   482→    let ws: WebSocket;
+   483→    let reconnectTimer: number;
+   484→
+   485→    const connect = () => {
+   486→      ws = new WebSocket("wss://stream.binance.com:9443/ws/!miniTicker@arr");
+   487→      wsRef.current = ws;
+   488→
+   489→      ws.onmessage = (event) => {
+   490→        const data = JSON.parse(event.data);
+   491→        if (Array.isArray(data)) {
+   492→          data.forEach((t: any) => {
+   493→            const s = t.s;
+   494→            const price = parseFloat(t.c);
+   495→            if (COINS.some((c) => c.symbol === s)) {
+   496→              setPrices((prev) => {
+   497→                const next = { ...prev };
+   498→                next[s] = { price, high: parseFloat(t.h), low: parseFloat(t.l), volume: t.v, change: t.P };
+   499→                return next;
+   500→              });
+   501→              if (!historyRef.current[s]) historyRef.current[s] = [];
+   502→              const hist = historyRef.current[s];
+   503→              const last = hist[hist.length - 1];
+   504→              if (!last || Math.abs(price - last) / last > 0.0001) {
+   505→                hist.push(price);
+   506→                if (hist.length > 50) hist.shift();
+   507→                drawSparkline(s);
+   508→              }
+   509→            }
+   510→          });
+   511→        }
+   512→      };
+   513→
+   514→      ws.onclose = () => {
+   515→        reconnectTimer = window.setTimeout(connect, 3000);
+   516→      };
+   517→      ws.onerror = () => {
+   518→        ws.close();
+   519→      };
+   520→    };
+   521→
+   522→    connect();
+   523→    return () => {
+   524→      clearTimeout(reconnectTimer);
+   525→      ws.close();
+   526→    };
+   527→  }, []);
+   528→
+   529→  const drawSparkline = useCallback((symbol: string) => {
+   530→    const canvas = canvasRefs.current[symbol];
+   531→    if (!canvas) return;
+   532→    const ctx = canvas.getContext("2d");
+   533→    if (!ctx) return;
+   534→    const data = historyRef.current[symbol];
+   535→    if (!data || data.length < 2) return;
+   536→
+   537→    const dpr = window.devicePixelRatio || 1;
+   538→    const rect = canvas.getBoundingClientRect();
+   539→    canvas.width = rect.width * dpr;
+   540→    canvas.height = rect.height * dpr;
+   541→    ctx.scale(dpr, dpr);
+   542→    const w = rect.width;
+   543→    const h = rect.height;
+   544→
+   545→    ctx.clearRect(0, 0, w, h);
+   546→    const min = Math.min(...data);
+   547→    const max = Math.max(...data);
+   548→    const range = max - min || 1;
+   549→    const coin = COINS.find((c) => c.symbol === symbol);
+   550→    const color = coin?.color || "#10b981";
+   551→
+   552→    ctx.beginPath();
+   553→    ctx.strokeStyle = color;
+   554→    ctx.lineWidth = 1.5;
+   555→    const step = w / (data.length - 1);
+   556→    data.forEach((p, i) => {
+   557→      const x = i * step;
+   558→      const y = h - ((p - min) / range) * (h - 4) - 2;
+   559→      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+   560→    });
+   561→    ctx.stroke();
+   562→
+   563→    const grad = ctx.createLinearGradient(0, 0, 0, h);
+   564→    grad.addColorStop(0, color + "40");
+   565→    grad.addColorStop(1, color + "05");
+   566→    ctx.lineTo(w, h);
+   567→    ctx.lineTo(0, h);
+   568→    ctx.closePath();
+   569→    ctx.fillStyle = grad;
+   570→    ctx.fill();
+   571→  }, []);
+   572→
+   573→  const setCanvasRef = useCallback((symbol: string) => (el: HTMLCanvasElement | null) => {
+   574→    canvasRefs.current[symbol] = el;
+   575→  }, []);
+   576→
+   577→  const btcPrice = prices["BTCUSDT"];
+   578→
+   579→  return (
+   580→    <div className="min-h-screen bg-background overflow-hidden" dir="rtl">
+   581→      {/* ═══════════════ HEADER ═══════════════ */}
+   582→      <header
+   583→        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+   584→          scrolled
+   585→            ? "border-b border-border/50 bg-background/90 backdrop-blur-xl shadow-lg shadow-black/5"
+   586→            : "bg-transparent"
+   587→        }`}
+   588→      >
+   589→        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+   590→          <Link href="/" className="flex items-center gap-2">
+   591→            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+   592→              <Zap className="h-4 w-4 text-primary-foreground" />
+   593→            </div>
+   594→            <span className="text-xl font-bold gradient-text">EgMoney</span>
+   595→          </Link>
+   596→          <nav className="hidden md:flex items-center gap-8">
+   597→            <a href="#prices" className="text-sm text-muted-foreground hover:text-foreground transition-colors">الأسعار</a>
+   598→            <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">المميزات</a>
+   599→            <a href="#stats" className="text-sm text-muted-foreground hover:text-foreground transition-colors">الإحصائيات</a>
+   600→            <a href="#steps" className="text-sm text-muted-foreground hover:text-foreground transition-colors">كيف تبدأ</a>
+   601→          </nav>
+   602→          <div className="hidden md:flex items-center gap-3">
+   603→            <Link href="/login" className="btn-ghost text-sm">تسجيل الدخول</Link>
+   604→            <Link href="/register" className="btn-primary text-sm gap-2">
+   605→              إنشاء حساب <ArrowUpRight className="h-4 w-4" />
+   606→            </Link>
+   607→          </div>
+   608→          <button onClick={() => setMobileMenu(!mobileMenu)} className="btn-ghost p-2 md:hidden">
+   609→            {mobileMenu ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+   610→          </button>
+   611→        </div>
+   612→        {mobileMenu && (
+   613→          <div className="md:hidden border-t border-border/50 bg-background/95 backdrop-blur-xl px-4 py-4 space-y-3">
+   614→            <a href="#prices" onClick={() => setMobileMenu(false)} className="block text-sm text-muted-foreground hover:text-foreground py-2">الأسعار</a>
+   615→            <a href="#features" onClick={() => setMobileMenu(false)} className="block text-sm text-muted-foreground hover:text-foreground py-2">المميزات</a>
+   616→            <a href="#stats" onClick={() => setMobileMenu(false)} className="block text-sm text-muted-foreground hover:text-foreground py-2">الإحصائيات</a>
+   617→            <a href="#steps" onClick={() => setMobileMenu(false)} className="block text-sm text-muted-foreground hover:text-foreground py-2">كيف تبدأ</a>
+   618→            <div className="flex gap-3 pt-2">
+   619→              <Link href="/login" onClick={() => setMobileMenu(false)} className="btn-ghost text-sm flex-1 text-center">دخول</Link>
+   620→              <Link href="/register" onClick={() => setMobileMenu(false)} className="btn-primary text-sm flex-1 text-center gap-1">
+   621→                إنشاء حساب <ArrowUpRight className="h-3.5 w-3.5" />
+   622→              </Link>
+   623→            </div>
+   624→          </div>
+   625→        )}
+   626→      </header>
+   627→
+   628→      {/* ═══════════════ HERO SECTION ═══════════════ */}
+   629→      <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
+   630→        {/* Background layers */}
+   631→        <ParticleField />
+   632→        <div className="absolute inset-0 bg-grid-pattern" />
+   633→        <div className="absolute inset-0">
+   634→          <div className="absolute top-1/4 right-1/4 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[128px] animate-pulse-glow" />
+   635→          <div className="absolute bottom-1/4 left-1/4 w-[400px] h-[400px] bg-teal-500/8 rounded-full blur-[100px] animate-pulse-glow delay-500" />
+   636→          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-500/5 rounded-full blur-[150px]" />
+   637→        </div>
+   638→
+   639→        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 w-full py-20">
+   640→          {heroAds.length > 0 && (
+   641→            <div className="mb-8">
+   642→              <AdBanner ads={heroAds} />
+   643→            </div>
+   644→          )}
+   645→
+   646→          <div className="text-center max-w-4xl mx-auto">
+   647→            {/* Live badge */}
+   648→            <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-medium mb-8 animate-slide-in-up">
+   649→              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+   650→              بيانات حية من Binance
+   651→            </div>
+   652→
+   653→            {/* BTC Price Ticker */}
+   654→            {btcPrice && (
+   655→              <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-2xl glass-panel mb-8 animate-scale-in">
+   656→                <div className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#f7931a20", color: "#f7931a" }}>
+   657→                  B
+   658→                </div>
+   659→                <div className="flex items-center gap-2">
+   660→                  <span className="text-sm text-muted-foreground">BTC/USDT</span>
+   661→                  <span className="text-lg font-bold tabular-nums">
+   662→                    {btcPrice.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+   663→                  </span>
+   664→                  <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+   665→                    parseFloat(btcPrice.change) >= 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+   666→                  }`}>
+   667→                    {parseFloat(btcPrice.change) >= 0 ? "+" : ""}{btcPrice.change}%
+   668→                  </span>
+   669→                </div>
+   670→                <Activity className="h-4 w-4 text-emerald-500 animate-pulse" />
+   671→              </div>
+   672→            )}
+   673→
+   674→            {/* Main heading */}
+   675→            <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-6 animate-slide-in-up" style={{ animationDelay: "100ms" }}>
+   676→              منصة تداول
+   677→              <br />
+   678→              <span className="gradient-text">عملات رقمية</span>
+   679→            </h1>
+   680→
+   681→            <p className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 px-4 animate-slide-in-up" style={{ animationDelay: "200ms" }}>
+   682→              تداول العملات الرقمية بأمان مع بيانات حية من Binance، محفظة آمنة، ودعم عربي كامل
+   683→            </p>
+   684→
+   685→            {/* CTA Buttons */}
+   686→            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-in-up" style={{ animationDelay: "300ms" }}>
+   687→              <Link href="/register" className="btn-primary text-base sm:text-lg px-8 sm:px-10 py-3.5 gap-2 w-full sm:w-auto justify-center glow-emerald">
+   688→                ابدأ التداول مجاناً <ArrowLeft className="h-5 w-5" />
+   689→              </Link>
+   690→              <a href="#features" className="btn-ghost text-base sm:text-lg px-8 py-3.5 w-full sm:w-auto text-center border border-border/50 rounded-xl">
+   691→                اكتشف المميزات
+   692→              </a>
+   693→            </div>
+   694→
+   695→            {/* Trust indicators */}
+   696→            <div className="flex flex-wrap items-center justify-center gap-6 mt-12 animate-fade-in" style={{ animationDelay: "600ms" }}>
+   697→              {[
+   698→                { icon: Lock, text: "تشفير 256-bit" },
+   699→                { icon: Shield, text: "تخزين بارد" },
+   700→                { icon: Zap, text: "تنفيذ فوري" },
+   701→              ].map((item, i) => (
+   702→                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+   703→                  <item.icon className="h-4 w-4 text-emerald-500" />
+   704→                  <span>{item.text}</span>
+   705→                </div>
+   706→              ))}
+   707→            </div>
+   708→          </div>
+   709→
+   710→          {/* Scroll indicator */}
+   711→          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-float">
+   712→            <a href="#prices" className="flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+   713→              <span className="text-xs">اكتشف المزيد</span>
+   714→              <ChevronDown className="h-5 w-5" />
+   715→            </a>
+   716→          </div>
+   717→        </div>
+   718→      </section>
+   719→
+   720→      {/* ═══════════════ LIVE PRICES SECTION ═══════════════ */}
+   721→      <section id="prices" className="py-16 sm:py-24 px-4 sm:px-6 relative">
+   722→        <div className="absolute inset-0 bg-dots-pattern opacity-50" />
+   723→        <div className="relative max-w-7xl mx-auto">
+   724→          <div className="text-center mb-12">
+   725→            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-medium mb-4">
+   726→              <Activity className="h-3.5 w-3.5" />
+   727→              تحديث لحظي
+   728→            </div>
+   729→            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-3">
+   730→              أسعار <span className="gradient-text">العملات الرقمية</span>
+   731→            </h2>
+   732→            <p className="text-muted-foreground max-w-xl mx-auto text-sm sm:text-base">بيانات لحظية مباشرة من Binance مع تحديثات بالمللي ثانية</p>
+   733→          </div>
+   734→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+   735→            {COINS.map((coin) => (
+   736→              <PriceCard
+   737→                key={coin.symbol}
+   738→                coin={coin}
+   739→                priceData={prices[coin.symbol]}
+   740→                canvasRef={setCanvasRef(coin.symbol)}
+   741→                drawSparkline={drawSparkline}
+   742→              />
+   743→            ))}
+   744→          </div>
+   745→        </div>
+   746→      </section>
+   747→
+   748→      {/* ═══════════════ SECTION ADS ═══════════════ */}
+   749→      {sectionAds.length > 0 && (
+   750→        <section className="py-8 px-4 sm:px-6">
+   751→          <div className="max-w-7xl mx-auto">
+   752→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   753→              {sectionAds.map((ad) => (
+   754→                <a key={ad.id} href={ad.link || "#"} target="_blank" rel="noopener noreferrer" className="block">
+   755→                  {ad.image_url ? (
+   756→                    <img src={ad.image_url} alt={ad.title} className="w-full h-32 sm:h-40 object-cover rounded-2xl" />
+   757→                  ) : (
+   758→                    <div className="glass-panel rounded-2xl p-6 text-center">
+   759→                      <p className="font-bold gradient-text">{ad.title}</p>
+   760→                    </div>
+   761→                  )}
+   762→                </a>
+   763→              ))}
+   764→            </div>
+   765→          </div>
+   766→        </section>
+   767→      )}
+   768→
+   769→      {/* ═══════════════ FEATURES SECTION ═══════════════ */}
+   770→      <section id="features" className="py-16 sm:py-24 px-4 sm:px-6 relative">
+   771→        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
+   772→        <div className="relative max-w-7xl mx-auto">
+   773→          <div className="text-center mb-12">
+   774→            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium mb-4">
+   775→              <Star className="h-3.5 w-3.5" />
+   776→              لماذا EgMoney
+   777→            </div>
+   778→            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-3">
+   779→              مميزات <span className="gradient-text">المنصة</span>
+   780→            </h2>
+   781→            <p className="text-muted-foreground max-w-xl mx-auto text-sm sm:text-base">كل ما تحتاجه لتداول العملات الرقمية باحترافية وأمان</p>
+   782→          </div>
+   783→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+   784→            {FEATURES.map((feature, i) => (
+   785→              <FeatureCard key={i} feature={feature} index={i} />
+   786→            ))}
+   787→          </div>
+   788→        </div>
+   789→      </section>
+   790→
+   791→      {/* ═══════════════ STATS SECTION ═══════════════ */}
+   792→      <section id="stats" className="py-16 sm:py-24 px-4 sm:px-6 relative">
+   793→        <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
+   794→        <div className="relative max-w-7xl mx-auto">
+   795→          <div className="text-center mb-12">
+   796→            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-3">
+   797→              أرقام <span className="gradient-text">تتحدث</span>
+   798→            </h2>
+   799→            <p className="text-muted-foreground max-w-xl mx-auto text-sm sm:text-base">ثقة آلاف المتداولين حول العالم العربي</p>
+   800→          </div>
+   801→          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+   802→            {STATS.map((stat, i) => (
+   803→              <StatItem key={i} stat={stat} index={i} />
+   804→            ))}
+   805→          </div>
+   806→        </div>
+   807→      </section>
+   808→
+   809→      {/* ═══════════════ HOW IT WORKS ═══════════════ */}
+   810→      <section id="steps" className="py-16 sm:py-24 px-4 sm:px-6 relative">
+   811→        <div className="absolute inset-0 bg-dots-pattern opacity-30" />
+   812→        <div className="relative max-w-5xl mx-auto">
+   813→          <div className="text-center mb-16">
+   814→            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium mb-4">
+   815→              <Rocket className="h-3.5 w-3.5" />
+   816→              ابدأ الآن
+   817→            </div>
+   818→            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-3">
+   819→              كيف <span className="gradient-text">تبدأ</span>
+   820→            </h2>
+   821→            <p className="text-muted-foreground max-w-xl mx-auto text-sm sm:text-base">انضم إلى آلاف المتداولين وابدأ رحلتك في 3 خطوات بسيطة</p>
+   822→          </div>
+   823→
+   824→          {/* Timeline */}
+   825→          <div className="relative">
+   826→            {/* Connecting line */}
+   827→            <div className="hidden sm:block absolute top-16 right-[calc(16.67%+1.5rem)] left-[calc(16.67%+1.5rem)] h-0.5 bg-gradient-to-l from-emerald-500/30 via-primary/50 to-teal-500/30" />
+   828→
+   829→            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 sm:gap-6">
+   830→              {STEPS.map((item, i) => {
+   831→                const { ref, isInView } = useInView(0.2);
+   832→                const Icon = item.icon;
+   833→                return (
+   834→                  <div
+   835→                    key={i}
+   836→                    ref={ref}
+   837→                    className={`text-center ${isInView ? "animate-slide-in-up" : "opacity-0"}`}
+   838→                    style={{ animationDelay: `${i * 200}ms` }}
+   839→                  >
+   840→                    {/* Step circle */}
+   841→                    <div className="relative inline-flex flex-col items-center mb-6">
+   842→                      <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 animate-float" style={{ animationDelay: `${i * 300}ms` }}>
+   843→                        <Icon className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
+   844→                      </div>
+   845→                      <div className="absolute -top-2 -left-2 h-6 w-6 rounded-full bg-background border-2 border-primary text-primary text-xs font-bold flex items-center justify-center">
+   846→                        {item.step}
+   847→                      </div>
+   848→                    </div>
+   849→                    <h3 className="font-bold text-lg sm:text-xl mb-2">{item.title}</h3>
+   850→                    <p className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed">{item.desc}</p>
+   851→                  </div>
+   852→                );
+   853→              })}
+   854→            </div>
+   855→          </div>
+   856→        </div>
+   857→      </section>
+   858→
+   859→      {/* ═══════════════ BOTTOM ADS ═══════════════ */}
+   860→      {bottomAds.length > 0 && (
+   861→        <section className="py-8 px-4 sm:px-6">
+   862→          <div className="max-w-7xl mx-auto">
+   863→            <AdBanner ads={bottomAds} />
+   864→          </div>
+   865→        </section>
+   866→      )}
+   867→
+   868→      {/* ═══════════════ CTA SECTION ═══════════════ */}
+   869→      <section className="py-16 sm:py-24 px-4 sm:px-6">
+   870→        <div className="max-w-4xl mx-auto">
+   871→          <div className="relative glass-panel rounded-3xl sm:rounded-[2rem] p-8 sm:p-12 md:p-16 text-center overflow-hidden glow-emerald">
+   872→            {/* Background decoration */}
+   873→            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-teal-500/5 pointer-events-none" />
+   874→            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none" />
+   875→            <div className="absolute bottom-0 left-0 w-64 h-64 bg-teal-500/10 rounded-full blur-[80px] pointer-events-none" />
+   876→
+   877→            <div className="relative">
+   878→              <div className="inline-flex p-4 rounded-2xl bg-primary/10 mb-6 animate-float">
+   879→                <Rocket className="h-8 w-8 text-primary" />
+   880→              </div>
+   881→              <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4">
+   882→                انضم إلى <span className="gradient-text">EgMoney</span> اليوم
+   883→              </h2>
+   884→              <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
+   885→                تداول العملات الرقمية بأمان وثقة مع بيانات حية من Binance وأدوات تداول متقدمة
+   886→              </p>
+   887→              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+   888→                <Link href="/register" className="btn-primary text-base sm:text-lg px-8 sm:px-10 py-3.5 gap-2 w-full sm:w-auto justify-center glow-emerald">
+   889→                  إنشاء حساب مجاني <ArrowLeft className="h-5 w-5" />
+   890→                </Link>
+   891→                <Link href="/login" className="btn-ghost text-base sm:text-lg px-8 py-3.5 w-full sm:w-auto text-center border border-border/50 rounded-xl">
+   892→                  تسجيل الدخول
+   893→                </Link>
+   894→              </div>
+   895→            </div>
+   896→          </div>
+   897→        </div>
+   898→      </section>
+   899→
+   900→      {/* ═══════════════ FLOATING ADS ═══════════════ */}
+   901→      {floatingAds.length > 0 &&
+   902→        floatingAds
+   903→          .filter((ad) => !dismissedFloating.has(ad.id))
+   904→          .slice(0, 1)
+   905→          .map((ad) => <FloatingAd key={ad.id} ad={ad} onClose={() => dismissFloatingAd(ad.id)} />)}
+   906→
+   907→      {/* ═══════════════ FOOTER ═══════════════ */}
+   908→      <footer className="border-t border-border/50 bg-card/30 backdrop-blur-sm">
+   909→        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+   910→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-12">
+   911→            {/* Brand */}
+   912→            <div className="sm:col-span-2 lg:col-span-1">
+   913→              <Link href="/" className="flex items-center gap-2 mb-4">
+   914→                <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+   915→                  <Zap className="h-4 w-4 text-primary-foreground" />
+   916→                </div>
+   917→                <span className="text-xl font-bold gradient-text">EgMoney</span>
+   918→              </Link>
+   919→              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+   920→                منصة تداول عملات رقمية عربية آمنة وموثوقة مع بيانات حية من Binance
+   921→              </p>
+   922→              <div className="flex items-center gap-3">
+   923→                <a href="#" className="h-9 w-9 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+   924→                  <Twitter className="h-4 w-4" />
+   925→                </a>
+   926→                <a href="#" className="h-9 w-9 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+   927→                  <MessageCircle className="h-4 w-4" />
+   928→                </a>
+   929→                <a href="#" className="h-9 w-9 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+   930→                  <Send className="h-4 w-4" />
+   931→                </a>
+   932→              </div>
+   933→            </div>
+   934→
+   935→            {/* Quick Links */}
+   936→            <div>
+   937→              <h4 className="font-bold text-sm mb-4">روابط سريعة</h4>
+   938→              <ul className="space-y-2.5">
+   939→                {[
+   940→                  { label: "الأسعار الحية", href: "#prices" },
+   941→                  { label: "المميزات", href: "#features" },
+   942→                  { label: "كيف تبدأ", href: "#steps" },
+   943→                  { label: "الإحصائيات", href: "#stats" },
+   944→                ].map((link) => (
+   945→                  <li key={link.href}>
+   946→                    <a href={link.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+   947→                      {link.label}
+   948→                    </a>
+   949→                  </li>
+   950→                ))}
+   951→              </ul>
+   952→            </div>
+   953→
+   954→            {/* Account */}
+   955→            <div>
+   956→              <h4 className="font-bold text-sm mb-4">الحساب</h4>
+   957→              <ul className="space-y-2.5">
+   958→                {[
+   959→                  { label: "إنشاء حساب", href: "/register" },
+   960→                  { label: "تسجيل الدخول", href: "/login" },
+   961→                  { label: "المحفظة", href: "/wallet" },
+   962→                  { label: "الإعدادات", href: "/settings" },
+   963→                ].map((link) => (
+   964→                  <li key={link.href}>
+   965→                    <Link href={link.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+   966→                      {link.label}
+   967→                    </Link>
+   968→                  </li>
+   969→                ))}
+   970→              </ul>
+   971→            </div>
+   972→
+   973→            {/* Support */}
+   974→            <div>
+   975→              <h4 className="font-bold text-sm mb-4">الدعم</h4>
+   976→              <ul className="space-y-2.5">
+   977→                {[
+   978→                  { label: "مركز المساعدة", href: "#" },
+   979→                  { label: "الأسئلة الشائعة", href: "#" },
+   980→                  { label: "سياسة الخصوصية", href: "#" },
+   981→                  { label: "شروط الاستخدام", href: "#" },
+   982→                ].map((link, i) => (
+   983→                  <li key={i}>
+   984→                    <a href={link.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+   985→                      {link.label}
+   986→                    </a>
+   987→                  </li>
+   988→                ))}
+   989→              </ul>
+   990→            </div>
+   991→          </div>
+   992→
+   993→          {/* Bottom bar */}
+   994→          <div className="mt-12 pt-6 border-t border-border/30 flex flex-col sm:flex-row items-center justify-between gap-3">
+   995→            <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} EgMoney. جميع الحقوق محفوظة</p>
+   996→            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+   997→              <span>مدعوم بـ</span>
+   998→              <span className="gradient-text font-bold">Binance</span>
+   999→              <span>للبيانات الحية</span>
+  1000→            </div>
+  1001→          </div>
+  1002→        </div>
+  1003→      </footer>
+  1004→    </div>
+  1005→  );
+  1006→}
+  1007→

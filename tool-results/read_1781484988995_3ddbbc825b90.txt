@@ -1,0 +1,1136 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useEffect, useState, useRef, useCallback } from "react";
+     4→     4→import toast from "react-hot-toast";
+     5→     5→import {
+     6→     6→  TrendingUp,
+     7→     7→  TrendingDown,
+     8→     8→  ArrowUpDown,
+     9→     9→  X,
+    10→    10→  RefreshCw,
+    11→    11→  Minus,
+    12→    12→  BarChart3,
+    13→    13→  BookOpen,
+    14→    14→  Wallet,
+    15→    15→} from "lucide-react";
+    16→    16→import { authGet, authPost } from "@/lib/api";
+    17→    17→import {
+    18→    18→  createChart,
+    19→    19→  ColorType,
+    20→    20→  IChartApi,
+    21→    21→  ISeriesApi,
+    22→    22→  CandlestickData,
+    23→    23→  HistogramData,
+    24→    24→  Time,
+    25→    25→} from "lightweight-charts";
+    26→    26→
+    27→    27→/* ─────────── Constants ─────────── */
+    28→    28→
+    29→    29→const PAIRS = [
+    30→    30→  "BTCUSDT",
+    31→    31→  "ETHUSDT",
+    32→    32→  "BNBUSDT",
+    33→    33→  "SOLUSDT",
+    34→    34→  "XRPUSDT",
+    35→    35→  "ADAUSDT",
+    36→    36→  "DOGEUSDT",
+    37→    37→  "DOTUSDT",
+    38→    38→];
+    39→    39→
+    40→    40→const CURRENCY_NAMES: Record<string, string> = {
+    41→    41→  BTC: "بيتكوين",
+    42→    42→  ETH: "إيثريوم",
+    43→    43→  BNB: "بي إن بي",
+    44→    44→  SOL: "سولانا",
+    45→    45→  XRP: "إكس آر بي",
+    46→    46→  ADA: "كاردانو",
+    47→    47→  DOGE: "دوجكوين",
+    48→    48→  DOT: "بولكادوت",
+    49→    49→};
+    50→    50→
+    51→    51→const CURRENCY_ICONS: Record<string, string> = {
+    52→    52→  BTC: "₿",
+    53→    53→  ETH: "Ξ",
+    54→    54→  BNB: "◆",
+    55→    55→  SOL: "◎",
+    56→    56→  XRP: "✕",
+    57→    57→  ADA: "₳",
+    58→    58→  DOGE: "Ð",
+    59→    59→  DOT: "●",
+    60→    60→};
+    61→    61→
+    62→    62→const STATUS_LABELS: Record<string, string> = {
+    63→    63→  PENDING: "معلق",
+    64→    64→  FILLED: "منفذ",
+    65→    65→  CANCELLED: "ملغي",
+    66→    66→  TRIGGERED: "مفعّل",
+    67→    67→};
+    68→    68→
+    69→    69→const STATUS_COLORS: Record<string, string> = {
+    70→    70→  PENDING: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+    71→    71→  FILLED: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    72→    72→  CANCELLED: "bg-red-500/10 text-red-400 border-red-500/20",
+    73→    73→  TRIGGERED: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    74→    74→};
+    75→    75→
+    76→    76→const TIMEFRAMES = [
+    77→    77→  { value: "1m", label: "1 د" },
+    78→    78→  { value: "5m", label: "5 د" },
+    79→    79→  { value: "15m", label: "15 د" },
+    80→    80→  { value: "1h", label: "1 س" },
+    81→    81→  { value: "4h", label: "4 س" },
+    82→    82→  { value: "1d", label: "يومي" },
+    83→    83→];
+    84→    84→
+    85→    85→const ORDER_TYPE_LABELS: Record<string, string> = {
+    86→    86→  MARKET: "سوقي",
+    87→    87→  LIMIT: "محدد",
+    88→    88→  STOP_LIMIT: "وقف محدد",
+    89→    89→  TAKE_PROFIT: "جني أرباح",
+    90→    90→};
+    91→    91→
+    92→    92→/* ─────────── Component ─────────── */
+    93→    93→
+    94→    94→export default function ExchangePage() {
+    95→    95→  const [selectedPair, setSelectedPair] = useState("BTCUSDT");
+    96→    96→  const [prices, setPrices] = useState<Record<string, any>>({});
+    97→    97→  const [orderBook, setOrderBook] = useState<{
+    98→    98→    bids: [string, string][];
+    99→    99→    asks: [string, string][];
+   100→   100→  }>({ bids: [], asks: [] });
+   101→   101→  const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+   102→   102→  const [orderType, setOrderType] = useState<
+   103→   103→    "MARKET" | "LIMIT" | "STOP_LIMIT" | "TAKE_PROFIT"
+   104→   104→  >("MARKET");
+   105→   105→  const [form, setForm] = useState({ quantity: "", price: "", stopPrice: "" });
+   106→   106→  const [orders, setOrders] = useState<any[]>([]);
+   107→   107→  const [wallets, setWallets] = useState<any[]>([]);
+   108→   108→  const [feeSchedules, setFeeSchedules] = useState<any[]>([]);
+   109→   109→  const [loading, setLoading] = useState(false);
+   110→   110→  const [timeframe, setTimeframe] = useState("1m");
+   111→   111→  const chartContainerRef = useRef<HTMLDivElement>(null);
+   112→   112→  const chartRef = useRef<IChartApi | null>(null);
+   113→   113→  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+   114→   114→  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+   115→   115→  const wsRef = useRef<WebSocket | null>(null);
+   116→   116→  const prevPrices = useRef<Record<string, number>>({});
+   117→   117→  const pairScrollRef = useRef<HTMLDivElement>(null);
+   118→   118→
+   119→   119→  /* ─────── Data Fetching ─────── */
+   120→   120→
+   121→   121→  const fetchOrders = useCallback(async () => {
+   122→   122→    try {
+   123→   123→      const r = await authGet("/api/v1/exchange/orders");
+   124→   124→      const d = await r.json();
+   125→   125→      setOrders(Array.isArray(d.data) ? d.data : []);
+   126→   126→    } catch {}
+   127→   127→  }, []);
+   128→   128→
+   129→   129→  const fetchWallets = useCallback(async () => {
+   130→   130→    try {
+   131→   131→      const r = await authGet("/api/v1/wallet/balances");
+   132→   132→      const d = await r.json();
+   133→   133→      setWallets(Array.isArray(d.data) ? d.data : []);
+   134→   134→    } catch {}
+   135→   135→  }, []);
+   136→   136→
+   137→   137→  const fetchFees = useCallback(async () => {
+   138→   138→    try {
+   139→   139→      const r = await fetch(
+   140→   140→        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/v1/fees`
+   141→   141→      );
+   142→   142→      if (r.ok) {
+   143→   143→        const d = await r.json();
+   144→   144→        setFeeSchedules(Array.isArray(d.data) ? d.data : []);
+   145→   145→      }
+   146→   146→    } catch {}
+   147→   147→  }, []);
+   148→   148→
+   149→   149→  useEffect(() => {
+   150→   150→    fetchOrders();
+   151→   151→    fetchWallets();
+   152→   152→    fetchFees();
+   153→   153→  }, [fetchOrders, fetchWallets, fetchFees]);
+   154→   154→
+   155→   155→  /* ─────── Binance WebSocket ─────── */
+   156→   156→
+   157→   157→  useEffect(() => {
+   158→   158→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   159→   159→    const streams = [
+   160→   160→      `${selectedPair.toLowerCase()}@ticker`,
+   161→   161→      `${selectedPair.toLowerCase()}@depth20@100ms`,
+   162→   162→    ];
+   163→   163→    ws.onopen = () =>
+   164→   164→      ws.send(JSON.stringify({ method: "SUBSCRIBE", params: streams, id: 1 }));
+   165→   165→    ws.onmessage = (e) => {
+   166→   166→      const d = JSON.parse(e.data);
+   167→   167→      if (d.e === "24hrTicker") {
+   168→   168→        prevPrices.current[selectedPair] =
+   169→   169→          prices[selectedPair]?.price || parseFloat(d.c);
+   170→   170→        setPrices((prev: any) => ({
+   171→   171→          ...prev,
+   172→   172→          [selectedPair]: {
+   173→   173→            price: parseFloat(d.c),
+   174→   174→            high: parseFloat(d.h),
+   175→   175→            low: parseFloat(d.l),
+   176→   176→            volume: d.v,
+   177→   177→            change: d.P,
+   178→   178→          },
+   179→   179→        }));
+   180→   180→      } else if (d.e === "depthUpdate") {
+   181→   181→        if (d.bids)
+   182→   182→          setOrderBook({ bids: d.bids.slice(0, 10), asks: d.asks.slice(0, 10) });
+   183→   183→      }
+   184→   184→    };
+   185→   185→    wsRef.current = ws;
+   186→   186→    return () => ws.close();
+   187→   187→  }, [selectedPair]);
+   188→   188→
+   189→   189→  /* ─────── Chart ─────── */
+   190→   190→
+   191→   191→  useEffect(() => {
+   192→   192→    if (!chartContainerRef.current) return;
+   193→   193→
+   194→   194→    const chart = createChart(chartContainerRef.current, {
+   195→   195→      layout: {
+   196→   196→        background: { type: ColorType.Solid, color: "transparent" },
+   197→   197→        textColor: "#6b7280",
+   198→   198→        fontSize: 11,
+   199→   199→      },
+   200→   200→      grid: {
+   201→   201→        vertLines: { color: "rgba(255,255,255,0.03)" },
+   202→   202→        horzLines: { color: "rgba(255,255,255,0.03)" },
+   203→   203→      },
+   204→   204→      crosshair: {
+   205→   205→        mode: 0,
+   206→   206→        vertLine: {
+   207→   207→          color: "rgba(16,185,129,0.3)",
+   208→   208→          width: 1,
+   209→   209→          style: 2,
+   210→   210→          labelBackgroundColor: "#10b981",
+   211→   211→        },
+   212→   212→        horzLine: {
+   213→   213→          color: "rgba(16,185,129,0.3)",
+   214→   214→          width: 1,
+   215→   215→          style: 2,
+   216→   216→          labelBackgroundColor: "#10b981",
+   217→   217→        },
+   218→   218→      },
+   219→   219→      rightPriceScale: {
+   220→   220→        borderColor: "rgba(255,255,255,0.06)",
+   221→   221→        scaleMargins: { top: 0.1, bottom: 0.2 },
+   222→   222→      },
+   223→   223→      timeScale: {
+   224→   224→        borderColor: "rgba(255,255,255,0.06)",
+   225→   225→        timeVisible: true,
+   226→   226→        secondsVisible: false,
+   227→   227→      },
+   228→   228→    });
+   229→   229→
+   230→   230→    const candleSeries = chart.addCandlestickSeries({
+   231→   231→      upColor: "#10b981",
+   232→   232→      downColor: "#ef4444",
+   233→   233→      borderUpColor: "#10b981",
+   234→   234→      borderDownColor: "#ef4444",
+   235→   235→      wickUpColor: "#10b981",
+   236→   236→      wickDownColor: "#ef4444",
+   237→   237→    });
+   238→   238→
+   239→   239→    const volumeSeries = chart.addHistogramSeries({
+   240→   240→      priceFormat: { type: "volume" },
+   241→   241→      priceScaleId: "",
+   242→   242→    });
+   243→   243→
+   244→   244→    volumeSeries.priceScale().applyOptions({
+   245→   245→      scaleMargins: { top: 0.8, bottom: 0 },
+   246→   246→    });
+   247→   247→
+   248→   248→    chartRef.current = chart;
+   249→   249→    candleSeriesRef.current = candleSeries;
+   250→   250→    volumeSeriesRef.current = volumeSeries;
+   251→   251→
+   252→   252→    const fetchKlines = async () => {
+   253→   253→      try {
+   254→   254→        const res = await fetch(
+   255→   255→          `https://api.binance.com/api/v3/klines?symbol=${selectedPair}&interval=${timeframe}&limit=500`
+   256→   256→        );
+   257→   257→        if (!res.ok) return;
+   258→   258→        const data = await res.json();
+   259→   259→
+   260→   260→        const candleData: CandlestickData[] = data.map((k: any) => ({
+   261→   261→          time: Math.floor(k[0] / 1000) as Time,
+   262→   262→          open: parseFloat(k[1]),
+   263→   263→          high: parseFloat(k[2]),
+   264→   264→          low: parseFloat(k[3]),
+   265→   265→          close: parseFloat(k[4]),
+   266→   266→        }));
+   267→   267→
+   268→   268→        const volumeData: HistogramData[] = data.map((k: any) => ({
+   269→   269→          time: Math.floor(k[0] / 1000) as Time,
+   270→   270→          value: parseFloat(k[5]),
+   271→   271→          color:
+   272→   272→            parseFloat(k[4]) >= parseFloat(k[1])
+   273→   273→              ? "rgba(16,185,129,0.15)"
+   274→   274→              : "rgba(239,68,68,0.15)",
+   275→   275→        }));
+   276→   276→
+   277→   277→        candleSeries.setData(candleData);
+   278→   278→        volumeSeries.setData(volumeData);
+   279→   279→        chart.timeScale().fitContent();
+   280→   280→      } catch (e) {
+   281→   281→        console.error("Failed to fetch klines:", e);
+   282→   282→      }
+   283→   283→    };
+   284→   284→
+   285→   285→    fetchKlines();
+   286→   286→
+   287→   287→    const handleResize = () => {
+   288→   288→      if (chartContainerRef.current) {
+   289→   289→        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+   290→   290→      }
+   291→   291→    };
+   292→   292→    window.addEventListener("resize", handleResize);
+   293→   293→    handleResize();
+   294→   294→
+   295→   295→    return () => {
+   296→   296→      window.removeEventListener("resize", handleResize);
+   297→   297→      chart.remove();
+   298→   298→      chartRef.current = null;
+   299→   299→      candleSeriesRef.current = null;
+   300→   300→      volumeSeriesRef.current = null;
+   301→   301→    };
+   302→   302→  }, [selectedPair, timeframe]);
+   303→   303→
+   304→   304→  /* ─────── Real-time Kline WebSocket ─────── */
+   305→   305→
+   306→   306→  useEffect(() => {
+   307→   307→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   308→   308→    ws.onopen = () =>
+   309→   309→      ws.send(
+   310→   310→        JSON.stringify({
+   311→   311→          method: "SUBSCRIBE",
+   312→   312→          params: [`${selectedPair.toLowerCase()}@kline_${timeframe}`],
+   313→   313→          id: 1,
+   314→   314→        })
+   315→   315→      );
+   316→   316→    ws.onmessage = (e) => {
+   317→   317→      const d = JSON.parse(e.data);
+   318→   318→      if (
+   319→   319→        d.e === "kline" &&
+   320→   320→        candleSeriesRef.current &&
+   321→   321→        volumeSeriesRef.current
+   322→   322→      ) {
+   323→   323→        const k = d.k;
+   324→   324→        candleSeriesRef.current.update({
+   325→   325→          time: Math.floor(k.t / 1000) as Time,
+   326→   326→          open: parseFloat(k.o),
+   327→   327→          high: parseFloat(k.h),
+   328→   328→          low: parseFloat(k.l),
+   329→   329→          close: parseFloat(k.c),
+   330→   330→        });
+   331→   331→        volumeSeriesRef.current.update({
+   332→   332→          time: Math.floor(k.t / 1000) as Time,
+   333→   333→          value: parseFloat(k.v),
+   334→   334→          color:
+   335→   335→            parseFloat(k.c) >= parseFloat(k.o)
+   336→   336→              ? "rgba(16,185,129,0.15)"
+   337→   337→              : "rgba(239,68,68,0.15)",
+   338→   338→        });
+   339→   339→      }
+   340→   340→    };
+   341→   341→    return () => ws.close();
+   342→   342→  }, [selectedPair, timeframe]);
+   343→   343→
+   344→   344→  /* ─────── Order Handlers ─────── */
+   345→   345→
+   346→   346→  const handleSubmit = async (e: React.FormEvent) => {
+   347→   347→    e.preventDefault();
+   348→   348→    setLoading(true);
+   349→   349→    try {
+   350→   350→      const body: any = {
+   351→   351→        symbol: selectedPair,
+   352→   352→        side,
+   353→   353→        type: orderType,
+   354→   354→        quantity: form.quantity,
+   355→   355→      };
+   356→   356→      if (orderType === "LIMIT" || orderType === "STOP_LIMIT")
+   357→   357→        body.price = form.price;
+   358→   358→      if (orderType === "STOP_LIMIT" || orderType === "TAKE_PROFIT")
+   359→   359→        body.stop_price = form.stopPrice;
+   360→   360→      const res = await authPost("/api/v1/exchange/order", body);
+   361→   361→      const data = await res.json();
+   362→   362→      if (!res.ok) {
+   363→   363→        toast.error(data.error || "فشل تنفيذ الأمر");
+   364→   364→        return;
+   365→   365→      }
+   366→   366→      toast.success(data.message || "تم تنفيذ الأمر بنجاح");
+   367→   367→      setForm({ quantity: "", price: "", stopPrice: "" });
+   368→   368→      fetchOrders();
+   369→   369→      fetchWallets();
+   370→   370→    } catch {
+   371→   371→      toast.error("حدث خطأ في الاتصال");
+   372→   372→    } finally {
+   373→   373→      setLoading(false);
+   374→   374→    }
+   375→   375→  };
+   376→   376→
+   377→   377→  const handleCancel = async (orderId: number) => {
+   378→   378→    try {
+   379→   379→      const res = await authPost(`/api/v1/exchange/order/${orderId}/cancel`);
+   380→   380→      const data = await res.json();
+   381→   381→      if (!res.ok) {
+   382→   382→        toast.error(data.error || "فشل إلغاء الأمر");
+   383→   383→        return;
+   384→   384→      }
+   385→   385→      toast.success(data.message || "تم إلغاء الأمر بنجاح");
+   386→   386→      fetchOrders();
+   387→   387→      fetchWallets();
+   388→   388→    } catch {
+   389→   389→      toast.error("حدث خطأ في الاتصال");
+   390→   390→    }
+   391→   391→  };
+   392→   392→
+   393→   393→  /* ─────── Computed Values ─────── */
+   394→   394→
+   395→   395→  const base = selectedPair.replace("USDT", "");
+   396→   396→  const p = prices[selectedPair];
+   397→   397→  const prevPrice = prevPrices.current[selectedPair];
+   398→   398→  const priceColor =
+   399→   399→    p && prevPrice
+   400→   400→      ? p.price >= prevPrice
+   401→   401→        ? "text-emerald-400"
+   402→   402→        : "text-red-400"
+   403→   403→      : "text-foreground";
+   404→   404→  const priceBg =
+   405→   405→    p && prevPrice
+   406→   406→      ? p.price >= prevPrice
+   407→   407→        ? "bg-emerald-500/5"
+   408→   408→        : "bg-red-500/5"
+   409→   409→      : "";
+   410→   410→
+   411→   411→  const baseWallet = wallets.find((w: any) => w.currency === base);
+   412→   412→  const quoteWallet = wallets.find((w: any) => w.currency === "USDT");
+   413→   413→
+   414→   414→  const getFeeRate = () => {
+   415→   415→    const userType = "USER";
+   416→   416→    const schedule = feeSchedules.find(
+   417→   417→      (f: any) => f.user_type === userType && f.order_type === orderType
+   418→   418→    );
+   419→   419→    if (schedule) {
+   420→   420→      return orderType === "MARKET" || orderType === "TAKE_PROFIT"
+   421→   421→        ? schedule.taker_fee
+   422→   422→        : schedule.maker_fee || schedule.taker_fee;
+   423→   423→    }
+   424→   424→    return orderType === "MARKET" || orderType === "TAKE_PROFIT"
+   425→   425→      ? 0.0025
+   426→   426→      : 0.0015;
+   427→   427→  };
+   428→   428→
+   429→   429→  const feeRate = getFeeRate();
+   430→   430→  const estimatedFee =
+   431→   431→    form.quantity && parseFloat(form.quantity) > 0 && p?.price
+   432→   432→      ? (orderType === "MARKET"
+   433→   433→          ? p.price
+   434→   434→          : parseFloat(form.price || "0")) *
+   435→   435→        parseFloat(form.quantity) *
+   436→   436→        feeRate
+   437→   437→      : 0;
+   438→   438→
+   439→   439→  const estimatedTotal =
+   440→   440→    form.quantity && parseFloat(form.quantity) > 0
+   441→   441→      ? (orderType === "MARKET"
+   442→   442→          ? p?.price || 0
+   443→   443→          : parseFloat(form.price || "0")) * parseFloat(form.quantity)
+   444→   444→      : 0;
+   445→   445→
+   446→   446→  /* Order book depth calculations */
+   447→   447→  const maxBidQty = orderBook.bids?.length
+   448→   448→    ? Math.max(...orderBook.bids.map((b) => parseFloat(b[1])))
+   449→   449→    : 1;
+   450→   450→  const maxAskQty = orderBook.asks?.length
+   451→   451→    ? Math.max(...orderBook.asks.map((a) => parseFloat(a[1])))
+   452→   452→    : 1;
+   453→   453→
+   454→   454→  const spread =
+   455→   455→    orderBook.asks?.[0]?.[0] && orderBook.bids?.[0]?.[0]
+   456→   456→      ? parseFloat(orderBook.asks[0][0]) - parseFloat(orderBook.bids[0][0])
+   457→   457→      : 0;
+   458→   458→  const spreadPercent =
+   459→   459→    spread && orderBook.bids?.[0]?.[0]
+   460→   460→      ? (spread / parseFloat(orderBook.bids[0][0])) * 100
+   461→   461→      : 0;
+   462→   462→
+   463→   463→  /* ─────── Render ─────── */
+   464→   464→
+   465→   465→  return (
+   466→   466→    <div className="space-y-4 animate-fade-in">
+   467→   467→      {/* ═══════ TOP BAR ═══════ */}
+   468→   468→      <div className="glass-panel rounded-2xl p-4 animate-slide-in-up">
+   469→   469→        {/* Pair Selector Row */}
+   470→   470→        <div className="flex items-center gap-3 mb-4">
+   471→   471→          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/30">
+   472→   472→            <BarChart3 className="h-4 w-4 text-primary" />
+   473→   473→            <span className="text-xs font-medium text-muted-foreground">
+   474→   474→              أزواج
+   475→   475→            </span>
+   476→   476→          </div>
+   477→   477→          <div
+   478→   478→            ref={pairScrollRef}
+   479→   479→            className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin flex-1"
+   480→   480→            style={{ scrollbarWidth: "thin" }}
+   481→   481→          >
+   482→   482→            {PAIRS.map((pair) => {
+   483→   483→              const pairBase = pair.replace("USDT", "");
+   484→   484→              const isActive = selectedPair === pair;
+   485→   485→              const pairPrice = prices[pair];
+   486→   486→              return (
+   487→   487→                <button
+   488→   488→                  key={pair}
+   489→   489→                  onClick={() => setSelectedPair(pair)}
+   490→   490→                  className={`
+   491→   491→                    flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-300 whitespace-nowrap
+   492→   492→                    ${
+   493→   493→                      isActive
+   494→   494→                        ? "bg-primary/15 text-primary border border-primary/30 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
+   495→   495→                        : "bg-muted/20 text-muted-foreground border border-transparent hover:bg-muted/30 hover:text-foreground"
+   496→   496→                    }
+   497→   497→                  `}
+   498→   498→                >
+   499→   499→                  <span
+   500→   500→                    className={`text-base leading-none ${isActive ? "text-primary" : "text-muted-foreground/60"}`}
+   501→   501→                  >
+   502→   502→                    {CURRENCY_ICONS[pairBase] || "●"}
+   503→   503→                  </span>
+   504→   504→                  <span className="font-bold">{pairBase}</span>
+   505→   505→                  {pairPrice && (
+   506→   506→                    <span
+   507→   507→                      className={`text-[10px] ${parseFloat(pairPrice.change) >= 0 ? "text-emerald-400" : "text-red-400"}`}
+   508→   508→                    >
+   509→   509→                      {parseFloat(pairPrice.change) >= 0 ? "+" : ""}
+   510→   510→                      {parseFloat(pairPrice.change).toFixed(2)}%
+   511→   511→                    </span>
+   512→   512→                  )}
+   513→   513→                </button>
+   514→   514→              );
+   515→   515→            })}
+   516→   516→          </div>
+   517→   517→        </div>
+   518→   518→
+   519→   519→        {/* Current Pair Info + Stats */}
+   520→   520→        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+   521→   521→          {/* Pair Name + Price */}
+   522→   522→          <div className="flex items-center gap-4 flex-1 min-w-0">
+   523→   523→            <div className="flex items-center gap-2">
+   524→   524→              <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-lg font-bold">
+   525→   525→                {CURRENCY_ICONS[base] || "●"}
+   526→   526→              </div>
+   527→   527→              <div>
+   528→   528→                <h2 className="text-sm font-bold text-foreground">
+   529→   529→                  {CURRENCY_NAMES[base] || base}
+   530→   530→                </h2>
+   531→   531→                <span className="text-[11px] text-muted-foreground">
+   532→   532→                  {base}/USDT
+   533→   533→                </span>
+   534→   534→              </div>
+   535→   535→            </div>
+   536→   536→
+   537→   537→            <div className={`transition-colors duration-300 ${priceBg} rounded-xl px-4 py-2`}>
+   538→   538→              <p
+   539→   539→                className={`text-2xl sm:text-3xl font-bold tabular-nums tracking-tight ${priceColor}`}
+   540→   540→              >
+   541→   541→                {p?.price?.toLocaleString(undefined, {
+   542→   542→                  minimumFractionDigits: 2,
+   543→   543→                  maximumFractionDigits: 8,
+   544→   544→                }) || "—"}
+   545→   545→              </p>
+   546→   546→            </div>
+   547→   547→
+   548→   548→            {p && (
+   549→   549→              <div
+   550→   550→                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold ${
+   551→   551→                  parseFloat(p.change) >= 0
+   552→   552→                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+   553→   553→                    : "bg-red-500/10 text-red-400 border border-red-500/20"
+   554→   554→                }`}
+   555→   555→              >
+   556→   556→                {parseFloat(p.change) >= 0 ? (
+   557→   557→                  <TrendingUp className="h-3 w-3" />
+   558→   558→                ) : (
+   559→   559→                  <TrendingDown className="h-3 w-3" />
+   560→   560→                )}
+   561→   561→                {parseFloat(p.change) >= 0 ? "+" : ""}
+   562→   562→                {parseFloat(p.change).toFixed(2)}%
+   563→   563→              </div>
+   564→   564→            )}
+   565→   565→          </div>
+   566→   566→
+   567→   567→          {/* Quick Stats */}
+   568→   568→          {p && (
+   569→   569→            <div className="flex items-center gap-4 text-xs">
+   570→   570→              <div className="flex flex-col items-start">
+   571→   571→                <span className="text-muted-foreground/60">أعلى 24س</span>
+   572→   572→                <span className="font-medium text-emerald-400 tabular-nums">
+   573→   573→                  {p.high?.toLocaleString()}
+   574→   574→                </span>
+   575→   575→              </div>
+   576→   576→              <div className="w-px h-8 bg-border/30" />
+   577→   577→              <div className="flex flex-col items-start">
+   578→   578→                <span className="text-muted-foreground/60">أدنى 24س</span>
+   579→   579→                <span className="font-medium text-red-400 tabular-nums">
+   580→   580→                  {p.low?.toLocaleString()}
+   581→   581→                </span>
+   582→   582→              </div>
+   583→   583→              <div className="w-px h-8 bg-border/30" />
+   584→   584→              <div className="flex flex-col items-start">
+   585→   585→                <span className="text-muted-foreground/60">الحجم 24س</span>
+   586→   586→                <span className="font-medium text-foreground tabular-nums">
+   587→   587→                  {p.volume
+   588→   588→                    ? parseFloat(p.volume) > 1000000
+   589→   589→                      ? (parseFloat(p.volume) / 1000000).toFixed(2) + "M"
+   590→   590→                      : parseFloat(p.volume) > 1000
+   591→   591→                        ? (parseFloat(p.volume) / 1000).toFixed(1) + "K"
+   592→   592→                        : parseFloat(p.volume).toFixed(2)
+   593→   593→                    : "—"}
+   594→   594→                </span>
+   595→   595→              </div>
+   596→   596→            </div>
+   597→   597→          )}
+   598→   598→        </div>
+   599→   599→      </div>
+   600→   600→
+   601→   601→      {/* ═══════ MAIN LAYOUT ═══════ */}
+   602→   602→      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+   603→   603→        {/* ──── LEFT: Chart + Order Form ──── */}
+   604→   604→        <div className="lg:col-span-8 xl:col-span-9 space-y-4">
+   605→   605→          {/* CHART AREA */}
+   606→   606→          <div className="glass-panel rounded-2xl overflow-hidden animate-slide-in-up delay-100">
+   607→   607→            {/* Timeframe Selector */}
+   608→   608→            <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+   609→   609→              <div className="flex items-center gap-1 bg-muted/20 rounded-xl p-1">
+   610→   610→                {TIMEFRAMES.map((tf) => (
+   611→   611→                  <button
+   612→   612→                    key={tf.value}
+   613→   613→                    onClick={() => setTimeframe(tf.value)}
+   614→   614→                    className={`
+   615→   615→                      px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-200
+   616→   616→                      ${
+   617→   617→                        timeframe === tf.value
+   618→   618→                          ? "bg-primary/20 text-primary shadow-sm"
+   619→   619→                          : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+   620→   620→                      }
+   621→   621→                    `}
+   622→   622→                  >
+   623→   623→                    {tf.label}
+   624→   624→                  </button>
+   625→   625→                ))}
+   626→   626→              </div>
+   627→   627→              <div className="flex-1" />
+   628→   628→              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+   629→   629→                <div className="status-dot status-dot-online" />
+   630→   630→                <span>مباشر</span>
+   631→   631→              </div>
+   632→   632→            </div>
+   633→   633→
+   634→   634→            {/* Chart Container */}
+   635→   635→            <div className="px-2 pb-2">
+   636→   636→              <div
+   637→   637→                ref={chartContainerRef}
+   638→   638→                className="h-[420px] w-full rounded-xl overflow-hidden border border-border/20"
+   639→   639→              />
+   640→   640→            </div>
+   641→   641→          </div>
+   642→   642→
+   643→   643→          {/* ORDER FORM */}
+   644→   644→          <div
+   645→   645→            className={`glass-panel rounded-2xl overflow-hidden animate-slide-in-up delay-200 transition-colors duration-500 ${
+   646→   646→              side === "BUY"
+   647→   647→                ? "ring-1 ring-emerald-500/10"
+   648→   648→                : "ring-1 ring-red-500/10"
+   649→   649→            }`}
+   650→   650→          >
+   651→   651→            {/* Buy/Sell Header Toggle */}
+   652→   652→            <div className="flex p-1 m-4 mb-0 rounded-xl bg-muted/20">
+   653→   653→              {(["BUY", "SELL"] as const).map((s) => (
+   654→   654→                <button
+   655→   655→                  key={s}
+   656→   656→                  onClick={() => setSide(s)}
+   657→   657→                  className={`
+   658→   658→                    flex-1 py-3 rounded-lg text-sm font-bold transition-all duration-300
+   659→   659→                    ${
+   660→   660→                      side === s
+   661→   661→                        ? s === "BUY"
+   662→   662→                          ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
+   663→   663→                          : "bg-red-500 text-white shadow-lg shadow-red-500/25"
+   664→   664→                        : "text-muted-foreground hover:text-foreground"
+   665→   665→                    }
+   666→   666→                  `}
+   667→   667→                >
+   668→   668→                  {s === "BUY" ? "شراء" : "بيع"} {base}
+   669→   669→                </button>
+   670→   670→              ))}
+   671→   671→            </div>
+   672→   672→
+   673→   673→            <div className="p-4 space-y-4">
+   674→   674→              {/* Order Type Tabs */}
+   675→   675→              <div className="flex items-center gap-1 bg-muted/15 rounded-xl p-1">
+   676→   676→                {(
+   677→   677→                  ["MARKET", "LIMIT", "STOP_LIMIT", "TAKE_PROFIT"] as const
+   678→   678→                ).map((t) => (
+   679→   679→                  <button
+   680→   680→                    key={t}
+   681→   681→                    onClick={() => setOrderType(t)}
+   682→   682→                    className={`
+   683→   683→                      flex-1 py-2 px-2 rounded-lg text-[11px] font-medium transition-all duration-200 text-center
+   684→   684→                      ${
+   685→   685→                        orderType === t
+   686→   686→                          ? side === "BUY"
+   687→   687→                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+   688→   688→                            : "bg-red-500/15 text-red-400 border border-red-500/20"
+   689→   689→                          : "text-muted-foreground hover:text-foreground hover:bg-muted/20 border border-transparent"
+   690→   690→                      }
+   691→   691→                    `}
+   692→   692→                  >
+   693→   693→                    {ORDER_TYPE_LABELS[t]}
+   694→   694→                  </button>
+   695→   695→                ))}
+   696→   696→              </div>
+   697→   697→
+   698→   698→              {/* Available Balance */}
+   699→   699→              <div
+   700→   700→                className={`flex items-center justify-between p-3 rounded-xl border ${
+   701→   701→                  side === "BUY"
+   702→   702→                    ? "bg-emerald-500/5 border-emerald-500/10"
+   703→   703→                    : "bg-red-500/5 border-red-500/10"
+   704→   704→                }`}
+   705→   705→              >
+   706→   706→                <div className="flex items-center gap-2">
+   707→   707→                  <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
+   708→   708→                  <span className="text-[11px] text-muted-foreground">
+   709→   709→                    الرصيد المتاح
+   710→   710→                  </span>
+   711→   711→                </div>
+   712→   712→                <div className="flex items-center gap-3 text-[11px]">
+   713→   713→                  <span className="font-medium tabular-nums">
+   714→   714→                    {side === "BUY"
+   715→   715→                      ? `${quoteWallet?.balance ? parseFloat(quoteWallet.balance).toFixed(2) : "0.00"}`
+   716→   716→                      : `${baseWallet?.balance ? parseFloat(baseWallet.balance).toFixed(8) : "0.00000000"}`}{" "}
+   717→   717→                    <span className="text-muted-foreground">
+   718→   718→                      {side === "BUY" ? "USDT" : base}
+   719→   719→                    </span>
+   720→   720→                  </span>
+   721→   721→                </div>
+   722→   722→              </div>
+   723→   723→
+   724→   724→              {/* Form Fields */}
+   725→   725→              <form onSubmit={handleSubmit} className="space-y-3">
+   726→   726→                {/* Quantity Input */}
+   727→   727→                <div>
+   728→   728→                  <div className="flex items-center justify-between mb-1.5">
+   729→   729→                    <label className="text-[11px] text-muted-foreground font-medium">
+   730→   730→                      الكمية ({base})
+   731→   731→                    </label>
+   732→   732→                    {/* Quick percentage buttons */}
+   733→   733→                    <div className="flex items-center gap-1">
+   734→   734→                      {[25, 50, 75, 100].map((pct) => {
+   735→   735→                        const maxQty =
+   736→   736→                          side === "BUY"
+   737→   737→                            ? quoteWallet?.balance && p?.price
+   738→   738→                              ? (parseFloat(quoteWallet.balance) /
+   739→   739→                                  (p.price * (1 + feeRate))) *
+   740→   740→                                (pct / 100)
+   741→   741→                              : 0
+   742→   742→                            : baseWallet?.balance
+   743→   743→                              ? parseFloat(baseWallet.balance) * (pct / 100)
+   744→   744→                              : 0;
+   745→   745→                        return (
+   746→   746→                          <button
+   747→   747→                            key={pct}
+   748→   748→                            type="button"
+   749→   749→                            onClick={() =>
+   750→   750→                              setForm({ ...form, quantity: maxQty.toFixed(8) })
+   751→   751→                            }
+   752→   752→                            className={`
+   753→   753→                              px-2 py-0.5 rounded text-[10px] font-medium transition-all duration-200
+   754→   754→                              ${
+   755→   755→                                side === "BUY"
+   756→   756→                                  ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/15"
+   757→   757→                                  : "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/15"
+   758→   758→                              }
+   759→   759→                            `}
+   760→   760→                          >
+   761→   761→                            {pct}%
+   762→   762→                          </button>
+   763→   763→                        );
+   764→   764→                      })}
+   765→   765→                    </div>
+   766→   766→                  </div>
+   767→   767→                  <div className="relative">
+   768→   768→                    <input
+   769→   769→                      type="number"
+   770→   770→                      step="any"
+   771→   771→                      className="input-field pl-4 pr-16"
+   772→   772→                      placeholder="0.00"
+   773→   773→                      value={form.quantity}
+   774→   774→                      onChange={(e) =>
+   775→   775→                        setForm({ ...form, quantity: e.target.value })
+   776→   776→                      }
+   777→   777→                      required
+   778→   778→                    />
+   779→   779→                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium">
+   780→   780→                      {base}
+   781→   781→                    </span>
+   782→   782→                  </div>
+   783→   783→                </div>
+   784→   784→
+   785→   785→                {/* Price Input (LIMIT / STOP_LIMIT) */}
+   786→   786→                {(orderType === "LIMIT" || orderType === "STOP_LIMIT") && (
+   787→   787→                  <div>
+   788→   788→                    <div className="flex items-center justify-between mb-1.5">
+   789→   789→                      <label className="text-[11px] text-muted-foreground font-medium">
+   790→   790→                        السعر (USDT)
+   791→   791→                      </label>
+   792→   792→                      {!form.price && p?.price && (
+   793→   793→                        <button
+   794→   794→                          type="button"
+   795→   795→                          onClick={() =>
+   796→   796→                            setForm({ ...form, price: p.price.toFixed(2) })
+   797→   797→                          }
+   798→   798→                          className="text-[10px] text-primary hover:underline"
+   799→   799→                        >
+   800→   800→                          السعر الحالي: {p.price.toFixed(2)}
+   801→   801→                        </button>
+   802→   802→                      )}
+   803→   803→                    </div>
+   804→   804→                    <div className="relative">
+   805→   805→                      <input
+   806→   806→                        type="number"
+   807→   807→                        step="any"
+   808→   808→                        className="input-field pl-4 pr-16"
+   809→   809→                        placeholder="0.00"
+   810→   810→                        value={form.price}
+   811→   811→                        onChange={(e) =>
+   812→   812→                          setForm({ ...form, price: e.target.value })
+   813→   813→                        }
+   814→   814→                        required
+   815→   815→                      />
+   816→   816→                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium">
+   817→   817→                        USDT
+   818→   818→                      </span>
+   819→   819→                    </div>
+   820→   820→                  </div>
+   821→   821→                )}
+   822→   822→
+   823→   823→                {/* Stop Price (STOP_LIMIT / TAKE_PROFIT) */}
+   824→   824→                {(orderType === "STOP_LIMIT" ||
+   825→   825→                  orderType === "TAKE_PROFIT") && (
+   826→   826→                  <div>
+   827→   827→                    <label className="text-[11px] text-muted-foreground font-medium mb-1.5 block">
+   828→   828→                      سعر الإيقاف (USDT)
+   829→   829→                    </label>
+   830→   830→                    <div className="relative">
+   831→   831→                      <input
+   832→   832→                        type="number"
+   833→   833→                        step="any"
+   834→   834→                        className="input-field pl-4 pr-16"
+   835→   835→                        placeholder="0.00"
+   836→   836→                        value={form.stopPrice}
+   837→   837→                        onChange={(e) =>
+   838→   838→                          setForm({ ...form, stopPrice: e.target.value })
+   839→   839→                        }
+   840→   840→                        required
+   841→   841→                      />
+   842→   842→                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium">
+   843→   843→                        USDT
+   844→   844→                      </span>
+   845→   845→                    </div>
+   846→   846→                  </div>
+   847→   847→                )}
+   848→   848→
+   849→   849→                {/* Estimated Cost + Fee */}
+   850→   850→                {form.quantity && parseFloat(form.quantity) > 0 && (
+   851→   851→                  <div className="glass-panel rounded-xl p-3 space-y-2">
+   852→   852→                    <div className="flex items-center justify-between text-[11px]">
+   853→   853→                      <span className="text-muted-foreground">
+   854→   854→                        {side === "BUY"
+   855→   855→                          ? "التكلفة التقديرية"
+   856→   856→                          : "القيمة التقديرية"}
+   857→   857→                      </span>
+   858→   858→                      <span className="font-medium tabular-nums">
+   859→   859→                        {estimatedTotal.toFixed(2)} USDT
+   860→   860→                      </span>
+   861→   861→                    </div>
+   862→   862→                    <div className="flex items-center justify-between text-[11px]">
+   863→   863→                      <span className="text-muted-foreground">
+   864→   864→                        الرسوم (~{(feeRate * 100).toFixed(2)}%)
+   865→   865→                      </span>
+   866→   866→                      <span className="font-medium tabular-nums text-muted-foreground">
+   867→   867→                        {estimatedFee.toFixed(2)} USDT
+   868→   868→                      </span>
+   869→   869→                    </div>
+   870→   870→                    <div className="border-t border-border/30 pt-2 flex items-center justify-between text-[11px]">
+   871→   871→                      <span className="text-muted-foreground font-medium">
+   872→   872→                        الإجمالي
+   873→   873→                      </span>
+   874→   874→                      <span
+   875→   875→                        className={`font-bold tabular-nums ${side === "BUY" ? "text-emerald-400" : "text-red-400"}`}
+   876→   876→                      >
+   877→   877→                        {(
+   878→   878→                          estimatedTotal +
+   879→   879→                          (side === "BUY" ? estimatedFee : -estimatedFee)
+   880→   880→                        ).toFixed(2)}{" "}
+   881→   881→                        USDT
+   882→   882→                      </span>
+   883→   883→                    </div>
+   884→   884→                  </div>
+   885→   885→                )}
+   886→   886→
+   887→   887→                {/* Submit Button */}
+   888→   888→                <button
+   889→   889→                  type="submit"
+   890→   890→                  disabled={loading}
+   891→   891→                  className={`
+   892→   892→                    w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2
+   893→   893→                    ${
+   894→   894→                      side === "BUY"
+   895→   895→                        ? "bg-emerald-500 text-white hover:bg-emerald-400 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30"
+   896→   896→                        : "bg-red-500 text-white hover:bg-red-400 shadow-lg shadow-red-500/20 hover:shadow-red-500/30"
+   897→   897→                    }
+   898→   898→                    disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none
+   899→   899→                  `}
+   900→   900→                >
+   901→   901→                  {loading ? (
+   902→   902→                    <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+   903→   903→                  ) : (
+   904→   904→                    <ArrowUpDown className="h-4 w-4" />
+   905→   905→                  )}
+   906→   906→                  {loading
+   907→   907→                    ? "جاري التنفيذ..."
+   908→   908→                    : `${side === "BUY" ? "شراء" : "بيع"} ${base}`}
+   909→   909→                </button>
+   910→   910→              </form>
+   911→   911→            </div>
+   912→   912→          </div>
+   913→   913→        </div>
+   914→   914→
+   915→   915→        {/* ──── RIGHT: Order Book + My Orders ──── */}
+   916→   916→        <div className="lg:col-span-4 xl:col-span-3 space-y-4">
+   917→   917→          {/* ORDER BOOK */}
+   918→   918→          <div className="glass-panel rounded-2xl overflow-hidden animate-slide-in-up delay-100">
+   919→   919→            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+   920→   920→              <div className="flex items-center gap-2">
+   921→   921→                <BookOpen className="h-4 w-4 text-primary" />
+   922→   922→                <h3 className="font-bold text-sm">دفتر الأوامر</h3>
+   923→   923→              </div>
+   924→   924→              <span className="text-[10px] text-muted-foreground">
+   925→   925→                {base}/USDT
+   926→   926→              </span>
+   927→   927→            </div>
+   928→   928→
+   929→   929→            {/* Column Headers */}
+   930→   930→            <div className="flex items-center justify-between px-4 py-1.5 text-[10px] text-muted-foreground/60 font-medium border-b border-border/20">
+   931→   931→              <span>السعر (USDT)</span>
+   932→   932→              <span>الكمية ({base})</span>
+   933→   933→            </div>
+   934→   934→
+   935→   935→            {/* Asks (sell orders) */}
+   936→   936→            <div className="max-h-[200px] overflow-y-auto">
+   937→   937→              {orderBook.asks
+   938→   938→                ?.slice(0)
+   939→   939→                .reverse()
+   940→   940→                .map((ask: any, i: number) => {
+   941→   941→                  const qty = parseFloat(ask[1]);
+   942→   942→                  const depthPercent = (qty / maxAskQty) * 100;
+   943→   943→                  return (
+   944→   944→                    <div
+   945→   945→                      key={`ask-${i}`}
+   946→   946→                      className="relative flex items-center justify-between px-4 py-1.5 text-[11px] hover:bg-red-500/5 transition-colors cursor-pointer"
+   947→   947→                      onClick={() =>
+   948→   948→                        setForm({ ...form, price: parseFloat(ask[0]).toFixed(2) })
+   949→   949→                      }
+   950→   950→                    >
+   951→   951→                      <div
+   952→   952→                        className="absolute top-0 left-0 h-full bg-red-500/8 transition-all duration-300"
+   953→   953→                        style={{ width: `${depthPercent}%` }}
+   954→   954→                      />
+   955→   955→                      <span className="relative text-red-400 font-medium tabular-nums">
+   956→   956→                        {parseFloat(ask[0]).toFixed(2)}
+   957→   957→                      </span>
+   958→   958→                      <span className="relative text-muted-foreground tabular-nums">
+   959→   959→                        {qty.toFixed(6)}
+   960→   960→                      </span>
+   961→   961→                    </div>
+   962→   962→                  );
+   963→   963→                })}
+   964→   964→            </div>
+   965→   965→
+   966→   966→            {/* Spread / Current Price */}
+   967→   967→            <div className="flex items-center justify-between px-4 py-2.5 border-y border-border/20 bg-muted/10">
+   968→   968→              <div className="flex items-center gap-2">
+   969→   969→                <span
+   970→   970→                  className={`text-base font-bold tabular-nums ${priceColor}`}
+   971→   971→                >
+   972→   972→                  {p?.price?.toFixed(2) || "—"}
+   973→   973→                </span>
+   974→   974→                {p && (
+   975→   975→                  <span
+   976→   976→                    className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded ${
+   977→   977→                      parseFloat(p.change) >= 0
+   978→   978→                        ? "bg-emerald-500/10 text-emerald-400"
+   979→   979→                        : "bg-red-500/10 text-red-400"
+   980→   980→                    }`}
+   981→   981→                  >
+   982→   982→                    {parseFloat(p.change) >= 0 ? "+" : ""}
+   983→   983→                    {parseFloat(p.change).toFixed(2)}%
+   984→   984→                  </span>
+   985→   985→                )}
+   986→   986→              </div>
+   987→   987→              {spread > 0 && (
+   988→   988→                <span className="text-[10px] text-muted-foreground">
+   989→   989→                  فجوة: {spread.toFixed(2)} ({spreadPercent.toFixed(3)}%)
+   990→   990→                </span>
+   991→   991→              )}
+   992→   992→            </div>
+   993→   993→
+   994→   994→            {/* Bids (buy orders) */}
+   995→   995→            <div className="max-h-[200px] overflow-y-auto">
+   996→   996→              {orderBook.bids?.slice(0, 10).map((bid: any, i: number) => {
+   997→   997→                const qty = parseFloat(bid[1]);
+   998→   998→                const depthPercent = (qty / maxBidQty) * 100;
+   999→   999→                return (
+  1000→  1000→                  <div
+  1001→  1001→                    key={`bid-${i}`}
+  1002→  1002→                    className="relative flex items-center justify-between px-4 py-1.5 text-[11px] hover:bg-emerald-500/5 transition-colors cursor-pointer"
+  1003→  1003→                    onClick={() =>
+  1004→  1004→                      setForm({
+  1005→  1005→                        ...form,
+  1006→  1006→                        price: parseFloat(bid[0]).toFixed(2),
+  1007→  1007→                      })
+  1008→  1008→                    }
+  1009→  1009→                  >
+  1010→  1010→                    <div
+  1011→  1011→                      className="absolute top-0 left-0 h-full bg-emerald-500/8 transition-all duration-300"
+  1012→  1012→                      style={{ width: `${depthPercent}%` }}
+  1013→  1013→                    />
+  1014→  1014→                    <span className="relative text-emerald-400 font-medium tabular-nums">
+  1015→  1015→                      {parseFloat(bid[0]).toFixed(2)}
+  1016→  1016→                    </span>
+  1017→  1017→                    <span className="relative text-muted-foreground tabular-nums">
+  1018→  1018→                      {qty.toFixed(6)}
+  1019→  1019→                    </span>
+  1020→  1020→                  </div>
+  1021→  1021→                );
+  1022→  1022→              })}
+  1023→  1023→            </div>
+  1024→  1024→          </div>
+  1025→  1025→
+  1026→  1026→          {/* MY ORDERS */}
+  1027→  1027→          <div className="glass-panel rounded-2xl overflow-hidden animate-slide-in-up delay-200">
+  1028→  1028→            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+  1029→  1029→              <h3 className="font-bold text-sm">طلباتي</h3>
+  1030→  1030→              <button
+  1031→  1031→                onClick={() => fetchOrders()}
+  1032→  1032→                className="p-1.5 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-all"
+  1033→  1033→              >
+  1034→  1034→                <RefreshCw className="h-3.5 w-3.5" />
+  1035→  1035→              </button>
+  1036→  1036→            </div>
+  1037→  1037→
+  1038→  1038→            <div className="max-h-[320px] overflow-y-auto">
+  1039→  1039→              {orders.length === 0 ? (
+  1040→  1040→                <div className="flex flex-col items-center justify-center py-10 px-4">
+  1041→  1041→                  <div className="h-12 w-12 rounded-2xl bg-muted/20 flex items-center justify-center mb-3">
+  1042→  1042→                    <Minus className="h-5 w-5 text-muted-foreground/40" />
+  1043→  1043→                  </div>
+  1044→  1044→                  <p className="text-xs text-muted-foreground text-center">
+  1045→  1045→                    لا توجد طلبات حالياً
+  1046→  1046→                  </p>
+  1047→  1047→                  <p className="text-[10px] text-muted-foreground/50 text-center mt-1">
+  1048→  1048→                    ستظهر طلباتك هنا بعد التنفيذ
+  1049→  1049→                  </p>
+  1050→  1050→                </div>
+  1051→  1051→              ) : (
+  1052→  1052→                orders.slice(0, 10).map((order: any, i: number) => (
+  1053→  1053→                  <div
+  1054→  1054→                    key={i}
+  1055→  1055→                    className="flex items-center justify-between px-4 py-3 border-b border-border/10 last:border-0 hover:bg-muted/5 transition-colors"
+  1056→  1056→                  >
+  1057→  1057→                    <div className="flex items-center gap-2.5 min-w-0">
+  1058→  1058→                      {/* Side indicator */}
+  1059→  1059→                      <div
+  1060→  1060→                        className={`h-8 w-8 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
+  1061→  1061→                          order.side === "BUY"
+  1062→  1062→                            ? "bg-emerald-500/10 text-emerald-400"
+  1063→  1063→                            : "bg-red-500/10 text-red-400"
+  1064→  1064→                        }`}
+  1065→  1065→                      >
+  1066→  1066→                        {order.side === "BUY" ? "ش" : "ب"}
+  1067→  1067→                      </div>
+  1068→  1068→                      <div className="min-w-0">
+  1069→  1069→                        <div className="flex items-center gap-1.5">
+  1070→  1070→                          <p className="text-xs font-bold truncate">
+  1071→  1071→                            {order.symbol?.replace("USDT", "")}/USDT
+  1072→  1072→                          </p>
+  1073→  1073→                          <span
+  1074→  1074→                            className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+  1075→  1075→                              order.side === "BUY"
+  1076→  1076→                                ? "bg-emerald-500/10 text-emerald-400"
+  1077→  1077→                                : "bg-red-500/10 text-red-400"
+  1078→  1078→                            }`}
+  1079→  1079→                          >
+  1080→  1080→                            {order.side === "BUY" ? "شراء" : "بيع"}
+  1081→  1081→                          </span>
+  1082→  1082→                        </div>
+  1083→  1083→                        <p className="text-[10px] text-muted-foreground">
+  1084→  1084→                          {ORDER_TYPE_LABELS[order.type] || order.type}
+  1085→  1085→                          {" · "}
+  1086→  1086→                          <span className="tabular-nums">
+  1087→  1087→                            {parseFloat(order.quantity || "0").toFixed(6)}
+  1088→  1088→                          </span>
+  1089→  1089→                        </p>
+  1090→  1090→                      </div>
+  1091→  1091→                    </div>
+  1092→  1092→
+  1093→  1093→                    <div className="flex items-center gap-2 shrink-0">
+  1094→  1094→                      <div className="text-left">
+  1095→  1095→                        <p className="text-[11px] font-medium tabular-nums">
+  1096→  1096→                          {order.avg_fill_price > 0
+  1097→  1097→                            ? parseFloat(order.avg_fill_price).toFixed(2)
+  1098→  1098→                            : order.price
+  1099→  1099→                              ? parseFloat(order.price).toFixed(2)
+  1100→  1100→                              : "سوقي"}
+  1101→  1101→                        </p>
+  1102→  1102→                        <div className="flex items-center gap-1.5">
+  1103→  1103→                          <span
+  1104→  1104→                            className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${STATUS_COLORS[order.status] || "bg-muted/20 text-muted-foreground border-border/30"}`}
+  1105→  1105→                          >
+  1106→  1106→                            {STATUS_LABELS[order.status] || order.status}
+  1107→  1107→                          </span>
+  1108→  1108→                          {order.fee > 0 && (
+  1109→  1109→                            <span className="text-[9px] text-muted-foreground tabular-nums">
+  1110→  1110→                              رسوم: {parseFloat(order.fee).toFixed(4)}
+  1111→  1111→                            </span>
+  1112→  1112→                          )}
+  1113→  1113→                        </div>
+  1114→  1114→                      </div>
+  1115→  1115→
+  1116→  1116→                      {order.status === "PENDING" && (
+  1117→  1117→                        <button
+  1118→  1118→                          onClick={() => handleCancel(order.id)}
+  1119→  1119→                          className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all border border-red-500/15"
+  1120→  1120→                          title="إلغاء الأمر"
+  1121→  1121→                        >
+  1122→  1122→                          <X className="h-3 w-3" />
+  1123→  1123→                        </button>
+  1124→  1124→                      )}
+  1125→  1125→                    </div>
+  1126→  1126→                  </div>
+  1127→  1127→                ))
+  1128→  1128→              )}
+  1129→  1129→            </div>
+  1130→  1130→          </div>
+  1131→  1131→        </div>
+  1132→  1132→      </div>
+  1133→  1133→    </div>
+  1134→  1134→  );
+  1135→  1135→}
+  1136→  1136→
