@@ -1,0 +1,724 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState, useMemo } from "react";
+     4→import Link from "next/link";
+     5→import {
+     6→  TrendingUp,
+     7→  Wallet,
+     8→  Clock,
+     9→  ArrowUpRight,
+    10→  ArrowDownRight,
+    11→  ArrowRight,
+    12→  Sparkles,
+    13→  Plus,
+    14→  BarChart3,
+    15→  Activity,
+    16→  Inbox,
+    17→  ChevronLeft,
+    18→} from "lucide-react";
+    19→import { authGet } from "@/lib/api";
+    20→
+    21→const CURRENCY_NAMES: Record<string, string> = {
+    22→  BTC: "بيتكوين",
+    23→  ETH: "إيثريوم",
+    24→  BNB: "بي إن بي",
+    25→  SOL: "سولانا",
+    26→  XRP: "إكس آر بي",
+    27→  ADA: "كاردانو",
+    28→  DOGE: "دوجكوين",
+    29→  DOT: "بولكادوت",
+    30→  USDT: "تيثر",
+    31→};
+    32→
+    33→const CURRENCY_COLORS: Record<string, string> = {
+    34→  BTC: "#f7931a",
+    35→  ETH: "#627eea",
+    36→  BNB: "#f0b90b",
+    37→  SOL: "#9945ff",
+    38→  USDT: "#26a17b",
+    39→  XRP: "#23292f",
+    40→  ADA: "#0033ad",
+    41→  DOGE: "#c2a633",
+    42→  DOT: "#e6007a",
+    43→};
+    44→
+    45→const STATUS_LABELS: Record<string, string> = {
+    46→  PENDING: "معلق",
+    47→  FILLED: "منفذ",
+    48→  CANCELLED: "ملغي",
+    49→  OPEN: "مفتوح",
+    50→  TRIGGERED: "مفعّل",
+    51→};
+    52→
+    53→const STATUS_COLORS: Record<string, string> = {
+    54→  PENDING: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+    55→  FILLED: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+    56→  CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
+    57→  OPEN: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    58→  TRIGGERED: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+    59→};
+    60→
+    61→const MARKET_COINS = [
+    62→  { symbol: "BTCUSDT", name: "بيتكوين", short: "BTC" },
+    63→  { symbol: "ETHUSDT", name: "إيثريوم", short: "ETH" },
+    64→  { symbol: "BNBUSDT", name: "بي إن بي", short: "BNB" },
+    65→  { symbol: "SOLUSDT", name: "سولانا", short: "SOL" },
+    66→];
+    67→
+    68→export default function DashboardPage() {
+    69→  const [orders, setOrders] = useState<any[]>([]);
+    70→  const [prices, setPrices] = useState<Record<string, string>>({});
+    71→  const [priceChanges, setPriceChanges] = useState<Record<string, string>>({});
+    72→  const [balances, setBalances] = useState<any[]>([]);
+    73→  const [user, setUser] = useState<any>(null);
+    74→  const [currentTime, setCurrentTime] = useState<string>("");
+    75→  const [currentDate, setCurrentDate] = useState<string>("");
+    76→
+    77→  // Arabic date/time
+    78→  useEffect(() => {
+    79→    const update = () => {
+    80→      const now = new Date();
+    81→      setCurrentTime(
+    82→        now.toLocaleTimeString("ar-EG", {
+    83→          hour: "2-digit",
+    84→          minute: "2-digit",
+    85→        })
+    86→      );
+    87→      setCurrentDate(
+    88→        now.toLocaleDateString("ar-EG", {
+    89→          weekday: "long",
+    90→          year: "numeric",
+    91→          month: "long",
+    92→          day: "numeric",
+    93→        })
+    94→      );
+    95→    };
+    96→    update();
+    97→    const interval = setInterval(update, 1000);
+    98→    return () => clearInterval(interval);
+    99→  }, []);
+   100→
+   101→  // Load user
+   102→  useEffect(() => {
+   103→    try {
+   104→      setUser(JSON.parse(localStorage.getItem("user") || "{}"));
+   105→    } catch {}
+   106→  }, []);
+   107→
+   108→  // Fetch orders & balances
+   109→  useEffect(() => {
+   110→    const token = localStorage.getItem("token");
+   111→    if (!token) return;
+   112→
+   113→    Promise.all([
+   114→      authGet("/api/v1/exchange/orders").then((r) => r.json()),
+   115→      authGet("/api/v1/wallet/balances").then((r) => r.json()),
+   116→    ])
+   117→      .then(([ordersData, walletData]) => {
+   118→        setOrders(
+   119→          Array.isArray(ordersData)
+   120→            ? ordersData
+   121→            : Array.isArray(ordersData.orders)
+   122→            ? ordersData.orders
+   123→            : Array.isArray(ordersData.data)
+   124→            ? ordersData.data
+   125→            : []
+   126→        );
+   127→        setBalances(
+   128→          Array.isArray(walletData)
+   129→            ? walletData
+   130→            : Array.isArray(walletData.balances)
+   131→            ? walletData.balances
+   132→            : Array.isArray(walletData.data)
+   133→            ? walletData.data
+   134→            : []
+   135→        );
+   136→      })
+   137→      .catch(() => {});
+   138→  }, []);
+   139→
+   140→  // WebSocket for live prices
+   141→  useEffect(() => {
+   142→    const ws = new WebSocket(
+   143→      "wss://stream.binance.com:9443/ws/!miniTicker@arr"
+   144→    );
+   145→    ws.onmessage = (e) => {
+   146→      const data = JSON.parse(e.data);
+   147→      if (Array.isArray(data)) {
+   148→        const updates: Record<string, string> = {};
+   149→        const changeUpdates: Record<string, string> = {};
+   150→        data.forEach((t: any) => {
+   151→          if (
+   152→            [
+   153→              "BTCUSDT",
+   154→              "ETHUSDT",
+   155→              "BNBUSDT",
+   156→              "SOLUSDT",
+   157→              "XRPUSDT",
+   158→              "ADAUSDT",
+   159→              "DOGEUSDT",
+   160→              "DOTUSDT",
+   161→            ].includes(t.s)
+   162→          ) {
+   163→            updates[t.s] = t.c;
+   164→            changeUpdates[t.s] = t.P;
+   165→          }
+   166→        });
+   167→        setPrices((prev) => ({ ...prev, ...updates }));
+   168→        setPriceChanges((prev) => ({ ...prev, ...changeUpdates }));
+   169→      }
+   170→    };
+   171→    return () => ws.close();
+   172→  }, []);
+   173→
+   174→  // Computed values
+   175→  const activeBalances = useMemo(
+   176→    () => balances.filter((b) => parseFloat(b.balance || "0") > 0),
+   177→    [balances]
+   178→  );
+   179→
+   180→  const totalPortfolioUSD = useMemo(() => {
+   181→    return balances.reduce((sum, b) => {
+   182→      const balance = parseFloat(b.balance || "0");
+   183→      if (balance <= 0) return sum;
+   184→      const currency = b.currency;
+   185→      if (currency === "USDT") return sum + balance;
+   186→      const price = prices[`${currency}USDT`];
+   187→      if (price) return sum + balance * parseFloat(price);
+   188→      return sum;
+   189→    }, 0);
+   190→  }, [balances, prices]);
+   191→
+   192→  const openOrdersCount = useMemo(
+   193→    () =>
+   194→      orders.filter(
+   195→        (o) => o.status === "OPEN" || o.status === "PENDING"
+   196→      ).length,
+   197→    [orders]
+   198→  );
+   199→
+   200→  const portfolioAllocation = useMemo(() => {
+   201→    const items = activeBalances
+   202→      .map((b) => {
+   203→        const balance = parseFloat(b.balance || "0");
+   204→        const currency = b.currency;
+   205→        let usdValue = 0;
+   206→        if (currency === "USDT") {
+   207→          usdValue = balance;
+   208→        } else {
+   209→          const price = prices[`${currency}USDT`];
+   210→          if (price) usdValue = balance * parseFloat(price);
+   211→        }
+   212→        return { currency, balance, usdValue };
+   213→      })
+   214→      .filter((item) => item.usdValue > 0)
+   215→      .sort((a, b) => b.usdValue - a.usdValue);
+   216→
+   217→    const total = items.reduce((sum, item) => sum + item.usdValue, 0);
+   218→    return items.map((item) => ({
+   219→      ...item,
+   220→      percentage: total > 0 ? (item.usdValue / total) * 100 : 0,
+   221→    }));
+   222→  }, [activeBalances, prices]);
+   223→
+   224→  const recentOrders = useMemo(() => orders.slice(0, 5), [orders]);
+   225→
+   226→  return (
+   227→    <div className="space-y-8">
+   228→      {/* ═══════════════════════════════════════════
+   229→          WELCOME SECTION
+   230→      ═══════════════════════════════════════════ */}
+   231→      <div className="animate-slide-in-up">
+   232→        <div className="glass-panel rounded-2xl p-6 md:p-8 relative overflow-hidden">
+   233→          {/* Decorative background */}
+   234→          <div className="absolute top-0 left-0 w-64 h-64 bg-emerald-500/5 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl pointer-events-none" />
+   235→          <div className="absolute bottom-0 right-0 w-48 h-48 bg-teal-500/5 rounded-full translate-x-1/3 translate-y-1/3 blur-3xl pointer-events-none" />
+   236→
+   237→          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+   238→            <div className="space-y-2">
+   239→              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   240→                <div className="status-dot-online" />
+   241→                <span>متصل</span>
+   242→                <span className="text-border">|</span>
+   243→                <span>{currentDate}</span>
+   244→                <span className="text-border">|</span>
+   245→                <span>{currentTime}</span>
+   246→              </div>
+   247→              <h1 className="text-3xl md:text-4xl font-bold">
+   248→                مرحباً بعودتك،{" "}
+   249→                <span className="gradient-text">
+   250→                  {user?.username || "المستخدم"}!
+   251→                </span>
+   252→              </h1>
+   253→              <p className="text-muted-foreground">
+   254→                إليك نظرة شاملة على محفظتك وأسعار السوق الحية
+   255→              </p>
+   256→            </div>
+   257→
+   258→            <div className="flex items-center gap-3 shrink-0">
+   259→              <Link href="/dashboard/exchange" className="btn-primary gap-2">
+   260→                <TrendingUp className="h-4 w-4" />
+   261→                تداول الآن
+   262→              </Link>
+   263→              <Link
+   264→                href="/dashboard/wallet"
+   265→                className="btn-ghost gap-2 border border-border/50"
+   266→              >
+   267→                <Plus className="h-4 w-4" />
+   268→                إيداع
+   269→              </Link>
+   270→            </div>
+   271→          </div>
+   272→        </div>
+   273→      </div>
+   274→
+   275→      {/* ═══════════════════════════════════════════
+   276→          STATS GRID
+   277→      ═══════════════════════════════════════════ */}
+   278→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   279→        {/* Wallet Balance - Emerald */}
+   280→        <div className="stat-card stat-card-emerald animate-slide-in-up delay-100 card-hover">
+   281→          <div className="flex items-center justify-between mb-4">
+   282→            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+   283→              <Wallet className="h-5 w-5 text-emerald-500" />
+   284→            </div>
+   285→            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+   286→          </div>
+   287→          <p className="text-2xl md:text-3xl font-bold tabular-nums animate-count-up">
+   288→            ${totalPortfolioUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+   289→          </p>
+   290→          <p className="text-xs text-muted-foreground mt-2">
+   291→            رصيد المحفظة
+   292→          </p>
+   293→          <p className="text-[10px] text-emerald-500 mt-1">
+   294→            {activeBalances.length} أصل نشط
+   295→          </p>
+   296→        </div>
+   297→
+   298→        {/* Open Orders - Blue */}
+   299→        <div className="stat-card stat-card-blue animate-slide-in-up delay-200 card-hover">
+   300→          <div className="flex items-center justify-between mb-4">
+   301→            <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+   302→              <Activity className="h-5 w-5 text-blue-500" />
+   303→            </div>
+   304→            <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
+   305→          </div>
+   306→          <p className="text-2xl md:text-3xl font-bold tabular-nums animate-count-up">
+   307→            {openOrdersCount}
+   308→          </p>
+   309→          <p className="text-xs text-muted-foreground mt-2">
+   310→            طلبات مفتوحة
+   311→          </p>
+   312→          <p className="text-[10px] text-blue-500 mt-1">
+   313→            {openOrdersCount > 0 ? "قيد التنفيذ" : "لا توجد طلبات"}
+   314→          </p>
+   315→        </div>
+   316→
+   317→        {/* Total Orders - Purple */}
+   318→        <div className="stat-card stat-card-purple animate-slide-in-up delay-300 card-hover">
+   319→          <div className="flex items-center justify-between mb-4">
+   320→            <div className="h-10 w-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+   321→              <Clock className="h-5 w-5 text-purple-500" />
+   322→            </div>
+   323→            <Link href="/dashboard/history">
+   324→              <ArrowRight className="h-4 w-4 text-muted-foreground/50 hover:text-foreground transition-colors" />
+   325→            </Link>
+   326→          </div>
+   327→          <p className="text-2xl md:text-3xl font-bold tabular-nums animate-count-up">
+   328→            {orders.length}
+   329→          </p>
+   330→          <p className="text-xs text-muted-foreground mt-2">
+   331→            الطلبات الكلية
+   332→          </p>
+   333→          <p className="text-[10px] text-purple-500 mt-1">
+   334→            إجمالي الصفقات
+   335→          </p>
+   336→        </div>
+   337→
+   338→        {/* BTC Price - Orange */}
+   339→        <div className="stat-card stat-card-orange animate-slide-in-up delay-400 card-hover">
+   340→          <div className="flex items-center justify-between mb-4">
+   341→            <div className="h-10 w-10 rounded-xl bg-orange-500/10 flex items-center justify-center">
+   342→              <Sparkles className="h-5 w-5 text-orange-500" />
+   343→            </div>
+   344→            <Link href="/dashboard/exchange">
+   345→              <ArrowRight className="h-4 w-4 text-muted-foreground/50 hover:text-foreground transition-colors" />
+   346→            </Link>
+   347→          </div>
+   348→          <p className="text-2xl md:text-3xl font-bold tabular-nums animate-count-up">
+   349→            {prices["BTCUSDT"]
+   350→              ? `$${parseFloat(prices["BTCUSDT"]).toLocaleString(undefined, {
+   351→                  minimumFractionDigits: 2,
+   352→                  maximumFractionDigits: 2,
+   353→                })}`
+   354→              : "—"}
+   355→          </p>
+   356→          <p className="text-xs text-muted-foreground mt-2">
+   357→            سعر BTC
+   358→          </p>
+   359→          <p className={`text-[10px] mt-1 ${
+   360→            priceChanges["BTCUSDT"]
+   361→              ? parseFloat(priceChanges["BTCUSDT"]) >= 0
+   362→                ? "text-emerald-500"
+   363→                : "text-red-500"
+   364→              : "text-muted-foreground"
+   365→          }`}>
+   366→            {priceChanges["BTCUSDT"]
+   367→              ? `${parseFloat(priceChanges["BTCUSDT"]) >= 0 ? "+" : ""}${parseFloat(priceChanges["BTCUSDT"]).toFixed(2)}%`
+   368→              : ""}
+   369→          </p>
+   370→        </div>
+   371→      </div>
+   372→
+   373→      {/* ═══════════════════════════════════════════
+   374→          PORTFOLIO CHART + RECENT ORDERS
+   375→      ═══════════════════════════════════════════ */}
+   376→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   377→        {/* Portfolio Allocation */}
+   378→        <div className="glass-panel rounded-2xl p-6 animate-slide-in-up delay-300">
+   379→          <div className="flex items-center justify-between mb-6">
+   380→            <div>
+   381→              <h2 className="font-bold text-lg flex items-center gap-2">
+   382→                <BarChart3 className="h-5 w-5 text-primary" />
+   383→                توزيع المحفظة
+   384→              </h2>
+   385→            </div>
+   386→            <Link
+   387→              href="/dashboard/wallet"
+   388→              className="text-xs text-primary hover:underline flex items-center gap-1 transition-all hover:gap-2"
+   389→            >
+   390→              عرض الكل
+   391→              <ChevronLeft className="h-3 w-3" />
+   392→            </Link>
+   393→          </div>
+   394→
+   395→          {/* Total Value */}
+   396→          <div className="text-center mb-6">
+   397→            <p className="text-sm text-muted-foreground mb-1">
+   398→              إجمالي قيمة المحفظة
+   399→            </p>
+   400→            <p className="text-4xl font-bold gradient-text tabular-nums">
+   401→              $
+   402→              {totalPortfolioUSD.toLocaleString(undefined, {
+   403→                minimumFractionDigits: 2,
+   404→                maximumFractionDigits: 2,
+   405→              })}
+   406→            </p>
+   407→          </div>
+   408→
+   409→          {/* Portfolio Bars */}
+   410→          <div className="space-y-3 max-h-72 overflow-y-auto">
+   411→            {portfolioAllocation.length > 0 ? (
+   412→              portfolioAllocation.slice(0, 6).map((item) => (
+   413→                <div key={item.currency} className="group">
+   414→                  <div className="flex items-center justify-between mb-1.5">
+   415→                    <div className="flex items-center gap-2.5">
+   416→                      <div
+   417→                        className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold text-white"
+   418→                        style={{
+   419→                          backgroundColor:
+   420→                            CURRENCY_COLORS[item.currency] || "#6b7280",
+   421→                        }}
+   422→                      >
+   423→                        {item.currency.charAt(0)}
+   424→                      </div>
+   425→                      <div>
+   426→                        <p className="text-sm font-medium">
+   427→                          {item.currency}
+   428→                        </p>
+   429→                        <p className="text-[10px] text-muted-foreground">
+   430→                          {CURRENCY_NAMES[item.currency] || item.currency}
+   431→                        </p>
+   432→                      </div>
+   433→                    </div>
+   434→                    <div className="text-left">
+   435→                      <p className="text-sm font-bold tabular-nums">
+   436→                        ${item.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+   437→                      </p>
+   438→                      <p className="text-[10px] text-muted-foreground tabular-nums">
+   439→                        {item.percentage.toFixed(1)}%
+   440→                      </p>
+   441→                    </div>
+   442→                  </div>
+   443→                  <div className="w-full h-2 rounded-full bg-muted/30 overflow-hidden">
+   444→                    <div
+   445→                      className="h-full rounded-full transition-all duration-700 ease-out"
+   446→                      style={{
+   447→                        width: `${Math.max(item.percentage, 2)}%`,
+   448→                        backgroundColor:
+   449→                          CURRENCY_COLORS[item.currency] || "#6b7280",
+   450→                        opacity: 0.8,
+   451→                      }}
+   452→                    />
+   453→                  </div>
+   454→                </div>
+   455→              ))
+   456→            ) : (
+   457→              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+   458→                <Wallet className="h-10 w-10 mb-3 opacity-30" />
+   459→                <p className="text-sm">لا توجد أرصدة في المحفظة</p>
+   460→                <Link
+   461→                  href="/dashboard/wallet"
+   462→                  className="text-xs text-primary hover:underline mt-2"
+   463→                >
+   464→                  قم بإيداع أموال للبدء
+   465→                </Link>
+   466→              </div>
+   467→            )}
+   468→          </div>
+   469→        </div>
+   470→
+   471→        {/* Recent Orders */}
+   472→        <div className="glass-panel rounded-2xl p-6 animate-slide-in-up delay-400">
+   473→          <div className="flex items-center justify-between mb-6">
+   474→            <h2 className="font-bold text-lg flex items-center gap-2">
+   475→              <Clock className="h-5 w-5 text-primary" />
+   476→              آخر الصفقات
+   477→            </h2>
+   478→            <Link
+   479→              href="/dashboard/history"
+   480→              className="text-xs text-primary hover:underline flex items-center gap-1 transition-all hover:gap-2"
+   481→            >
+   482→              عرض الكل
+   483→              <ChevronLeft className="h-3 w-3" />
+   484→            </Link>
+   485→          </div>
+   486→
+   487→          {recentOrders.length > 0 ? (
+   488→            <div className="space-y-1 max-h-96 overflow-y-auto">
+   489→              {/* Header */}
+   490→              <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] text-muted-foreground font-medium border-b border-border/30">
+   491→                <div className="col-span-3">الزوج</div>
+   492→                <div className="col-span-2">النوع</div>
+   493→                <div className="col-span-3 text-center">الكمية</div>
+   494→                <div className="col-span-2 text-center">الحالة</div>
+   495→                <div className="col-span-2 text-left">السعر</div>
+   496→              </div>
+   497→              {recentOrders.map((order: any, i: number) => (
+   498→                <div
+   499→                  key={i}
+   500→                  className={`grid grid-cols-12 gap-2 items-center px-3 py-3 rounded-xl transition-colors ${
+   501→                    i % 2 === 0 ? "bg-muted/10" : ""
+   502→                  } hover:bg-muted/20`}
+   503→                >
+   504→                  {/* Symbol + Buy/Sell Icon */}
+   505→                  <div className="col-span-3 flex items-center gap-2">
+   506→                    <div
+   507→                      className={`p-1.5 rounded-lg shrink-0 ${
+   508→                        order.side === "BUY"
+   509→                          ? "bg-emerald-500/10"
+   510→                          : "bg-red-500/10"
+   511→                      }`}
+   512→                    >
+   513→                      {order.side === "BUY" ? (
+   514→                        <ArrowUpRight className="h-3 w-3 text-emerald-500" />
+   515→                      ) : (
+   516→                        <ArrowDownRight className="h-3 w-3 text-red-500" />
+   517→                      )}
+   518→                    </div>
+   519→                    <span className="text-xs font-medium truncate">
+   520→                      {order.symbol}
+   521→                    </span>
+   522→                  </div>
+   523→
+   524→                  {/* Type */}
+   525→                  <div className="col-span-2">
+   526→                    <span
+   527→                      className={`text-[10px] font-medium ${
+   528→                        order.side === "BUY"
+   529→                          ? "text-emerald-500"
+   530→                          : "text-red-500"
+   531→                      }`}
+   532→                    >
+   533→                      {order.side === "BUY" ? "شراء" : "بيع"}
+   534→                    </span>
+   535→                    <p className="text-[10px] text-muted-foreground">
+   536→                      {order.type === "MARKET"
+   537→                        ? "سوقي"
+   538→                        : order.type === "LIMIT"
+   539→                        ? "محدد"
+   540→                        : order.type === "STOP_LIMIT"
+   541→                        ? "وقف"
+   542→                        : "جني أرباح"}
+   543→                    </p>
+   544→                  </div>
+   545→
+   546→                  {/* Quantity */}
+   547→                  <div className="col-span-3 text-center">
+   548→                    <p className="text-xs font-medium tabular-nums">
+   549→                      {parseFloat(order.quantity || "0").toFixed(6)}
+   550→                    </p>
+   551→                  </div>
+   552→
+   553→                  {/* Status */}
+   554→                  <div className="col-span-2 text-center">
+   555→                    <span
+   556→                      className={`inline-flex text-[10px] px-2 py-0.5 rounded-full border ${
+   557→                        STATUS_COLORS[order.status] ||
+   558→                        "bg-muted/20 text-muted-foreground border-border/30"
+   559→                      }`}
+   560→                    >
+   561→                      {STATUS_LABELS[order.status] || order.status}
+   562→                    </span>
+   563→                  </div>
+   564→
+   565→                  {/* Price */}
+   566→                  <div className="col-span-2 text-left">
+   567→                    <p className="text-xs font-medium tabular-nums">
+   568→                      {order.avg_fill_price > 0
+   569→                        ? `$${parseFloat(order.avg_fill_price).toFixed(2)}`
+   570→                        : order.price
+   571→                        ? `$${parseFloat(order.price).toFixed(2)}`
+   572→                        : "سوقي"}
+   573→                    </p>
+   574→                  </div>
+   575→                </div>
+   576→              ))}
+   577→            </div>
+   578→          ) : (
+   579→            <div className="flex flex-col items-center justify-center py-14 text-muted-foreground">
+   580→              <div className="h-16 w-16 rounded-2xl bg-muted/20 flex items-center justify-center mb-4">
+   581→                <Inbox className="h-8 w-8 opacity-40" />
+   582→              </div>
+   583→              <p className="text-sm font-medium">لا توجد صفقات بعد</p>
+   584→              <p className="text-xs mt-1">
+   585→                ابدأ التداول الآن واستكشف الأسواق
+   586→              </p>
+   587→              <Link
+   588→                href="/dashboard/exchange"
+   589→                className="btn-primary mt-4 gap-2 text-xs"
+   590→              >
+   591→                <TrendingUp className="h-3.5 w-3.5" />
+   592→                تداول الآن
+   593→              </Link>
+   594→            </div>
+   595→          )}
+   596→        </div>
+   597→      </div>
+   598→
+   599→      {/* ═══════════════════════════════════════════
+   600→          MARKET OVERVIEW
+   601→      ═══════════════════════════════════════════ */}
+   602→      <div className="animate-slide-in-up delay-500">
+   603→        <div className="flex items-center justify-between mb-4">
+   604→          <h2 className="font-bold text-lg flex items-center gap-2">
+   605→            <Activity className="h-5 w-5 text-primary" />
+   606→            نظرة سريعة على السوق
+   607→          </h2>
+   608→          <Link
+   609→            href="/dashboard/exchange"
+   610→            className="text-xs text-primary hover:underline flex items-center gap-1 transition-all hover:gap-2"
+   611→          >
+   612→            التداول المتقدم
+   613→            <ChevronLeft className="h-3 w-3" />
+   614→          </Link>
+   615→        </div>
+   616→
+   617→        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   618→          {MARKET_COINS.map((coin) => {
+   619→            const price = prices[coin.symbol];
+   620→            const change = priceChanges[coin.symbol];
+   621→            const isPositive = change ? parseFloat(change) >= 0 : true;
+   622→            const changeValue = change ? parseFloat(change) : 0;
+   623→
+   624→            return (
+   625→              <Link
+   626→                key={coin.symbol}
+   627→                href="/dashboard/exchange"
+   628→                className="glass-panel-hover rounded-2xl p-5 card-hover relative overflow-hidden group"
+   629→              >
+   630→                {/* Colored border indicator */}
+   631→                <div
+   632→                  className={`absolute top-0 right-0 left-0 h-0.5 transition-all duration-300 ${
+   633→                    isPositive
+   634→                      ? "bg-emerald-500/60"
+   635→                      : "bg-red-500/60"
+   636→                  }`}
+   637→                />
+   638→
+   639→                {/* Background glow */}
+   640→                <div
+   641→                  className={`absolute top-0 left-0 w-24 h-24 rounded-full blur-3xl pointer-events-none transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${
+   642→                    isPositive ? "bg-emerald-500/5" : "bg-red-500/5"
+   643→                  }`}
+   644→                />
+   645→
+   646→                <div className="relative">
+   647→                  {/* Coin header */}
+   648→                  <div className="flex items-center gap-3 mb-4">
+   649→                    <div
+   650→                      className="h-9 w-9 rounded-xl flex items-center justify-center text-xs font-bold text-white"
+   651→                      style={{
+   652→                        backgroundColor:
+   653→                          CURRENCY_COLORS[coin.short] || "#6b7280",
+   654→                      }}
+   655→                    >
+   656→                      {coin.short.charAt(0)}
+   657→                    </div>
+   658→                    <div>
+   659→                      <p className="text-sm font-bold">{coin.name}</p>
+   660→                      <p className="text-[10px] text-muted-foreground">
+   661→                        {coin.short}
+   662→                      </p>
+   663→                    </div>
+   664→                  </div>
+   665→
+   666→                  {/* Price */}
+   667→                  <p className="text-xl font-bold tabular-nums mb-1">
+   668→                    {price
+   669→                      ? `$${parseFloat(price).toLocaleString(undefined, {
+   670→                          minimumFractionDigits: 2,
+   671→                          maximumFractionDigits: 2,
+   672→                        })}`
+   673→                      : "—"}
+   674→                  </p>
+   675→
+   676→                  {/* Change */}
+   677→                  <div className="flex items-center justify-between">
+   678→                    <div
+   679→                      className={`flex items-center gap-1 text-xs font-medium ${
+   680→                        isPositive ? "text-emerald-500" : "text-red-500"
+   681→                      }`}
+   682→                    >
+   683→                      {isPositive ? (
+   684→                        <ArrowUpRight className="h-3 w-3" />
+   685→                      ) : (
+   686→                        <ArrowDownRight className="h-3 w-3" />
+   687→                      )}
+   688→                      <span className="tabular-nums">
+   689→                        {change
+   690→                          ? `${changeValue >= 0 ? "+" : ""}${changeValue.toFixed(2)}%`
+   691→                          : "0.00%"}
+   692→                      </span>
+   693→                    </div>
+   694→
+   695→                    {/* Mini sparkline placeholder */}
+   696→                    <div className="w-16 h-6 flex items-end gap-[2px]">
+   697→                      {[40, 65, 45, 70, 55, 80, 60, 75, 50, 85].map(
+   698→                        (h, idx) => (
+   699→                          <div
+   700→                            key={idx}
+   701→                            className={`flex-1 rounded-t-sm transition-all duration-300 ${
+   702→                              isPositive
+   703→                                ? "bg-emerald-500/30"
+   704→                                : "bg-red-500/30"
+   705→                            }`}
+   706→                            style={{
+   707→                              height: `${h}%`,
+   708→                              opacity: 0.4 + (idx / 10) * 0.6,
+   709→                            }}
+   710→                          />
+   711→                        )
+   712→                      )}
+   713→                    </div>
+   714→                  </div>
+   715→                </div>
+   716→              </Link>
+   717→            );
+   718→          })}
+   719→        </div>
+   720→      </div>
+   721→    </div>
+   722→  );
+   723→}
+   724→
