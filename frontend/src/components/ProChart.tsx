@@ -66,6 +66,9 @@ export interface ProChartHandle {
   updateLastCandle: (candle: Candle) => void;
   addCandle: (candle: Candle) => void;
   exportPng: (filename?: string) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetView: () => void;
 }
 
 /* ═══════════════════════════════════════════
@@ -566,6 +569,46 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         } catch (e) {
           console.error("Failed to export chart PNG:", e);
         }
+      },
+      zoomIn() {
+        const v = viewRef.current;
+        const newW = Math.min(MAX_CANDLE_WIDTH, v.candleWidth * 1.3);
+        if (newW !== v.candleWidth) {
+          v.candleWidth = newW;
+          requestRender();
+        }
+      },
+      zoomOut() {
+        const v = viewRef.current;
+        const newW = Math.max(MIN_CANDLE_WIDTH, v.candleWidth / 1.3);
+        if (newW !== v.candleWidth) {
+          v.candleWidth = newW;
+          // Auto-scroll to keep latest visible
+          const arr = candlesRef.current;
+          const totalW =
+            arr.length * (newW + CANDLE_GAP);
+          const chartW = canvasSize.w - CHART_PADDING.left - CHART_PADDING.right;
+          if (totalW < chartW) {
+            v.offsetX = 0;
+          } else {
+            v.offsetX = totalW - chartW;
+          }
+          requestRender();
+        }
+      },
+      resetView() {
+        const v = viewRef.current;
+        v.candleWidth = DEFAULT_CANDLE_WIDTH;
+        const arr = candlesRef.current;
+        const totalW =
+          arr.length * (v.candleWidth + CANDLE_GAP);
+        const chartW = canvasSize.w - CHART_PADDING.left - CHART_PADDING.right;
+        if (totalW < chartW) {
+          v.offsetX = 0;
+        } else {
+          v.offsetX = totalW - chartW;
+        }
+        requestRender();
       },
     }));
 
@@ -1178,6 +1221,91 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         ctx.fillRect(legendX, legendY - 7, 12, 2);
         ctx.fillText("VWAP", legendX + 16, legendY);
         legendX += 60;
+      }
+
+      /* ──── OHLC Legend (when crosshair is active) ──── */
+      if (v.crosshair.active) {
+        const candleIdx = Math.round(
+          (v.crosshair.x - chartL + v.offsetX - candleW / 2) / step
+        );
+        if (candleIdx >= 0 && candleIdx < arr.length) {
+          const c = arr[candleIdx];
+          const isUp = c.close >= c.open;
+          const ohlcColor = isUp ? COLORS.upCandle : COLORS.downCandle;
+          // Time
+          ctx.fillStyle = "rgba(255,255,255,0.6)";
+          ctx.font = "10px system-ui, sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText(
+            new Date(c.time * 1000).toLocaleString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            legendX,
+            legendY
+          );
+          legendX += 90;
+
+          // OHLC values
+          const parts: { label: string; value: string }[] = [
+            { label: "O", value: formatPrice(c.open) },
+            { label: "H", value: formatPrice(c.high) },
+            { label: "L", value: formatPrice(c.low) },
+            { label: "C", value: formatPrice(c.close) },
+          ];
+          for (const p of parts) {
+            ctx.fillStyle = "rgba(255,255,255,0.5)";
+            ctx.fillText(p.label, legendX, legendY);
+            ctx.fillStyle = ohlcColor;
+            ctx.fillText(p.value, legendX + 10, legendY);
+            legendX += 10 + ctx.measureText(p.value).width + 12;
+          }
+
+          // Change %
+          const change = ((c.close - c.open) / c.open) * 100;
+          ctx.fillStyle = ohlcColor;
+          ctx.fillText(
+            `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`,
+            legendX,
+            legendY
+          );
+        }
+      } else {
+        // Show last candle OHLC by default
+        const c = arr[arr.length - 1];
+        if (c) {
+          const isUp = c.close >= c.open;
+          const ohlcColor = isUp ? COLORS.upCandle : COLORS.downCandle;
+          ctx.fillStyle = "rgba(255,255,255,0.6)";
+          ctx.font = "10px system-ui, sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText("آخر شمعة", legendX, legendY);
+          legendX += 50;
+
+          const parts: { label: string; value: string }[] = [
+            { label: "O", value: formatPrice(c.open) },
+            { label: "H", value: formatPrice(c.high) },
+            { label: "L", value: formatPrice(c.low) },
+            { label: "C", value: formatPrice(c.close) },
+          ];
+          for (const p of parts) {
+            ctx.fillStyle = "rgba(255,255,255,0.5)";
+            ctx.fillText(p.label, legendX, legendY);
+            ctx.fillStyle = ohlcColor;
+            ctx.fillText(p.value, legendX + 10, legendY);
+            legendX += 10 + ctx.measureText(p.value).width + 12;
+          }
+
+          const change = ((c.close - c.open) / c.open) * 100;
+          ctx.fillStyle = ohlcColor;
+          ctx.fillText(
+            `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`,
+            legendX,
+            legendY
+          );
+        }
       }
 
       /* Border around chart area */

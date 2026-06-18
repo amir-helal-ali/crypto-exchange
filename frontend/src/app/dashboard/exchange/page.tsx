@@ -658,6 +658,9 @@ export default function ExchangePage() {
               onIndicatorsChange={setIndicators}
               isFullscreen={chartFullscreen}
               onToggleFullscreen={() => setChartFullscreen((v) => !v)}
+              onZoomIn={() => chartRef.current?.zoomIn()}
+              onZoomOut={() => chartRef.current?.zoomOut()}
+              onResetView={() => chartRef.current?.resetView()}
             />
             <DrawingToolbar
               activeTool={activeTool}

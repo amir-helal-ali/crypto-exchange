@@ -7,6 +7,9 @@ import {
   Settings2,
   Maximize2,
   Minimize2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from "lucide-react";
 import { TIMEFRAMES } from "./constants";
 import type { Timeframe } from "./types";
@@ -31,6 +34,9 @@ interface ChartToolbarProps {
   onIndicatorsChange?: (i: ChartIndicators) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onResetView?: () => void;
 }
 
 const DEFAULT_INDICATORS: ChartIndicators = {
@@ -57,6 +63,9 @@ export default function ChartToolbar({
   onIndicatorsChange,
   isFullscreen = false,
   onToggleFullscreen,
+  onZoomIn,
+  onZoomOut,
+  onResetView,
 }: ChartToolbarProps) {
   const toggleIndicator = (key: keyof ChartIndicators) => {
     if (!onIndicatorsChange) return;
@@ -199,6 +208,31 @@ export default function ChartToolbar({
       </div>
 
       <div className="flex-1" />
+
+      {/* Zoom controls */}
+      <div className="flex items-center gap-0.5 bg-muted/20 rounded-lg p-0.5">
+        <button
+          onClick={onZoomOut}
+          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+          title="تصغير (-)"
+        >
+          <ZoomOut className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={onResetView}
+          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+          title="إعادة الضبط"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={onZoomIn}
+          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+          title="تكبير (+)"
+        >
+          <ZoomIn className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
       {/* Fullscreen toggle */}
       <button
