@@ -19,9 +19,13 @@ import TradesFeed from "@/components/exchange/TradesFeed";
 import OrdersPanel from "@/components/exchange/OrdersPanel";
 import DrawingToolbar from "@/components/exchange/DrawingToolbar";
 import PriceAlerts from "@/components/exchange/PriceAlerts";
+import QuickPairSearch from "@/components/exchange/QuickPairSearch";
+import AssetInfoPanel from "@/components/exchange/AssetInfoPanel";
+import MobileTabBar, { MobileTab } from "@/components/exchange/MobileTabBar";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
+import { Camera, Search } from "lucide-react";
 
 import type {
   TickerData,
@@ -77,6 +81,13 @@ export default function ExchangePage() {
   const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [drawingColor, setDrawingColor] = useState<string>(DRAWING_COLORS[0]);
+
+  /* Quick pair search state */
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
+
+  /* Mobile active tab state */
+  const [mobileTab, setMobileTab] = useState<MobileTab>("chart");
 
   const chartRef = useRef<ProChartHandle>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -380,7 +391,50 @@ export default function ExchangePage() {
     onSetSell: () => setSide("SELL"),
     onSetMarket: () => setOrderType("MARKET"),
     onSetLimit: () => setOrderType("LIMIT"),
+    onOpenSearch: () => setSearchOpen(true),
+    onExportChart: () => {
+      if (chartRef.current) {
+        chartRef.current.exportPng(`chart_${selectedPair}_${timeframe}.png`);
+        toast.success("تم تصدير صورة الشارت");
+      }
+    },
+    onToggleFullscreen: () => setChartFullscreen((v) => !v),
   });
+
+  /* ─────── Load favorites from localStorage ─────── */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("exchange_favorites");
+      if (raw) setFavorites(JSON.parse(raw));
+    } catch {}
+    // Listen for changes from MarketList or QuickPairSearch
+    const syncFavorites = () => {
+      try {
+        const stored = localStorage.getItem("exchange_favorites");
+        if (stored) setFavorites(JSON.parse(stored));
+      } catch {}
+    };
+    window.addEventListener("exchange:favorites-changed", syncFavorites);
+    return () =>
+      window.removeEventListener("exchange:favorites-changed", syncFavorites);
+  }, []);
+
+  /* ─────── Persist favorites ─────── */
+  useEffect(() => {
+    try {
+      localStorage.setItem("exchange_favorites", JSON.stringify(favorites));
+      window.dispatchEvent(new CustomEvent("exchange:favorites-changed"));
+    } catch {}
+  }, [favorites]);
+
+  /* ─────── Toggle favorite pair ─────── */
+  const toggleFavorite = useCallback((pair: string) => {
+    setFavorites((prev) =>
+      prev.includes(pair)
+        ? prev.filter((p) => p !== pair)
+        : [...prev, pair]
+    );
+  }, []);
 
   /* ─────── Sync sound enabled state ─────── */
   useEffect(() => {
@@ -408,6 +462,7 @@ export default function ExchangePage() {
   const prevPrice = prevPrices.current[selectedPair];
   const baseWallet = wallets.find((w) => w.currency === base);
   const quoteWallet = wallets.find((w) => w.currency === "USDT");
+  const openOrdersCount = orders.filter((o) => o.status === "PENDING").length;
 
   /* ═══════════════════════════════════════════
      Render
@@ -435,6 +490,31 @@ export default function ExchangePage() {
 
         {/* Quick action buttons */}
         <div className="flex items-center gap-1 shrink-0">
+          {/* Quick pair search (Ctrl+K) */}
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+            title="بحث سريع عن زوج (Ctrl+K)"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+
+          {/* Chart screenshot export (Ctrl+E) */}
+          <button
+            onClick={() => {
+              if (chartRef.current) {
+                chartRef.current.exportPng(
+                  `chart_${selectedPair}_${timeframe}.png`
+                );
+                toast.success("تم تصدير صورة الشارت");
+              }
+            }}
+            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+            title="تصدير صورة الشارت (Ctrl+E)"
+          >
+            <Camera className="h-4 w-4" />
+          </button>
+
           {/* Price alerts */}
           <PriceAlerts
             pair={selectedPair}
@@ -542,8 +622,8 @@ export default function ExchangePage() {
       </div>
 
       {/* ─────── Main 3-column layout ─────── */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-1.5 min-h-0">
-        {/* ─── LEFT: Market List (collapsible) ─── */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-1.5 min-h-0 pb-14 lg:pb-0">
+        {/* ─── LEFT: Market List (collapsible, desktop only) ─── */}
         {marketListOpen && (
           <div className="hidden lg:block lg:col-span-2 min-h-0">
             <MarketList
@@ -558,13 +638,16 @@ export default function ExchangePage() {
         <div
           className={`flex flex-col gap-1.5 min-h-0 ${
             marketListOpen ? "lg:col-span-6 xl:col-span-7" : "lg:col-span-8 xl:col-span-9"
-          } ${chartFullscreen ? "fixed inset-0 z-50 bg-background/95 backdrop-blur-lg p-2" : ""}`}
+          } ${chartFullscreen ? "fixed inset-0 z-50 bg-background/95 backdrop-blur-lg p-2" : ""} ${
+            // On mobile: only show this column when chart or orders tab is active
+            mobileTab === "chart" || mobileTab === "orders" ? "flex" : "hidden lg:flex"
+          }`}
         >
-          {/* Chart Panel */}
+          {/* Chart Panel — hidden on mobile when orders tab is active */}
           <div
             className={`glass-panel rounded-xl overflow-hidden flex flex-col min-h-0 ${
               chartFullscreen ? "h-full" : "flex-1"
-            }`}
+            } ${mobileTab === "orders" ? "hidden lg:flex" : "flex"}`}
           >
             <ChartToolbar
               timeframe={timeframe}
@@ -602,7 +685,12 @@ export default function ExchangePage() {
 
           {/* Bottom Orders/History/Balance Panel */}
           {!chartFullscreen && (
-            <div className="glass-panel rounded-xl overflow-hidden shrink-0" style={{ height: "220px" }}>
+            <div
+              className={`glass-panel rounded-xl overflow-hidden shrink-0 ${
+                mobileTab === "chart" ? "hidden lg:block" : "block"
+              }`}
+              style={{ height: mobileTab === "orders" ? "100%" : "220px" }}
+            >
               <OrdersPanel
                 orders={orders}
                 wallets={wallets}
@@ -622,10 +710,16 @@ export default function ExchangePage() {
           <div
             className={`flex flex-col gap-1.5 min-h-0 ${
               marketListOpen ? "lg:col-span-4 xl:col-span-3" : "lg:col-span-4 xl:col-span-3"
+            } ${
+              // On mobile: show this column when orderbook or trade tab is active
+              mobileTab === "orderbook" || mobileTab === "trade" ? "flex" : "hidden lg:flex"
             }`}
           >
-            {/* Order Book + Depth Chart side by side */}
-            <div className="flex gap-1.5 min-h-0" style={{ flex: "1 1 0" }}>
+            {/* Order Book + Depth Chart side by side — only show on orderbook tab (mobile) */}
+            <div
+              className={`flex gap-1.5 min-h-0 ${mobileTab === "trade" ? "hidden lg:flex" : "flex"}`}
+              style={{ flex: "1 1 0" }}
+            >
               {/* Order book (wider) */}
               <div className="flex-1 min-w-0">
                 <OrderBookPanel
@@ -650,28 +744,39 @@ export default function ExchangePage() {
               )}
             </div>
 
-            {/* Trade Form */}
-            <TradeForm
-              base={base}
-              side={side}
-              orderType={orderType}
-              onSideChange={setSide}
-              onTypeChange={setOrderType}
-              onSubmit={handleSubmit}
-              loading={loading}
-              baseWallet={baseWallet}
-              quoteWallet={quoteWallet}
-              ticker={p}
-              feeSchedules={feeSchedules}
-            />
+            {/* Trade Form — show on trade tab on mobile, always on desktop */}
+            <div className={mobileTab === "orderbook" ? "hidden lg:block" : "block"}>
+              <TradeForm
+                base={base}
+                side={side}
+                orderType={orderType}
+                onSideChange={setSide}
+                onTypeChange={setOrderType}
+                onSubmit={handleSubmit}
+                loading={loading}
+                baseWallet={baseWallet}
+                quoteWallet={quoteWallet}
+                ticker={p}
+                feeSchedules={feeSchedules}
+              />
+            </div>
 
-            {/* Trades Feed */}
-            <div className="shrink-0" style={{ height: "180px" }}>
+            {/* Trades Feed — hidden on mobile (orderbook tab is too cramped) */}
+            <div className="shrink-0 hidden lg:block" style={{ height: "180px" }}>
               <TradesFeed
                 trades={marketTrades}
                 base={base}
                 onPriceClick={handlePriceClick}
                 maxRows={10}
+              />
+            </div>
+
+            {/* Asset Info Panel — hidden on mobile */}
+            <div className="hidden lg:block">
+              <AssetInfoPanel
+                base={base}
+                pair={selectedPair}
+                ticker={p}
               />
             </div>
           </div>
@@ -680,6 +785,9 @@ export default function ExchangePage() {
 
       {/* Keyboard shortcuts hint */}
       <div className="hidden md:flex items-center justify-center gap-3 text-[9px] text-muted-foreground/60 py-0.5 shrink-0">
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+K</kbd> بحث
+        </span>
         <span>
           <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+B</kbd> شراء
         </span>
@@ -693,9 +801,34 @@ export default function ExchangePage() {
           <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+L</kbd> محدد
         </span>
         <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+E</kbd> لقطة شارت
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+F</kbd> ملء الشاشة
+        </span>
+        <span>
           <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Space</kbd> تبديل الشراء/البيع
         </span>
       </div>
+
+      {/* ─────── Quick Pair Search Modal (Ctrl+K) ─────── */}
+      <QuickPairSearch
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectPair={setSelectedPair}
+        prices={prices}
+        selectedPair={selectedPair}
+        favorites={favorites}
+        onToggleFavorite={toggleFavorite}
+      />
+
+      {/* ─────── Mobile Tab Bar (bottom navigation for small screens) ─────── */}
+      <MobileTabBar
+        active={mobileTab}
+        onChange={setMobileTab}
+        onOpenSearch={() => setSearchOpen(true)}
+        openOrdersCount={openOrdersCount}
+      />
     </div>
   );
 }

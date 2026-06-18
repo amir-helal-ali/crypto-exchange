@@ -145,6 +145,9 @@ export function useKeyboardShortcuts(handlers: {
   onSetLimit?: () => void;
   onSubmitOrder?: () => void;
   onCancelLast?: () => void;
+  onOpenSearch?: () => void;
+  onExportChart?: () => void;
+  onToggleFullscreen?: () => void;
 }) {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
@@ -164,6 +167,11 @@ export function useKeyboardShortcuts(handlers: {
         if (e.ctrlKey && e.key === "Enter") {
           e.preventDefault();
           handlersRef.current.onSubmitOrder?.();
+        }
+        // Allow Ctrl+K to open search even from inputs
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          handlersRef.current.onOpenSearch?.();
         }
         return;
       }
@@ -185,6 +193,18 @@ export function useKeyboardShortcuts(handlers: {
           case "l":
             e.preventDefault();
             handlersRef.current.onSetLimit?.();
+            break;
+          case "k":
+            e.preventDefault();
+            handlersRef.current.onOpenSearch?.();
+            break;
+          case "e":
+            e.preventDefault();
+            handlersRef.current.onExportChart?.();
+            break;
+          case "f":
+            e.preventDefault();
+            handlersRef.current.onToggleFullscreen?.();
             break;
           case "enter":
             e.preventDefault();

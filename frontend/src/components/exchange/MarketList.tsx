@@ -49,10 +49,24 @@ export default function MarketList({
     } catch {}
   }, []);
 
-  /* Persist favorites */
+  /* Listen for favorite changes from other components (e.g. QuickPairSearch) */
+  useEffect(() => {
+    const syncFavorites = () => {
+      try {
+        const stored = localStorage.getItem("exchange_favorites");
+        if (stored) setFavorites(JSON.parse(stored));
+      } catch {}
+    };
+    window.addEventListener("exchange:favorites-changed", syncFavorites);
+    return () =>
+      window.removeEventListener("exchange:favorites-changed", syncFavorites);
+  }, []);
+
+  /* Persist favorites and notify other components */
   useEffect(() => {
     try {
       localStorage.setItem("exchange_favorites", JSON.stringify(favorites));
+      window.dispatchEvent(new CustomEvent("exchange:favorites-changed"));
     } catch {}
   }, [favorites]);
 

@@ -65,6 +65,7 @@ export interface ProChartProps {
 export interface ProChartHandle {
   updateLastCandle: (candle: Candle) => void;
   addCandle: (candle: Candle) => void;
+  exportPng: (filename?: string) => void;
 }
 
 /* ═══════════════════════════════════════════
@@ -547,6 +548,24 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         candlesRef.current.push(candle);
         recomputeIndicators(candlesRef.current);
         requestRender();
+      },
+      exportPng(filename?: string) {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        try {
+          // Render one extra frame to ensure crosshair/drawings are current
+          requestRender();
+          // Use toDataURL on the actual canvas (already has dark background)
+          const dataUrl = canvas.toDataURL("image/png");
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = filename || `chart_${Date.now()}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } catch (e) {
+          console.error("Failed to export chart PNG:", e);
+        }
       },
     }));
 
