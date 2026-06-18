@@ -17,6 +17,8 @@ export interface ChartIndicators {
   bollinger: boolean;
   rsi: boolean;
   macd: boolean;
+  vwap: boolean;
+  stochastic: boolean;
   volume: boolean;
 }
 
@@ -37,6 +39,8 @@ const DEFAULT_INDICATORS: ChartIndicators = {
   bollinger: false,
   rsi: false,
   macd: false,
+  vwap: false,
+  stochastic: false,
   volume: true,
 };
 
@@ -163,6 +167,12 @@ export default function ChartToolbar({
           onClick={() => toggleIndicator("bollinger")}
         />
         <IndicatorChip
+          label="VWAP"
+          color="#ec4899"
+          active={indicators.vwap}
+          onClick={() => toggleIndicator("vwap")}
+        />
+        <IndicatorChip
           label="RSI"
           color="#06b6d4"
           active={indicators.rsi}
@@ -173,6 +183,12 @@ export default function ChartToolbar({
           color="#f97316"
           active={indicators.macd}
           onClick={() => toggleIndicator("macd")}
+        />
+        <IndicatorChip
+          label="STOCH"
+          color="#a855f7"
+          active={indicators.stochastic}
+          onClick={() => toggleIndicator("stochastic")}
         />
         <IndicatorChip
           label="VOL"

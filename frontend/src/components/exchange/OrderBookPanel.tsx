@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BookOpen, TrendingUp, TrendingDown } from "lucide-react";
+import { BookOpen, TrendingUp, TrendingDown, Flame, List } from "lucide-react";
 import {
   formatPrice,
   pricePrecision,
@@ -63,6 +63,7 @@ export default function OrderBookPanel({
   maxRows = 11,
 }: OrderBookPanelProps) {
   const [precision, setPrecision] = useState<number | null>(null);
+  const [heatmapMode, setHeatmapMode] = useState(false);
 
   /* Group orders by precision (aggregate qty at same price bucket) */
   const groupedBids = useMemo(() => {
@@ -76,7 +77,7 @@ export default function OrderBookPanel({
   }, [asks, precision]);
 
   /* Build processed entries with cumulative depth */
-  const { askEntries, bidEntries, maxCumulative } = useMemo(() => {
+  const { askEntries, bidEntries, maxCumulative, maxQty } = useMemo(() => {
     const asksRaw = groupedAsks.slice(0, maxRows);
     const bidsRaw = groupedBids.slice(0, maxRows);
 
@@ -109,6 +110,11 @@ export default function OrderBookPanel({
     });
 
     const maxCumulative = Math.max(cumA, cumB, 0.0001);
+    const maxQty = Math.max(
+      ...askEntries.map((e) => e.qty),
+      ...bidEntries.map((e) => e.qty),
+      0.0001
+    );
 
     askEntries.forEach((e) => {
       e.depthPercent = (e.cumulative / maxCumulative) * 100;
@@ -117,7 +123,7 @@ export default function OrderBookPanel({
       e.depthPercent = (e.cumulative / maxCumulative) * 100;
     });
 
-    return { askEntries, bidEntries, maxCumulative };
+    return { askEntries, bidEntries, maxCumulative, maxQty };
   }, [groupedBids, groupedAsks, maxRows]);
 
   /* Spread calculations */
@@ -146,6 +152,11 @@ export default function OrderBookPanel({
   const renderAskRow = (entry: OrderBookEntry, idx: number) => {
     const pPrec = pricePrecision(entry.price);
     const qPrec = qtyPrecision(entry.qty);
+    // Heatmap mode: bar width = qty/maxQty, intensity scaled
+    const barWidth = heatmapMode
+      ? (entry.qty / maxQty) * 100
+      : entry.depthPercent;
+    const intensity = heatmapMode ? entry.qty / maxQty : entry.depthPercent / 100;
     return (
       <div
         key={`ask-${idx}`}
@@ -154,8 +165,13 @@ export default function OrderBookPanel({
       >
         {/* Depth bar */}
         <div
-          className="absolute top-0 left-0 h-full bg-red-500/[0.08] transition-all duration-200 group-hover:bg-red-500/[0.12]"
-          style={{ width: `${entry.depthPercent}%` }}
+          className="absolute top-0 left-0 h-full transition-all duration-200 group-hover:brightness-125"
+          style={{
+            width: `${barWidth}%`,
+            backgroundColor: heatmapMode
+              ? `rgba(246,70,93,${0.1 + intensity * 0.5})`
+              : "rgba(246,70,93,0.08)",
+          }}
         />
         <span className="relative w-1/3 text-red-400 font-medium tabular-nums">
           {entry.price.toFixed(pPrec)}
@@ -173,6 +189,10 @@ export default function OrderBookPanel({
   const renderBidRow = (entry: OrderBookEntry, idx: number) => {
     const pPrec = pricePrecision(entry.price);
     const qPrec = qtyPrecision(entry.qty);
+    const barWidth = heatmapMode
+      ? (entry.qty / maxQty) * 100
+      : entry.depthPercent;
+    const intensity = heatmapMode ? entry.qty / maxQty : entry.depthPercent / 100;
     return (
       <div
         key={`bid-${idx}`}
@@ -180,8 +200,13 @@ export default function OrderBookPanel({
         className="relative flex items-center px-2.5 py-[2px] text-[10px] hover:bg-emerald-500/5 transition-colors cursor-pointer group"
       >
         <div
-          className="absolute top-0 left-0 h-full bg-emerald-500/[0.08] transition-all duration-200 group-hover:bg-emerald-500/[0.12]"
-          style={{ width: `${entry.depthPercent}%` }}
+          className="absolute top-0 left-0 h-full transition-all duration-200 group-hover:brightness-125"
+          style={{
+            width: `${barWidth}%`,
+            backgroundColor: heatmapMode
+              ? `rgba(0,192,135,${0.1 + intensity * 0.5})`
+              : "rgba(0,192,135,0.08)",
+          }}
         />
         <span className="relative w-1/3 text-emerald-400 font-medium tabular-nums">
           {entry.price.toFixed(pPrec)}
@@ -205,6 +230,22 @@ export default function OrderBookPanel({
           <h3 className="font-bold text-[11px]">دفتر الأوامر</h3>
         </div>
         <div className="flex items-center gap-1">
+          {/* Heatmap toggle */}
+          <button
+            onClick={() => setHeatmapMode(!heatmapMode)}
+            className={`p-1 rounded transition-all ${
+              heatmapMode
+                ? "bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+            }`}
+            title={heatmapMode ? "وضع القائمة" : "وضع الخريطة الحرارية"}
+          >
+            {heatmapMode ? (
+              <Flame className="h-3 w-3" />
+            ) : (
+              <List className="h-3 w-3" />
+            )}
+          </button>
           {/* Precision selector */}
           <select
             value={precision ?? "auto"}

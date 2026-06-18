@@ -18,6 +18,7 @@ import TradeForm from "@/components/exchange/TradeForm";
 import TradesFeed from "@/components/exchange/TradesFeed";
 import OrdersPanel from "@/components/exchange/OrdersPanel";
 import DrawingToolbar from "@/components/exchange/DrawingToolbar";
+import PriceAlerts from "@/components/exchange/PriceAlerts";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
@@ -66,6 +67,8 @@ export default function ExchangePage() {
     bollinger: false,
     rsi: false,
     macd: false,
+    vwap: false,
+    stochastic: false,
     volume: true,
   });
   const [showDepthChart, setShowDepthChart] = useState(true);
@@ -432,6 +435,13 @@ export default function ExchangePage() {
 
         {/* Quick action buttons */}
         <div className="flex items-center gap-1 shrink-0">
+          {/* Price alerts */}
+          <PriceAlerts
+            pair={selectedPair}
+            currentPrice={p?.price}
+            compact
+          />
+
           {/* Sound toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}

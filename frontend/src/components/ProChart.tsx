@@ -37,6 +37,8 @@ export interface ChartIndicators {
   bollinger: boolean;
   rsi: boolean;
   macd: boolean;
+  vwap: boolean;
+  stochastic: boolean;
   volume: boolean;
 }
 
@@ -88,10 +90,17 @@ const COLORS = {
   bollingerLower: "rgba(59,130,246,0.5)",
   bollingerFill: "rgba(59,130,246,0.05)",
   bollingerMid: "rgba(59,130,246,0.3)",
+  vwap: "#ec4899",
+  vwapFill: "rgba(236,72,153,0.08)",
   rsiLine: "#06b6d4",
   rsiOverbought: "rgba(246,70,93,0.4)",
   rsiOversold: "rgba(0,192,135,0.4)",
   rsiMid: "rgba(255,255,255,0.15)",
+  stochK: "#a855f7",
+  stochD: "#f0b90b",
+  stochOverbought: "rgba(246,70,93,0.4)",
+  stochOversold: "rgba(0,192,135,0.4)",
+  stochMid: "rgba(255,255,255,0.15)",
   macdLine: "#3b82f6",
   macdSignal: "#f97316",
   macdHistUp: "rgba(0,192,135,0.5)",
@@ -311,6 +320,82 @@ function niceScale(min: number, max: number, ticks: number): number[] {
   return values;
 }
 
+/* VWAP: cumulative (typical_price * volume) / cumulative volume.
+   Typical price = (high + low + close) / 3.
+   Standard convention: reset daily; here we compute session VWAP for visible window. */
+function computeVWAP(candles: Candle[]): (number | null)[] {
+  const result: (number | null)[] = [];
+  let cumPV = 0;
+  let cumV = 0;
+  let currentDay: number | null = null;
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const day = Math.floor(c.time / 86400); // unix day
+    if (currentDay === null || day !== currentDay) {
+      // Reset on new day
+      cumPV = 0;
+      cumV = 0;
+      currentDay = day;
+    }
+    const typical = (c.high + c.low + c.close) / 3;
+    cumPV += typical * c.volume;
+    cumV += c.volume;
+    if (cumV > 0) {
+      result.push(cumPV / cumV);
+    } else {
+      result.push(null);
+    }
+  }
+  return result;
+}
+
+/* Stochastic Oscillator: %K = (close - lowest_low(n)) / (highest_high(n) - lowest_low(n)) * 100
+   %D = SMA(3) of %K. Default period: 14,3,3. */
+function computeStochastic(
+  candles: Candle[],
+  kPeriod: number = 14,
+  dPeriod: number = 3
+): { k: (number | null)[]; d: (number | null)[] } {
+  const k: (number | null)[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    if (i < kPeriod - 1) {
+      k.push(null);
+      continue;
+    }
+    let lowestLow = Infinity;
+    let highestHigh = -Infinity;
+    for (let j = i - kPeriod + 1; j <= i; j++) {
+      if (candles[j].low < lowestLow) lowestLow = candles[j].low;
+      if (candles[j].high > highestHigh) highestHigh = candles[j].high;
+    }
+    const range = highestHigh - lowestLow;
+    if (range === 0) {
+      k.push(50);
+    } else {
+      k.push(((candles[i].close - lowestLow) / range) * 100);
+    }
+  }
+  // %D = SMA(dPeriod) of %K
+  const d: (number | null)[] = [];
+  for (let i = 0; i < k.length; i++) {
+    if (i < dPeriod - 1 || k[i] == null) {
+      d.push(null);
+      continue;
+    }
+    let sum = 0;
+    let valid = true;
+    for (let j = i - dPeriod + 1; j <= i; j++) {
+      if (k[j] == null) {
+        valid = false;
+        break;
+      }
+      sum += k[j]!;
+    }
+    d.push(valid ? sum / dPeriod : null);
+  }
+  return { k, d };
+}
+
 /* ═══════════════════════════════════════════
    ProChart Component
    ═══════════════════════════════════════════ */
@@ -321,6 +406,8 @@ const DEFAULT_INDICATORS: ChartIndicators = {
   bollinger: false,
   rsi: false,
   macd: false,
+  vwap: false,
+  stochastic: false,
   volume: true,
 };
 
@@ -368,11 +455,16 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         upper: [] as (number | null)[],
         lower: [] as (number | null)[],
       },
+      vwap: [] as (number | null)[],
       rsi: [] as (number | null)[],
       macd: {
         macd: [] as (number | null)[],
         signal: [] as (number | null)[],
         hist: [] as (number | null)[],
+      },
+      stoch: {
+        k: [] as (number | null)[],
+        d: [] as (number | null)[],
       },
     });
 
@@ -403,8 +495,10 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       v.sma20 = computeSMA(arr, 20);
       v.ema50 = computeEMA(arr, 50);
       v.bollinger = computeBollinger(arr, 20, 2);
+      v.vwap = computeVWAP(arr);
       v.rsi = computeRSI(arr, 14);
       v.macd = computeMACD(arr);
+      v.stoch = computeStochastic(arr, 14, 3);
     }, []);
 
     /* Keep candles ref in sync */
@@ -494,7 +588,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
     /* Calculate subchart layout */
     function getLayout(h: number) {
       const inds = indicatorsRef.current;
-      const subCount = (inds.rsi ? 1 : 0) + (inds.macd ? 1 : 0);
+      const subCount = (inds.rsi ? 1 : 0) + (inds.macd ? 1 : 0) + (inds.stochastic ? 1 : 0);
       const subH = subCount > 0 ? SUBCHART_HEIGHT : 0;
       const totalSubH = subCount * subH + (subCount > 0 ? subCount * SUBCHART_GAP : 0);
       const mainH = h - CHART_PADDING.top - CHART_PADDING.bottom - totalSubH;
@@ -504,7 +598,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       const volT = mainBot - volH;
       const priceH = mainH - volH;
 
-      const subcharts: { top: number; bottom: number; height: number; type: "rsi" | "macd" }[] = [];
+      const subcharts: { top: number; bottom: number; height: number; type: "rsi" | "macd" | "stoch" }[] = [];
       let curY = mainBot + SUBCHART_GAP;
       if (inds.rsi) {
         subcharts.push({ top: curY, bottom: curY + subH, height: subH, type: "rsi" });
@@ -512,6 +606,10 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       }
       if (inds.macd) {
         subcharts.push({ top: curY, bottom: curY + subH, height: subH, type: "macd" });
+        curY += subH + SUBCHART_GAP;
+      }
+      if (inds.stochastic) {
+        subcharts.push({ top: curY, bottom: curY + subH, height: subH, type: "stoch" });
       }
       return { mainTop, mainBot, mainH, priceH, volT, volH, subcharts };
     }
@@ -578,10 +676,11 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         if (c.high > maxPrice) maxPrice = c.high;
         if (c.volume > maxVol) maxVol = c.volume;
       }
-      /* Include MA / Bollinger values in range */
+      /* Include MA / Bollinger / VWAP values in range */
       const smaArr = v.sma20;
       const emaArr = v.ema50;
       const boll = v.bollinger;
+      const vwapArr = v.vwap;
       for (let i = startIdx; i < endIdx; i++) {
         if (inds.sma20 && smaArr[i] != null) {
           if (smaArr[i]! < minPrice) minPrice = smaArr[i]!;
@@ -600,6 +699,10 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
             if (boll.lower[i]! < minPrice) minPrice = boll.lower[i]!;
             if (boll.lower[i]! > maxPrice) maxPrice = boll.lower[i]!;
           }
+        }
+        if (inds.vwap && vwapArr[i] != null) {
+          if (vwapArr[i]! < minPrice) minPrice = vwapArr[i]!;
+          if (vwapArr[i]! > maxPrice) maxPrice = vwapArr[i]!;
         }
       }
 
@@ -886,6 +989,39 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       if (inds.sma20 && !inds.bollinger) drawMA(smaArr, COLORS.sma20);
       if (inds.ema50) drawMA(emaArr, COLORS.ema50);
 
+      /* ──── VWAP (Volume Weighted Average Price) ──── */
+      if (inds.vwap) {
+        ctx.beginPath();
+        ctx.strokeStyle = COLORS.vwap;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 3]);
+        let started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          if (vwapArr[i] == null) continue;
+          const x = idxToX(i);
+          const y = priceToY(vwapArr[i]!);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // VWAP value label on the right
+        const lastVwap = vwapArr[arr.length - 1];
+        if (lastVwap != null) {
+          const y = priceToY(lastVwap);
+          ctx.fillStyle = COLORS.vwap;
+          roundRect(ctx, chartR, y - 9, 50, 18, 3);
+          ctx.fill();
+          ctx.fillStyle = "#0a0e17";
+          ctx.font = "bold 10px system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(lastVwap.toFixed(2), chartR + 25, y + 3);
+        }
+      }
+
       /* ──── Current Price Line ──── */
       if (arr.length > 0) {
         const lastCandle = arr[arr.length - 1];
@@ -1018,6 +1154,12 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         ctx.fillText("BOLL(20,2)", legendX + 16, legendY);
         legendX += 80;
       }
+      if (inds.vwap) {
+        ctx.fillStyle = COLORS.vwap;
+        ctx.fillRect(legendX, legendY - 7, 12, 2);
+        ctx.fillText("VWAP", legendX + 16, legendY);
+        legendX += 60;
+      }
 
       /* Border around chart area */
       ctx.strokeStyle = "rgba(255,255,255,0.06)";
@@ -1025,13 +1167,15 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       ctx.strokeRect(chartL, chartT, chartW, chartB - chartT);
 
       /* ═══════════════════════════════════════════
-         Subcharts: RSI and MACD
+         Subcharts: RSI, MACD, Stochastic
          ═══════════════════════════════════════════ */
       for (const sub of layout.subcharts) {
         if (sub.type === "rsi") {
           drawRSISubchart(ctx, arr, v.rsi, startIdx, endIdx, idxToX, sub, chartL, chartR, v.crosshair);
         } else if (sub.type === "macd") {
           drawMACDSubchart(ctx, arr, v.macd, startIdx, endIdx, idxToX, sub, chartL, chartR, v.crosshair);
+        } else if (sub.type === "stoch") {
+          drawStochSubchart(ctx, arr, v.stoch, startIdx, endIdx, idxToX, sub, chartL, chartR, v.crosshair);
         }
       }
 
@@ -1283,6 +1427,137 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         ctx.font = "bold 10px system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(lastMacd.toFixed(4), chartR + 25, y + 3);
+      }
+
+      // Crosshair line for subchart
+      if (crosshair.active && crosshair.x >= chartL && crosshair.x <= chartR) {
+        ctx.beginPath();
+        ctx.strokeStyle = COLORS.crosshair;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.moveTo(crosshair.x, sT);
+        ctx.lineTo(crosshair.x, sB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Border
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(chartL, sT, chartW, sH);
+    }
+
+    /* ──── Stochastic Subchart ──── */
+    function drawStochSubchart(
+      ctx: CanvasRenderingContext2D,
+      arr: Candle[],
+      stoch: { k: (number | null)[]; d: (number | null)[] },
+      startIdx: number,
+      endIdx: number,
+      idxToX: (i: number) => number,
+      sub: { top: number; bottom: number; height: number },
+      chartL: number,
+      chartR: number,
+      crosshair: { x: number; y: number; active: boolean }
+    ) {
+      const sT = sub.top;
+      const sB = sub.bottom;
+      const sH = sub.height;
+      const chartW = chartR - chartL;
+
+      // Background
+      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.fillRect(chartL, sT, chartW, sH);
+
+      // Label
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("Stoch(14,3,3)", chartL + 6, sT + 12);
+
+      // Range is fixed 0-100
+      const stochMin = 0;
+      const stochMax = 100;
+      const stochToY = (val: number) =>
+        sT + ((stochMax - val) / (stochMax - stochMin)) * sH;
+
+      // Overbought (80) / oversold (20) zones
+      const y80 = stochToY(80);
+      const y20 = stochToY(20);
+      const y50 = stochToY(50);
+
+      ctx.fillStyle = "rgba(246,70,93,0.06)";
+      ctx.fillRect(chartL, sT, chartW, y80 - sT);
+      ctx.fillStyle = "rgba(0,192,135,0.06)";
+      ctx.fillRect(chartL, y20, chartW, sB - y20);
+
+      ctx.strokeStyle = COLORS.stochOverbought;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(chartL, y80);
+      ctx.lineTo(chartR, y80);
+      ctx.stroke();
+
+      ctx.strokeStyle = COLORS.stochOversold;
+      ctx.beginPath();
+      ctx.moveTo(chartL, y20);
+      ctx.lineTo(chartR, y20);
+      ctx.stroke();
+
+      ctx.strokeStyle = COLORS.stochMid;
+      ctx.beginPath();
+      ctx.moveTo(chartL, y50);
+      ctx.lineTo(chartR, y50);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Reference labels
+      ctx.fillStyle = "rgba(255,255,255,0.4)";
+      ctx.font = "9px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("80", chartR + 4, y80 + 3);
+      ctx.fillText("20", chartR + 4, y20 + 3);
+
+      // %D line (slower, drawn first)
+      ctx.beginPath();
+      ctx.strokeStyle = COLORS.stochD;
+      ctx.lineWidth = 1.5;
+      let started = false;
+      for (let i = startIdx; i < endIdx; i++) {
+        if (stoch.d[i] == null) continue;
+        const x = idxToX(i);
+        const y = stochToY(stoch.d[i]!);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // %K line (faster)
+      ctx.beginPath();
+      ctx.strokeStyle = COLORS.stochK;
+      ctx.lineWidth = 1.5;
+      started = false;
+      for (let i = startIdx; i < endIdx; i++) {
+        if (stoch.k[i] == null) continue;
+        const x = idxToX(i);
+        const y = stochToY(stoch.k[i]!);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Current %K value label
+      const lastK = stoch.k[arr.length - 1];
+      if (lastK != null) {
+        const y = stochToY(lastK);
+        ctx.fillStyle = COLORS.stochK;
+        roundRect(ctx, chartR, y - 9, 40, 18, 3);
+        ctx.fill();
+        ctx.fillStyle = "#0a0e17";
+        ctx.font = "bold 10px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(lastK.toFixed(2), chartR + 20, y + 3);
       }
 
       // Crosshair line for subchart
