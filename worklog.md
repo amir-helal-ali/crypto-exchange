@@ -157,3 +157,43 @@ Stage Summary:
 - Drawing tools: 6 types (trendline, horizontal, vertical, fibonacci retracement, rectangle, text), 7-color palette, eraser, clear-all
 - Drawings persist per-pair in localStorage
 - Exchange page now matches Binance/Bybit feature parity for charting: live candles, SMA/EMA/Bollinger overlays, RSI/MACD subcharts, 3 chart types, full drawing tools
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Add VWAP + Stochastic indicators, Price Alerts system with browser notifications, and Order Book heatmap mode
+
+Work Log:
+- Added VWAP and Stochastic to ChartIndicators interface (in ChartToolbar.tsx and ProChart.tsx)
+- Added indicator chips for VWAP (#ec4899) and STOCH (#a855f7) in ChartToolbar
+- Implemented VWAP calculation: cumulative (typical_price * volume) / cumulative_volume, resets daily
+- Implemented Stochastic calculation: %K = (close - lowest_low(14)) / (highest_high(14) - lowest_low(14)) * 100, %D = SMA(3) of %K
+- Updated getLayout() in ProChart to support 3 possible subcharts (RSI, MACD, Stochastic)
+- Added VWAP rendering: dashed line on main chart with right-side label
+- Added Stochastic subchart: 0-100 range, 80/20 overbought/oversold zones with shaded backgrounds, %K and %D lines, current value label
+- Updated MA legend to include VWAP entry
+- Updated price range calculation to include VWAP values
+- Created PriceAlerts.tsx (~470 lines):
+  * Compact mode (icon button with popover) for inline header use
+  * Full panel mode for sidebar use
+  * Browser notification permission request flow
+  * Web Audio API alert sound (3-tone rising triad C5→E5→G5)
+  * Add alert form with above/below condition toggle and price input
+  * Alerts list with toggle active, delete, and clear-triggered actions
+  * Cross-trigger detection: fires only on actual price crossing, not on initial load
+  * localStorage persistence (exchange_price_alerts key)
+- Created new OrderBookPanel heatmap mode:
+  * Toggle button (Flame/List icons) in header
+  * Heatmap shows bar width and color intensity based on individual qty (not cumulative)
+  * Makes order walls visually obvious
+  * Color intensity: rgba(red/green, 0.1 + intensity * 0.5)
+- Integrated PriceAlerts into exchange page header (compact mode, next to sound toggle)
+- TypeScript check passed
+- Production build: 24 pages, 0 errors, /dashboard/exchange bundle 30.6kB (was 27.3kB)
+
+Stage Summary:
+- ProChart upgraded to support 7 indicators: SMA20, EMA50, Bollinger, VWAP, RSI, MACD, Stochastic
+- 2 new files: PriceAlerts.tsx (alerts system), updated OrderBookPanel.tsx (heatmap mode)
+- Price Alerts: per-pair alerts with browser notifications + sound, persisted to localStorage, fires on actual price crossing
+- Order Book heatmap: visual mode that highlights order walls through color intensity
+- Trading page now has feature parity with Binance/Bybit for: charting (7 indicators + 3 chart types + 6 drawing tools), order book (depth + heatmap + precision grouping), alerts (price + sound + browser notifications), and live data (3 WebSocket streams)
