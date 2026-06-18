@@ -23,6 +23,7 @@ import QuickPairSearch from "@/components/exchange/QuickPairSearch";
 import AssetInfoPanel from "@/components/exchange/AssetInfoPanel";
 import MobileTabBar, { MobileTab } from "@/components/exchange/MobileTabBar";
 import PnLCalculator from "@/components/exchange/PnLCalculator";
+import AdvancedOrders from "@/components/exchange/AdvancedOrders";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
@@ -528,6 +529,29 @@ export default function ExchangePage() {
               )?.taker_fee ?? 0.001
             }
             currentPrice={p?.price}
+          />
+
+          {/* Advanced orders (OCO / Trailing Stop) */}
+          <AdvancedOrders
+            pair={selectedPair}
+            base={base}
+            ticker={p}
+            currentPrice={p?.price}
+            side={side}
+            onPlaceOCO={(params) => {
+              toast(
+                `أمر OCO: ${params.quantity} ${base} • وقف: ${params.stopPrice} • ربح: ${params.takeProfitPrice}`,
+                { icon: "🎯" }
+              );
+              getSoundManager().play("order_placed");
+            }}
+            onPlaceTrailingStop={(params) => {
+              toast(
+                `إيقاف متتبع: ${params.quantity} ${base} • تتبع: ${params.trailPercent}%`,
+                { icon: "📈" }
+              );
+              getSoundManager().play("order_placed");
+            }}
           />
 
           {/* Price alerts */}
