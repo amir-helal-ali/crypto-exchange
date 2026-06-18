@@ -118,3 +118,42 @@ Stage Summary:
 - Real-time: User WebSocket for notifications + Binance WebSocket for market data
 - Build: 0 errors, 24 pages generated successfully
 - All changes pushed to GitHub
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Complete professional trading overhaul (continuation): implement Bollinger Bands, RSI, MACD indicators + Line/Area chart types + full drawing tools system
+
+Work Log:
+- Identified critical gap: ChartToolbar UI promised Bollinger/RSI/MACD/Line/Area but ProChart didn't implement them
+- Upgraded ProChart.tsx (~1100 lines) with:
+  * Bollinger Bands calculation (SMA20 ± 2σ) with filled band rendering
+  * RSI (14-period Wilder's smoothing) with subchart at bottom (30/50/70 reference lines + overbought/oversold zones)
+  * MACD (12/26/9) with subchart showing histogram + MACD line + signal line
+  * Line chart type (close prices connected)
+  * Area chart type (filled gradient below close line)
+  * New props: chartType, indicators passed from page.tsx
+  * Dynamic subchart layout: main chart + optional RSI + optional MACD subcharts
+  * Crosshair vertical line extends through all subcharts
+- Created drawings.ts (~440 lines): drawing types, rendering functions for 6 types (trendline, horizontal, vertical, fib, rectangle, text), hit-testing for eraser
+- Created DrawingToolbar.tsx: tool selector (cursor/trendline/horizontal/vertical/fib/rectangle/text/eraser), 7-color palette, clear-all button with count
+- Modified ProChart.tsx to:
+  * Accept activeTool, drawings, onDrawingsChange, drawingColor props
+  * Store CoordConverter in ref during render for mouse handlers
+  * Implement drawing mode logic: single-click tools (horizontal/vertical/text) vs two-click tools (trendline/fib/rectangle) vs eraser
+  * Render committed drawings + draft drawing (semi-transparent) on top of chart
+  * Cancel draft on mouse leave
+- Updated page.tsx to:
+  * Manage drawing state (activeTool, drawings, drawingColor)
+  * Load/save drawings to localStorage per pair (exchange_drawings_${pair})
+  * Render DrawingToolbar between ChartToolbar and ProChart
+  * Pass chartType, indicators, and drawing props to ProChart
+- TypeScript check passed (no errors)
+- Production build passed: 24 pages, 0 errors, /dashboard/exchange bundle grew from 24.2kB to 27.3kB
+
+Stage Summary:
+- ProChart upgraded from 756 to ~1100 lines with 5 new features (Bollinger, RSI, MACD, Line, Area)
+- 2 new files: drawings.ts (drawing system), DrawingToolbar.tsx (UI)
+- Drawing tools: 6 types (trendline, horizontal, vertical, fibonacci retracement, rectangle, text), 7-color palette, eraser, clear-all
+- Drawings persist per-pair in localStorage
+- Exchange page now matches Binance/Bybit feature parity for charting: live candles, SMA/EMA/Bollinger overlays, RSI/MACD subcharts, 3 chart types, full drawing tools
