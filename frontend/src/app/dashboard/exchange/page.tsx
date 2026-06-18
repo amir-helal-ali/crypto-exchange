@@ -9,11 +9,15 @@ import ProChart, { ProChartHandle, Candle } from "@/components/ProChart";
 import TickerTape from "@/components/exchange/TickerTape";
 import MarketList from "@/components/exchange/MarketList";
 import PairHeader from "@/components/exchange/PairHeader";
-import ChartToolbar from "@/components/exchange/ChartToolbar";
+import ChartToolbar, {
+  ChartIndicators,
+} from "@/components/exchange/ChartToolbar";
 import OrderBookPanel from "@/components/exchange/OrderBookPanel";
+import DepthChart from "@/components/exchange/DepthChart";
 import TradeForm from "@/components/exchange/TradeForm";
 import TradesFeed from "@/components/exchange/TradesFeed";
 import OrdersPanel from "@/components/exchange/OrdersPanel";
+import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 
 import type {
   TickerData,
@@ -51,6 +55,17 @@ export default function ExchangePage() {
     "candles"
   );
   const [marketListOpen, setMarketListOpen] = useState(true);
+  const [chartFullscreen, setChartFullscreen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [indicators, setIndicators] = useState<ChartIndicators>({
+    sma20: true,
+    ema50: true,
+    bollinger: false,
+    rsi: false,
+    macd: false,
+    volume: true,
+  });
+  const [showDepthChart, setShowDepthChart] = useState(true);
 
   const chartRef = useRef<ProChartHandle>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -285,13 +300,21 @@ export default function ExchangePage() {
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل تنفيذ الأمر");
+        getSoundManager().play("error");
         return;
       }
       toast.success(data.message || "تم تنفيذ الأمر بنجاح");
+      // Different sound: filled vs pending
+      if (data.data?.status === "FILLED" || data.data?.status === "filled") {
+        getSoundManager().play("order_filled");
+      } else {
+        getSoundManager().play("order_placed");
+      }
       fetchOrders();
       fetchWallets();
     } catch {
       toast.error("حدث خطأ في الاتصال");
+      getSoundManager().play("error");
     } finally {
       setLoading(false);
     }
@@ -303,15 +326,31 @@ export default function ExchangePage() {
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "فشل إلغاء الأمر");
+        getSoundManager().play("error");
         return;
       }
       toast.success(data.message || "تم إلغاء الأمر بنجاح");
+      getSoundManager().play("order_cancelled");
       fetchOrders();
       fetchWallets();
     } catch {
       toast.error("حدث خطأ في الاتصال");
     }
   };
+
+  /* ─────── Keyboard shortcuts ─────── */
+  useKeyboardShortcuts({
+    onToggleSide: () => setSide((s) => (s === "BUY" ? "SELL" : "BUY")),
+    onSetBuy: () => setSide("BUY"),
+    onSetSell: () => setSide("SELL"),
+    onSetMarket: () => setOrderType("MARKET"),
+    onSetLimit: () => setOrderType("LIMIT"),
+  });
+
+  /* ─────── Sync sound enabled state ─────── */
+  useEffect(() => {
+    getSoundManager().setEnabled(soundEnabled);
+  }, [soundEnabled]);
 
   /* ─────── Crosshair handler ─────── */
   const handleCrosshairMove = useCallback(
@@ -347,14 +386,118 @@ export default function ExchangePage() {
         selectedPair={selectedPair}
       />
 
-      {/* ─────── Pair Header (price + 24h stats) ─────── */}
-      <PairHeader
-        selectedPair={selectedPair}
-        prices={prices}
-        prevPrice={prevPrice}
-        onSelectPair={setSelectedPair}
-        crosshairData={crosshairData}
-      />
+      {/* ─────── Pair Header (price + 24h stats + quick actions) ─────── */}
+      <div className="flex items-center gap-1.5">
+        <div className="flex-1 min-w-0">
+          <PairHeader
+            selectedPair={selectedPair}
+            prices={prices}
+            prevPrice={prevPrice}
+            onSelectPair={setSelectedPair}
+            crosshairData={crosshairData}
+          />
+        </div>
+
+        {/* Quick action buttons */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Sound toggle */}
+          <button
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className={`glass-panel rounded-lg p-2 transition-all ${
+              soundEnabled
+                ? "text-primary hover:bg-primary/10"
+                : "text-muted-foreground hover:bg-muted/30"
+            }`}
+            title={soundEnabled ? "كتم الصوت" : "تشغيل الصوت"}
+          >
+            {soundEnabled ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </svg>
+            )}
+          </button>
+
+          {/* Market list toggle */}
+          <button
+            onClick={() => setMarketListOpen(!marketListOpen)}
+            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+            title={marketListOpen ? "إخفاء قائمة الأسواق" : "إظهار قائمة الأسواق"}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="8" y1="6" x2="21" y2="6" />
+              <line x1="8" y1="12" x2="21" y2="12" />
+              <line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" />
+              <line x1="3" y1="12" x2="3.01" y2="12" />
+              <line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+          </button>
+
+          {/* Depth chart toggle */}
+          <button
+            onClick={() => setShowDepthChart(!showDepthChart)}
+            className={`glass-panel rounded-lg p-2 transition-all ${
+              showDepthChart
+                ? "text-primary hover:bg-primary/10"
+                : "text-muted-foreground hover:bg-muted/30"
+            }`}
+            title={showDepthChart ? "إخفاء منحنى العمق" : "إظهار منحنى العمق"}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 3v18h18" />
+              <path d="M7 16l4-8 4 4 5-7" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
       {/* ─────── Main 3-column layout ─────── */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-1.5 min-h-0">
@@ -373,15 +516,23 @@ export default function ExchangePage() {
         <div
           className={`flex flex-col gap-1.5 min-h-0 ${
             marketListOpen ? "lg:col-span-6 xl:col-span-7" : "lg:col-span-8 xl:col-span-9"
-          }`}
+          } ${chartFullscreen ? "fixed inset-0 z-50 bg-background/95 backdrop-blur-lg p-2" : ""}`}
         >
           {/* Chart Panel */}
-          <div className="glass-panel rounded-xl overflow-hidden flex-1 flex flex-col min-h-0">
+          <div
+            className={`glass-panel rounded-xl overflow-hidden flex flex-col min-h-0 ${
+              chartFullscreen ? "h-full" : "flex-1"
+            }`}
+          >
             <ChartToolbar
               timeframe={timeframe}
               onTimeframeChange={setTimeframe}
               chartType={chartType}
               onChartTypeChange={setChartType}
+              indicators={indicators}
+              onIndicatorsChange={setIndicators}
+              isFullscreen={chartFullscreen}
+              onToggleFullscreen={() => setChartFullscreen((v) => !v)}
             />
             <div className="flex-1 min-h-0 relative">
               <ProChart
@@ -394,64 +545,100 @@ export default function ExchangePage() {
           </div>
 
           {/* Bottom Orders/History/Balance Panel */}
-          <div className="glass-panel rounded-xl overflow-hidden shrink-0" style={{ height: "220px" }}>
-            <OrdersPanel
-              orders={orders}
-              wallets={wallets}
-              onCancel={handleCancel}
-              onRefresh={() => {
-                fetchOrders();
-                fetchWallets();
-              }}
-              base={base}
-            />
-          </div>
+          {!chartFullscreen && (
+            <div className="glass-panel rounded-xl overflow-hidden shrink-0" style={{ height: "220px" }}>
+              <OrdersPanel
+                orders={orders}
+                wallets={wallets}
+                onCancel={handleCancel}
+                onRefresh={() => {
+                  fetchOrders();
+                  fetchWallets();
+                }}
+                base={base}
+              />
+            </div>
+          )}
         </div>
 
-        {/* ─── RIGHT: Order Book + Trade Form + Trades Feed ─── */}
-        <div
-          className={`flex flex-col gap-1.5 min-h-0 ${
-            marketListOpen ? "lg:col-span-4 xl:col-span-3" : "lg:col-span-4 xl:col-span-3"
-          }`}
-        >
-          {/* Order Book */}
-          <div className="flex-1 min-h-0" style={{ flex: "1 1 0" }}>
-            <OrderBookPanel
-              bids={orderBook.bids}
-              asks={orderBook.asks}
+        {/* ─── RIGHT: Order Book + Depth Chart + Trade Form + Trades Feed ─── */}
+        {!chartFullscreen && (
+          <div
+            className={`flex flex-col gap-1.5 min-h-0 ${
+              marketListOpen ? "lg:col-span-4 xl:col-span-3" : "lg:col-span-4 xl:col-span-3"
+            }`}
+          >
+            {/* Order Book + Depth Chart side by side */}
+            <div className="flex gap-1.5 min-h-0" style={{ flex: "1 1 0" }}>
+              {/* Order book (wider) */}
+              <div className="flex-1 min-w-0">
+                <OrderBookPanel
+                  bids={orderBook.bids}
+                  asks={orderBook.asks}
+                  ticker={p}
+                  prevPrice={prevPrice}
+                  base={base}
+                  onPriceClick={handlePriceClick}
+                  maxRows={10}
+                />
+              </div>
+              {/* Depth chart (narrower) */}
+              {showDepthChart && (
+                <div className="w-1/3 min-w-0 hidden md:block">
+                  <DepthChart
+                    bids={orderBook.bids}
+                    asks={orderBook.asks}
+                    currentPrice={p?.price}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Trade Form */}
+            <TradeForm
+              base={base}
+              side={side}
+              orderType={orderType}
+              onSideChange={setSide}
+              onTypeChange={setOrderType}
+              onSubmit={handleSubmit}
+              loading={loading}
+              baseWallet={baseWallet}
+              quoteWallet={quoteWallet}
               ticker={p}
-              prevPrice={prevPrice}
-              base={base}
-              onPriceClick={handlePriceClick}
-              maxRows={10}
+              feeSchedules={feeSchedules}
             />
-          </div>
 
-          {/* Trade Form */}
-          <TradeForm
-            base={base}
-            side={side}
-            orderType={orderType}
-            onSideChange={setSide}
-            onTypeChange={setOrderType}
-            onSubmit={handleSubmit}
-            loading={loading}
-            baseWallet={baseWallet}
-            quoteWallet={quoteWallet}
-            ticker={p}
-            feeSchedules={feeSchedules}
-          />
-
-          {/* Trades Feed */}
-          <div className="shrink-0" style={{ height: "180px" }}>
-            <TradesFeed
-              trades={marketTrades}
-              base={base}
-              onPriceClick={handlePriceClick}
-              maxRows={10}
-            />
+            {/* Trades Feed */}
+            <div className="shrink-0" style={{ height: "180px" }}>
+              <TradesFeed
+                trades={marketTrades}
+                base={base}
+                onPriceClick={handlePriceClick}
+                maxRows={10}
+              />
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* Keyboard shortcuts hint */}
+      <div className="hidden md:flex items-center justify-center gap-3 text-[9px] text-muted-foreground/60 py-0.5 shrink-0">
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+B</kbd> شراء
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+S</kbd> بيع
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+M</kbd> سوقي
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+L</kbd> محدد
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Space</kbd> تبديل الشراء/البيع
+        </span>
       </div>
     </div>
   );

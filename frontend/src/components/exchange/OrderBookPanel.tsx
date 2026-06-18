@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { BookOpen, TrendingUp, TrendingDown } from "lucide-react";
 import {
   formatPrice,
@@ -19,6 +19,33 @@ interface OrderBookPanelProps {
   maxRows?: number;
 }
 
+/* Precision presets for grouping prices */
+const PRECISION_OPTIONS = [
+  { label: "0.01", value: 0.01 },
+  { label: "0.1", value: 0.1 },
+  { label: "1", value: 1 },
+  { label: "10", value: 10 },
+  { label: "100", value: 100 },
+];
+
+/* Group raw orders by price bucket (e.g. 0.01, 0.1, 1, 10, 100) */
+function groupByPrecision(
+  orders: [string, string][],
+  step: number
+): [string, string][] {
+  const buckets = new Map<number, number>();
+  for (const [pStr, qStr] of orders) {
+    const p = parseFloat(pStr);
+    const q = parseFloat(qStr);
+    if (!isFinite(p) || !isFinite(q) || q <= 0) continue;
+    const bucket = Math.floor(p / step) * step;
+    buckets.set(bucket, (buckets.get(bucket) || 0) + q);
+  }
+  const result: [string, string][] = Array.from(buckets.entries())
+    .map(([price, qty]) => [price.toString(), qty.toString()] as [string, string]);
+  return result;
+}
+
 /**
  * Professional order book with:
  * - Cumulative depth bars (both sides)
@@ -35,10 +62,23 @@ export default function OrderBookPanel({
   onPriceClick,
   maxRows = 11,
 }: OrderBookPanelProps) {
+  const [precision, setPrecision] = useState<number | null>(null);
+
+  /* Group orders by precision (aggregate qty at same price bucket) */
+  const groupedBids = useMemo(() => {
+    if (precision === null) return bids;
+    return groupByPrecision(bids, precision);
+  }, [bids, precision]);
+
+  const groupedAsks = useMemo(() => {
+    if (precision === null) return asks;
+    return groupByPrecision(asks, precision);
+  }, [asks, precision]);
+
   /* Build processed entries with cumulative depth */
   const { askEntries, bidEntries, maxCumulative } = useMemo(() => {
-    const asksRaw = asks.slice(0, maxRows);
-    const bidsRaw = bids.slice(0, maxRows);
+    const asksRaw = groupedAsks.slice(0, maxRows);
+    const bidsRaw = groupedBids.slice(0, maxRows);
 
     let cumA = 0;
     const askEntries: OrderBookEntry[] = asksRaw.map((a) => {
@@ -50,7 +90,7 @@ export default function OrderBookPanel({
         qty,
         total: qty * price,
         cumulative: cumA,
-        depthPercent: 0, // set below
+        depthPercent: 0,
       };
     });
 
@@ -78,7 +118,7 @@ export default function OrderBookPanel({
     });
 
     return { askEntries, bidEntries, maxCumulative };
-  }, [bids, asks, maxRows]);
+  }, [groupedBids, groupedAsks, maxRows]);
 
   /* Spread calculations */
   const bestAsk = askEntries[0]?.price || 0;
@@ -164,7 +204,25 @@ export default function OrderBookPanel({
           <BookOpen className="h-3.5 w-3.5 text-primary" />
           <h3 className="font-bold text-[11px]">دفتر الأوامر</h3>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          {/* Precision selector */}
+          <select
+            value={precision ?? "auto"}
+            onChange={(e) =>
+              setPrecision(
+                e.target.value === "auto" ? null : parseFloat(e.target.value)
+              )
+            }
+            className="bg-muted/30 border border-border/30 rounded text-[9px] py-0.5 px-1 text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 cursor-pointer"
+            title="تجميع الأسعار"
+          >
+            <option value="auto">تلقائي</option>
+            {PRECISION_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
           <span className="text-[9px] text-muted-foreground">{base}/USDT</span>
           <div
             className={`flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded ${
