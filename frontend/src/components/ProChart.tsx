@@ -8,6 +8,15 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
+import {
+  Drawing,
+  DrawingTool,
+  drawDrawing,
+  hitTestDrawing,
+  genDrawingId,
+  CoordConverter,
+  Point,
+} from "@/components/exchange/drawings";
 
 /* ═══════════════════════════════════════════
    Types
@@ -22,6 +31,17 @@ export interface Candle {
   volume: number;
 }
 
+export interface ChartIndicators {
+  sma20: boolean;
+  ema50: boolean;
+  bollinger: boolean;
+  rsi: boolean;
+  macd: boolean;
+  volume: boolean;
+}
+
+export type ChartType = "candles" | "line" | "area";
+
 export interface ProChartProps {
   candles: Candle[];
   onCrosshairMove?: (data: {
@@ -31,6 +51,13 @@ export interface ProChartProps {
   } | null) => void;
   height?: number;
   className?: string;
+  chartType?: ChartType;
+  indicators?: ChartIndicators;
+  /* Drawing tools */
+  activeTool?: DrawingTool;
+  drawings?: Drawing[];
+  onDrawingsChange?: (drawings: Drawing[]) => void;
+  drawingColor?: string;
 }
 
 export interface ProChartHandle {
@@ -57,6 +84,20 @@ const COLORS = {
   downVolume: "rgba(246,70,93,0.25)",
   sma20: "#f0b90b",
   ema50: "#8b5cf6",
+  bollingerUpper: "rgba(59,130,246,0.5)",
+  bollingerLower: "rgba(59,130,246,0.5)",
+  bollingerFill: "rgba(59,130,246,0.05)",
+  bollingerMid: "rgba(59,130,246,0.3)",
+  rsiLine: "#06b6d4",
+  rsiOverbought: "rgba(246,70,93,0.4)",
+  rsiOversold: "rgba(0,192,135,0.4)",
+  rsiMid: "rgba(255,255,255,0.15)",
+  macdLine: "#3b82f6",
+  macdSignal: "#f97316",
+  macdHistUp: "rgba(0,192,135,0.5)",
+  macdHistDown: "rgba(246,70,93,0.5)",
+  lineChart: "#06b6d4",
+  areaChartFill: "rgba(6,182,212,0.15)",
   currentPriceUp: "#00c087",
   currentPriceDown: "#f6465d",
   currentPriceLabel: "#0a0e17",
@@ -65,11 +106,13 @@ const COLORS = {
 };
 
 const CHART_PADDING = { top: 16, right: 72, bottom: 28, left: 8 };
-const VOLUME_RATIO = 0.18;
 const MIN_CANDLE_WIDTH = 3;
 const MAX_CANDLE_WIDTH = 40;
 const DEFAULT_CANDLE_WIDTH = 9;
 const CANDLE_GAP = 2;
+const SUBCHART_HEIGHT = 90; // height of each subchart (RSI/MACD)
+const SUBCHART_GAP = 6;
+const VOLUME_RATIO = 0.18;
 
 /* ═══════════════════════════════════════════
    Utility Functions
@@ -81,13 +124,6 @@ function formatPrice(price: number): string {
   if (price >= 1) return price.toFixed(3);
   if (price >= 0.01) return price.toFixed(5);
   return price.toFixed(8);
-}
-
-function formatVolume(vol: number): string {
-  if (vol >= 1e9) return (vol / 1e9).toFixed(2) + "B";
-  if (vol >= 1e6) return (vol / 1e6).toFixed(2) + "M";
-  if (vol >= 1e3) return (vol / 1e3).toFixed(1) + "K";
-  return vol.toFixed(2);
 }
 
 function formatTime(unix: number, showDate: boolean): string {
@@ -136,6 +172,127 @@ function computeEMA(candles: Candle[], period: number): (number | null)[] {
   return result;
 }
 
+/* Bollinger Bands: middle = SMA(20), upper/lower = mid ± 2*stddev */
+function computeBollinger(
+  candles: Candle[],
+  period: number = 20,
+  mult: number = 2
+): { mid: (number | null)[]; upper: (number | null)[]; lower: (number | null)[] } {
+  const mid = computeSMA(candles, period);
+  const upper: (number | null)[] = [];
+  const lower: (number | null)[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    if (i < period - 1) {
+      upper.push(null);
+      lower.push(null);
+    } else {
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
+      const mean = sum / period;
+      let variance = 0;
+      for (let j = i - period + 1; j <= i; j++) {
+        const diff = candles[j].close - mean;
+        variance += diff * diff;
+      }
+      const std = Math.sqrt(variance / period);
+      upper.push(mean + mult * std);
+      lower.push(mean - mult * std);
+    }
+  }
+  return { mid, upper, lower };
+}
+
+/* RSI: 14-period, Wilder's smoothing */
+function computeRSI(candles: Candle[], period: number = 14): (number | null)[] {
+  const result: (number | null)[] = [];
+  if (candles.length < period + 1) {
+    return candles.map(() => null);
+  }
+  let avgGain = 0;
+  let avgLoss = 0;
+  // Initial averages
+  for (let i = 1; i <= period; i++) {
+    const diff = candles[i].close - candles[i - 1].close;
+    if (diff >= 0) avgGain += diff;
+    else avgLoss -= diff;
+  }
+  avgGain /= period;
+  avgLoss /= period;
+  for (let i = 0; i < candles.length; i++) {
+    if (i < period) {
+      result.push(null);
+    } else if (i === period) {
+      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+      result.push(100 - 100 / (1 + rs));
+    } else {
+      const diff = candles[i].close - candles[i - 1].close;
+      const gain = diff >= 0 ? diff : 0;
+      const loss = diff < 0 ? -diff : 0;
+      avgGain = (avgGain * (period - 1) + gain) / period;
+      avgLoss = (avgLoss * (period - 1) + loss) / period;
+      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+      result.push(100 - 100 / (1 + rs));
+    }
+  }
+  return result;
+}
+
+/* MACD: EMA(12) - EMA(26), signal = EMA(9) of MACD, hist = MACD - signal */
+function computeMACD(
+  candles: Candle[]
+): { macd: (number | null)[]; signal: (number | null)[]; hist: (number | null)[] } {
+  const ema12 = computeEMA(candles, 12);
+  const ema26 = computeEMA(candles, 26);
+  const macd: (number | null)[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    if (ema12[i] === null || ema26[i] === null) {
+      macd.push(null);
+    } else {
+      macd.push(ema12[i]! - ema26[i]!);
+    }
+  }
+  // Signal = EMA(9) of MACD values (only non-null portion)
+  const signal: (number | null)[] = [];
+  const period = 9;
+  const k = 2 / (period + 1);
+  let prevSignal: number | null = null;
+  let startIdx = -1;
+  for (let i = 0; i < macd.length; i++) {
+    if (macd[i] === null) {
+      signal.push(null);
+      continue;
+    }
+    startIdx = i;
+    break;
+  }
+  if (startIdx === -1) {
+    return { macd, signal, hist: macd.map(() => null) };
+  }
+  // SMA seed for first `period` MACD values
+  for (let i = 0; i < macd.length; i++) {
+    if (macd[i] === null) {
+      signal.push(null);
+      continue;
+    }
+    if (i < startIdx + period - 1) {
+      signal.push(null);
+    } else if (i === startIdx + period - 1) {
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) sum += macd[j]!;
+      prevSignal = sum / period;
+      signal.push(prevSignal);
+    } else {
+      prevSignal = macd[i]! * k + prevSignal! * (1 - k);
+      signal.push(prevSignal);
+    }
+  }
+  const hist: (number | null)[] = macd.map((m, i) => {
+    if (m === null || signal[i] === null) return null;
+    return m - signal[i]!;
+  });
+  return { macd, signal, hist };
+}
+
 function niceScale(min: number, max: number, ticks: number): number[] {
   const range = max - min;
   if (range === 0) return [min];
@@ -158,11 +315,41 @@ function niceScale(min: number, max: number, ticks: number): number[] {
    ProChart Component
    ═══════════════════════════════════════════ */
 
+const DEFAULT_INDICATORS: ChartIndicators = {
+  sma20: true,
+  ema50: true,
+  bollinger: false,
+  rsi: false,
+  macd: false,
+  volume: true,
+};
+
 const ProChart = forwardRef<ProChartHandle, ProChartProps>(
-  ({ candles, onCrosshairMove, height = 520, className = "" }, ref) => {
+  (
+    {
+      candles,
+      onCrosshairMove,
+      height = 520,
+      className = "",
+      chartType = "candles",
+      indicators = DEFAULT_INDICATORS,
+      activeTool = "cursor",
+      drawings = [],
+      onDrawingsChange,
+      drawingColor = "#f0b90b",
+    },
+    ref
+  ) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const candlesRef = useRef<Candle[]>(candles);
+    const indicatorsRef = useRef<ChartIndicators>(indicators);
+    const chartTypeRef = useRef<ChartType>(chartType);
+    const activeToolRef = useRef<DrawingTool>(activeTool);
+    const drawingsRef = useRef<Drawing[]>(drawings);
+    const drawingColorRef = useRef<string>(drawingColor);
+    const draftDrawingRef = useRef<Drawing | null>(null);
+    const convRef = useRef<CoordConverter | null>(null);
     const animFrameRef = useRef<number>(0);
     const [canvasSize, setCanvasSize] = useState({ w: 800, h: height });
 
@@ -176,13 +363,54 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       crosshair: { x: -1, y: -1, active: false },
       sma20: [] as (number | null)[],
       ema50: [] as (number | null)[],
+      bollinger: {
+        mid: [] as (number | null)[],
+        upper: [] as (number | null)[],
+        lower: [] as (number | null)[],
+      },
+      rsi: [] as (number | null)[],
+      macd: {
+        macd: [] as (number | null)[],
+        signal: [] as (number | null)[],
+        hist: [] as (number | null)[],
+      },
     });
+
+    /* Keep refs in sync */
+    useEffect(() => {
+      indicatorsRef.current = indicators;
+    }, [indicators]);
+    useEffect(() => {
+      chartTypeRef.current = chartType;
+      requestRender();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chartType]);
+    useEffect(() => {
+      activeToolRef.current = activeTool;
+    }, [activeTool]);
+    useEffect(() => {
+      drawingsRef.current = drawings;
+      requestRender();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [drawings]);
+    useEffect(() => {
+      drawingColorRef.current = drawingColor;
+    }, [drawingColor]);
+
+    /* Recompute indicators when candles change */
+    const recomputeIndicators = useCallback((arr: Candle[]) => {
+      const v = viewRef.current;
+      v.sma20 = computeSMA(arr, 20);
+      v.ema50 = computeEMA(arr, 50);
+      v.bollinger = computeBollinger(arr, 20, 2);
+      v.rsi = computeRSI(arr, 14);
+      v.macd = computeMACD(arr);
+    }, []);
 
     /* Keep candles ref in sync */
     useEffect(() => {
       candlesRef.current = candles;
-      viewRef.current.sma20 = computeSMA(candles, 20);
-      viewRef.current.ema50 = computeEMA(candles, 50);
+      recomputeIndicators(candles);
       /* Auto-fit: scroll to show latest candles */
       if (candles.length > 0) {
         const step = viewRef.current.candleWidth + CANDLE_GAP;
@@ -208,8 +436,6 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
           arr[arr.length - 1] = candle;
         } else {
           arr.push(candle);
-          viewRef.current.sma20 = computeSMA(arr, 20);
-          viewRef.current.ema50 = computeEMA(arr, 50);
           // auto-scroll to latest
           const totalW =
             arr.length * (viewRef.current.candleWidth + CANDLE_GAP);
@@ -220,12 +446,12 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
             viewRef.current.offsetX = totalW - chartW;
           }
         }
+        recomputeIndicators(arr);
         requestRender();
       },
       addCandle(candle: Candle) {
         candlesRef.current.push(candle);
-        viewRef.current.sma20 = computeSMA(candlesRef.current, 20);
-        viewRef.current.ema50 = computeEMA(candlesRef.current, 50);
+        recomputeIndicators(candlesRef.current);
         requestRender();
       },
     }));
@@ -242,7 +468,6 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       handleResize();
       window.addEventListener("resize", handleResize);
 
-      /* Use ResizeObserver for container-level resize detection */
       let observer: ResizeObserver | null = null;
       if (containerRef.current && typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(() => handleResize());
@@ -264,7 +489,32 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
 
     useEffect(() => {
       requestRender();
-    }, [canvasSize, requestRender]);
+    }, [canvasSize, requestRender, indicators, chartType]);
+
+    /* Calculate subchart layout */
+    function getLayout(h: number) {
+      const inds = indicatorsRef.current;
+      const subCount = (inds.rsi ? 1 : 0) + (inds.macd ? 1 : 0);
+      const subH = subCount > 0 ? SUBCHART_HEIGHT : 0;
+      const totalSubH = subCount * subH + (subCount > 0 ? subCount * SUBCHART_GAP : 0);
+      const mainH = h - CHART_PADDING.top - CHART_PADDING.bottom - totalSubH;
+      const mainTop = CHART_PADDING.top;
+      const mainBot = mainTop + mainH;
+      const volH = inds.volume ? mainH * VOLUME_RATIO : 0;
+      const volT = mainBot - volH;
+      const priceH = mainH - volH;
+
+      const subcharts: { top: number; bottom: number; height: number; type: "rsi" | "macd" }[] = [];
+      let curY = mainBot + SUBCHART_GAP;
+      if (inds.rsi) {
+        subcharts.push({ top: curY, bottom: curY + subH, height: subH, type: "rsi" });
+        curY += subH + SUBCHART_GAP;
+      }
+      if (inds.macd) {
+        subcharts.push({ top: curY, bottom: curY + subH, height: subH, type: "macd" });
+      }
+      return { mainTop, mainBot, mainH, priceH, volT, volH, subcharts };
+    }
 
     function render() {
       const canvas = canvasRef.current;
@@ -281,6 +531,8 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
 
       const arr = candlesRef.current;
       const v = viewRef.current;
+      const inds = indicatorsRef.current;
+      const cType = chartTypeRef.current;
 
       /* Clear */
       ctx.fillStyle = COLORS.bg;
@@ -294,24 +546,21 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         return;
       }
 
+      const layout = getLayout(h);
       const chartL = CHART_PADDING.left;
       const chartR = w - CHART_PADDING.right;
-      const chartT = CHART_PADDING.top;
-      const chartB = h - CHART_PADDING.bottom;
-      const priceH = (chartB - chartT) * (1 - VOLUME_RATIO);
-      const volT = chartT + priceH + 4;
-      const volH = (chartB - chartT) * VOLUME_RATIO - 4;
+      const chartT = layout.mainTop;
+      const chartB = layout.mainBot;
       const chartW = chartR - chartL;
+      const priceH = layout.priceH;
+      const volT = layout.volT;
+      const volH = layout.volH;
 
       const candleW = v.candleWidth;
       const step = candleW + CANDLE_GAP;
-      const totalCandlesW = arr.length * step;
 
       /* Determine visible range */
-      const startIdx = Math.max(
-        0,
-        Math.floor(v.offsetX / step)
-      );
+      const startIdx = Math.max(0, Math.floor(v.offsetX / step));
       const endIdx = Math.min(
         arr.length,
         Math.ceil((v.offsetX + chartW) / step) + 1
@@ -329,17 +578,28 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         if (c.high > maxPrice) maxPrice = c.high;
         if (c.volume > maxVol) maxVol = c.volume;
       }
-      /* Include MA values in range */
+      /* Include MA / Bollinger values in range */
       const smaArr = v.sma20;
       const emaArr = v.ema50;
+      const boll = v.bollinger;
       for (let i = startIdx; i < endIdx; i++) {
-        if (smaArr[i] !== null && smaArr[i] !== undefined) {
+        if (inds.sma20 && smaArr[i] != null) {
           if (smaArr[i]! < minPrice) minPrice = smaArr[i]!;
           if (smaArr[i]! > maxPrice) maxPrice = smaArr[i]!;
         }
-        if (emaArr[i] !== null && emaArr[i] !== undefined) {
+        if (inds.ema50 && emaArr[i] != null) {
           if (emaArr[i]! < minPrice) minPrice = emaArr[i]!;
           if (emaArr[i]! > maxPrice) maxPrice = emaArr[i]!;
+        }
+        if (inds.bollinger) {
+          if (boll.upper[i] != null) {
+            if (boll.upper[i]! < minPrice) minPrice = boll.upper[i]!;
+            if (boll.upper[i]! > maxPrice) maxPrice = boll.upper[i]!;
+          }
+          if (boll.lower[i] != null) {
+            if (boll.lower[i]! < minPrice) minPrice = boll.lower[i]!;
+            if (boll.lower[i]! > maxPrice) maxPrice = boll.lower[i]!;
+          }
         }
       }
 
@@ -353,12 +613,45 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
 
       const priceToY = (price: number) =>
         chartT + ((maxPrice - price) / (maxPrice - minPrice)) * priceH;
-      const volToH = (vol: number) =>
-        maxVol > 0 ? (vol / maxVol) * volH : 0;
+      const volToH = (vol: number) => (maxVol > 0 ? (vol / maxVol) * volH : 0);
       const idxToX = (idx: number) =>
         chartL + (idx * step - v.offsetX) + candleW / 2;
 
-      /* ──── Grid ──── */
+      /* Store coordinate converter for mouse handlers (drawing tools) */
+      const xToTime = (x: number) => {
+        const idx = (x - chartL + v.offsetX - candleW / 2) / step;
+        const i = Math.round(idx);
+        if (i < 0 || i >= arr.length) {
+          // Extrapolate based on candle spacing
+          if (arr.length === 0) return Date.now() / 1000;
+          const last = arr[arr.length - 1];
+          const first = arr[0];
+          const interval = (last.time - first.time) / Math.max(1, arr.length - 1);
+          return first.time + idx * interval;
+        }
+        return arr[i].time;
+      };
+      const yToPrice = (y: number) =>
+        maxPrice - ((y - chartT) / priceH) * (maxPrice - minPrice);
+      const timeToX = (time: number) => {
+        if (arr.length === 0) return chartL;
+        const first = arr[0];
+        const last = arr[arr.length - 1];
+        const interval = (last.time - first.time) / Math.max(1, arr.length - 1);
+        if (interval === 0) return chartL;
+        const idx = (time - first.time) / interval;
+        return idxToX(idx);
+      };
+      convRef.current = { timeToX, xToTime, priceToY, yToPrice };
+
+      /* Determine if date should be shown */
+      const showDate =
+        arr[endIdx - 1] &&
+        arr[startIdx] &&
+        new Date(arr[endIdx - 1].time * 1000).toDateString() !==
+          new Date(arr[startIdx].time * 1000).toDateString();
+
+      /* ──── Grid (price) ──── */
       const priceTicks = niceScale(minPrice, maxPrice, 6);
       ctx.strokeStyle = COLORS.grid;
       ctx.lineWidth = 1;
@@ -377,14 +670,8 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
 
       /* Time grid */
       const candlePerScreen = Math.floor(chartW / step);
-      const timeInterval = Math.max(
-        1,
-        Math.floor(candlePerScreen / 8)
-      );
+      const timeInterval = Math.max(1, Math.floor(candlePerScreen / 8));
       ctx.textAlign = "center";
-      const showDate = arr[endIdx - 1] && arr[startIdx] &&
-        new Date(arr[endIdx - 1].time * 1000).toDateString() !==
-          new Date(arr[startIdx].time * 1000).toDateString();
 
       for (let i = startIdx; i < endIdx; i += timeInterval) {
         const x = Math.round(idxToX(i)) + 0.5;
@@ -392,78 +679,42 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         ctx.beginPath();
         ctx.strokeStyle = COLORS.grid;
         ctx.moveTo(x, chartT);
-        ctx.lineTo(x, chartB);
+        ctx.lineTo(x, layout.subcharts.length > 0 ? layout.subcharts[layout.subcharts.length - 1].bottom : chartB);
         ctx.stroke();
         ctx.fillStyle = COLORS.gridText;
-        ctx.fillText(formatTime(arr[i].time, showDate), x, chartB + 14);
+        ctx.fillText(formatTime(arr[i].time, showDate), x, h - CHART_PADDING.bottom + 14);
       }
 
       /* Volume separator line */
-      ctx.beginPath();
-      ctx.strokeStyle = "rgba(255,255,255,0.06)";
-      ctx.moveTo(chartL, volT - 2);
-      ctx.lineTo(chartR, volT - 2);
-      ctx.stroke();
-
-      /* ──── Volume Bars ──── */
-      for (let i = startIdx; i < endIdx; i++) {
-        const c = arr[i];
-        const x = idxToX(i) - candleW / 2;
-        const isUp = c.close >= c.open;
-        const barH = volToH(c.volume);
-        ctx.fillStyle = isUp ? COLORS.upVolume : COLORS.downVolume;
-        ctx.fillRect(x, chartB - barH, candleW, barH);
+      if (inds.volume) {
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        ctx.moveTo(chartL, volT - 2);
+        ctx.lineTo(chartR, volT - 2);
+        ctx.stroke();
       }
 
-      /* ──── Candlesticks ──── */
-      for (let i = startIdx; i < endIdx; i++) {
-        const c = arr[i];
-        const x = idxToX(i);
-        const isUp = c.close >= c.open;
-        const color = isUp ? COLORS.upCandle : COLORS.downCandle;
-        const fillColor = isUp ? COLORS.upCandleFill : COLORS.downCandleFill;
-        const wickColor = isUp ? COLORS.wickUp : COLORS.wickDown;
-
-        /* Wick */
-        ctx.beginPath();
-        ctx.strokeStyle = wickColor;
-        ctx.lineWidth = 1;
-        ctx.moveTo(x, priceToY(c.high));
-        ctx.lineTo(x, priceToY(c.low));
-        ctx.stroke();
-
-        /* Body */
-        const bodyTop = priceToY(Math.max(c.open, c.close));
-        const bodyBot = priceToY(Math.min(c.open, c.close));
-        const bodyH = Math.max(1, bodyBot - bodyTop);
-
-        if (isUp) {
-          /* Hollow for up (or filled) - we'll fill for visibility */
-          ctx.fillStyle = fillColor;
-          ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
-          /* Border */
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x - candleW / 2, bodyTop, candleW, bodyH);
-        } else {
-          ctx.fillStyle = fillColor;
-          ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
+      /* ──── Volume Bars ──── */
+      if (inds.volume) {
+        for (let i = startIdx; i < endIdx; i++) {
+          const c = arr[i];
+          const x = idxToX(i) - candleW / 2;
+          const isUp = c.close >= c.open;
+          const barH = volToH(c.volume);
+          ctx.fillStyle = isUp ? COLORS.upVolume : COLORS.downVolume;
+          ctx.fillRect(x, chartB - barH, candleW, barH);
         }
       }
 
-      /* ──── Moving Averages ──── */
-      function drawMA(
-        data: (number | null)[],
-        color: string
-      ) {
+      /* ──── Bollinger Bands (drawn first, behind candles) ──── */
+      if (inds.bollinger) {
+        // Fill between upper and lower
         ctx.beginPath();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
         let started = false;
         for (let i = startIdx; i < endIdx; i++) {
-          if (data[i] === null || data[i] === undefined) continue;
+          if (boll.upper[i] == null) continue;
           const x = idxToX(i);
-          const y = priceToY(data[i]!);
+          const y = priceToY(boll.upper[i]!);
           if (!started) {
             ctx.moveTo(x, y);
             started = true;
@@ -471,20 +722,176 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
             ctx.lineTo(x, y);
           }
         }
+        for (let i = endIdx - 1; i >= startIdx; i--) {
+          if (boll.lower[i] == null) continue;
+          const x = idxToX(i);
+          const y = priceToY(boll.lower[i]!);
+          ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = COLORS.bollingerFill;
+        ctx.fill();
+
+        // Upper band
+        ctx.beginPath();
+        started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          if (boll.upper[i] == null) continue;
+          const x = idxToX(i);
+          const y = priceToY(boll.upper[i]!);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = COLORS.bollingerUpper;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+
+        // Lower band
+        ctx.beginPath();
+        started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          if (boll.lower[i] == null) continue;
+          const x = idxToX(i);
+          const y = priceToY(boll.lower[i]!);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = COLORS.bollingerLower;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Mid band (SMA 20 dashed)
+        ctx.beginPath();
+        started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          if (boll.mid[i] == null) continue;
+          const x = idxToX(i);
+          const y = priceToY(boll.mid[i]!);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = COLORS.bollingerMid;
+        ctx.lineWidth = 1;
         ctx.stroke();
       }
 
-      drawMA(smaArr, COLORS.sma20);
-      drawMA(emaArr, COLORS.ema50);
+      /* ──── Chart Type Rendering ──── */
+      if (cType === "candles") {
+        /* Candlesticks */
+        for (let i = startIdx; i < endIdx; i++) {
+          const c = arr[i];
+          const x = idxToX(i);
+          const isUp = c.close >= c.open;
+          const color = isUp ? COLORS.upCandle : COLORS.downCandle;
+          const fillColor = isUp ? COLORS.upCandleFill : COLORS.downCandleFill;
+          const wickColor = isUp ? COLORS.wickUp : COLORS.wickDown;
+
+          /* Wick */
+          ctx.beginPath();
+          ctx.strokeStyle = wickColor;
+          ctx.lineWidth = 1;
+          ctx.moveTo(x, priceToY(c.high));
+          ctx.lineTo(x, priceToY(c.low));
+          ctx.stroke();
+
+          /* Body */
+          const bodyTop = priceToY(Math.max(c.open, c.close));
+          const bodyBot = priceToY(Math.min(c.open, c.close));
+          const bodyH = Math.max(1, bodyBot - bodyTop);
+
+          ctx.fillStyle = fillColor;
+          ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
+          if (isUp) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - candleW / 2, bodyTop, candleW, bodyH);
+          }
+        }
+      } else if (cType === "line") {
+        /* Line chart - connect close prices */
+        ctx.beginPath();
+        let started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          const x = idxToX(i);
+          const y = priceToY(arr[i].close);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = COLORS.lineChart;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else if (cType === "area") {
+        /* Area chart - filled gradient below close line */
+        ctx.beginPath();
+        let started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          const x = idxToX(i);
+          const y = priceToY(arr[i].close);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        // Close path to bottom
+        ctx.lineTo(idxToX(endIdx - 1), chartB);
+        ctx.lineTo(idxToX(startIdx), chartB);
+        ctx.closePath();
+        const gradient = ctx.createLinearGradient(0, chartT, 0, chartB);
+        gradient.addColorStop(0, "rgba(6,182,212,0.4)");
+        gradient.addColorStop(1, "rgba(6,182,212,0.02)");
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        // Line on top
+        ctx.beginPath();
+        started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          const x = idxToX(i);
+          const y = priceToY(arr[i].close);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = COLORS.lineChart;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      /* ──── Moving Averages (skip SMA 20 if Bollinger already shows mid) ──── */
+      function drawMA(data: (number | null)[], color: string) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        let started = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          if (data[i] == null) continue;
+          const x = idxToX(i);
+          const y = priceToY(data[i]!);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      if (inds.sma20 && !inds.bollinger) drawMA(smaArr, COLORS.sma20);
+      if (inds.ema50) drawMA(emaArr, COLORS.ema50);
 
       /* ──── Current Price Line ──── */
       if (arr.length > 0) {
         const lastCandle = arr[arr.length - 1];
         const isUp = lastCandle.close >= lastCandle.open;
         const priceY = priceToY(lastCandle.close);
-        const lineColor = isUp
-          ? COLORS.currentPriceUp
-          : COLORS.currentPriceDown;
+        const lineColor = isUp ? COLORS.currentPriceUp : COLORS.currentPriceDown;
 
         ctx.beginPath();
         ctx.strokeStyle = lineColor;
@@ -495,7 +902,6 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         ctx.stroke();
         ctx.setLineDash([]);
 
-        /* Price label */
         const labelW = 68;
         const labelH = 18;
         ctx.fillStyle = lineColor;
@@ -504,35 +910,37 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         ctx.fillStyle = COLORS.currentPriceLabel;
         ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(
-          formatPrice(lastCandle.close),
-          chartR + labelW / 2,
-          priceY + 3.5
-        );
+        ctx.fillText(formatPrice(lastCandle.close), chartR + labelW / 2, priceY + 3.5);
       }
 
       /* ──── Crosshair ──── */
-      if (v.crosshair.active && v.crosshair.x >= chartL && v.crosshair.x <= chartR) {
+      if (
+        v.crosshair.active &&
+        v.crosshair.x >= chartL &&
+        v.crosshair.x <= chartR
+      ) {
         const cx = v.crosshair.x;
         const cy = v.crosshair.y;
 
-        /* Vertical line */
+        /* Vertical line through all charts */
         ctx.beginPath();
         ctx.strokeStyle = COLORS.crosshair;
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
         ctx.moveTo(cx, chartT);
-        ctx.lineTo(cx, chartB);
+        const bottomY = layout.subcharts.length > 0
+          ? layout.subcharts[layout.subcharts.length - 1].bottom
+          : chartB;
+        ctx.lineTo(cx, bottomY);
         ctx.stroke();
 
-        /* Horizontal line */
+        /* Horizontal line (only in main chart area) */
         if (cy >= chartT && cy <= chartB) {
           ctx.beginPath();
           ctx.moveTo(chartL, cy);
           ctx.lineTo(chartR, cy);
           ctx.stroke();
 
-          /* Price label */
           const priceAtY =
             maxPrice - ((cy - chartT) / priceH) * (maxPrice - minPrice);
           const plW = 68;
@@ -547,11 +955,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
           ctx.fillStyle = COLORS.crosshairText;
           ctx.font = "10px system-ui, -apple-system, sans-serif";
           ctx.textAlign = "center";
-          ctx.fillText(
-            formatPrice(priceAtY),
-            chartR + plW / 2,
-            cy + 3.5
-          );
+          ctx.fillText(formatPrice(priceAtY), chartR + plW / 2, cy + 3.5);
         }
         ctx.setLineDash([]);
 
@@ -563,17 +967,10 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
           const tlW = 72;
           const tlH = 18;
           ctx.fillStyle = COLORS.crosshairLabel;
-          roundRect(
-            ctx,
-            cx - tlW / 2,
-            chartB + 2,
-            tlW,
-            tlH,
-            3
-          );
+          roundRect(ctx, cx - tlW / 2, h - CHART_PADDING.bottom + 2, tlW, tlH, 3);
           ctx.fill();
           ctx.strokeStyle = "rgba(255,255,255,0.15)";
-          roundRect(ctx, cx - tlW / 2, chartB + 2, tlW, tlH, 3);
+          roundRect(ctx, cx - tlW / 2, h - CHART_PADDING.bottom + 2, tlW, tlH, 3);
           ctx.stroke();
           ctx.fillStyle = COLORS.crosshairText;
           ctx.font = "10px system-ui, -apple-system, sans-serif";
@@ -581,7 +978,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
           ctx.fillText(
             formatTime(arr[candleIdx].time, showDate),
             cx,
-            chartB + 14
+            h - CHART_PADDING.bottom + 14
           );
 
           /* Notify parent */
@@ -603,19 +1000,307 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       let legendX = chartL + 8;
       const legendY = chartT + 12;
 
-      ctx.fillStyle = COLORS.sma20;
-      ctx.fillRect(legendX, legendY - 7, 12, 2);
-      ctx.fillText("SMA 20", legendX + 16, legendY);
-      legendX += 70;
-
-      ctx.fillStyle = COLORS.ema50;
-      ctx.fillRect(legendX, legendY - 7, 12, 2);
-      ctx.fillText("EMA 50", legendX + 16, legendY);
+      if (inds.sma20 && !inds.bollinger) {
+        ctx.fillStyle = COLORS.sma20;
+        ctx.fillRect(legendX, legendY - 7, 12, 2);
+        ctx.fillText("SMA 20", legendX + 16, legendY);
+        legendX += 70;
+      }
+      if (inds.ema50) {
+        ctx.fillStyle = COLORS.ema50;
+        ctx.fillRect(legendX, legendY - 7, 12, 2);
+        ctx.fillText("EMA 50", legendX + 16, legendY);
+        legendX += 70;
+      }
+      if (inds.bollinger) {
+        ctx.fillStyle = COLORS.bollingerUpper;
+        ctx.fillRect(legendX, legendY - 7, 12, 2);
+        ctx.fillText("BOLL(20,2)", legendX + 16, legendY);
+        legendX += 80;
+      }
 
       /* Border around chart area */
       ctx.strokeStyle = "rgba(255,255,255,0.06)";
       ctx.lineWidth = 1;
       ctx.strokeRect(chartL, chartT, chartW, chartB - chartT);
+
+      /* ═══════════════════════════════════════════
+         Subcharts: RSI and MACD
+         ═══════════════════════════════════════════ */
+      for (const sub of layout.subcharts) {
+        if (sub.type === "rsi") {
+          drawRSISubchart(ctx, arr, v.rsi, startIdx, endIdx, idxToX, sub, chartL, chartR, v.crosshair);
+        } else if (sub.type === "macd") {
+          drawMACDSubchart(ctx, arr, v.macd, startIdx, endIdx, idxToX, sub, chartL, chartR, v.crosshair);
+        }
+      }
+
+      /* ═══════════════════════════════════════════
+         User drawings (drawn last, on top of everything)
+         ═══════════════════════════════════════════ */
+      const conv = convRef.current;
+      if (conv) {
+        // Committed drawings
+        for (const d of drawingsRef.current) {
+          drawDrawing(ctx, d, conv, false);
+        }
+        // Draft drawing (in progress)
+        if (draftDrawingRef.current) {
+          drawDrawing(ctx, draftDrawingRef.current, conv, true);
+        }
+      }
+    }
+
+    /* ──── RSI Subchart ──── */
+    function drawRSISubchart(
+      ctx: CanvasRenderingContext2D,
+      arr: Candle[],
+      rsi: (number | null)[],
+      startIdx: number,
+      endIdx: number,
+      idxToX: (i: number) => number,
+      sub: { top: number; bottom: number; height: number },
+      chartL: number,
+      chartR: number,
+      crosshair: { x: number; y: number; active: boolean }
+    ) {
+      const sT = sub.top;
+      const sB = sub.bottom;
+      const sH = sub.height;
+      const chartW = chartR - chartL;
+
+      // Background
+      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.fillRect(chartL, sT, chartW, sH);
+
+      // Label
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("RSI(14)", chartL + 6, sT + 12);
+
+      // Compute RSI range from visible values (always 0-100)
+      const rsiMin = 0;
+      const rsiMax = 100;
+      const rsiToY = (val: number) => sT + ((rsiMax - val) / (rsiMax - rsiMin)) * sH;
+
+      // Overbought (70) and oversold (30) zones
+      const y70 = rsiToY(70);
+      const y30 = rsiToY(30);
+      const y50 = rsiToY(50);
+
+      // Fill overbought zone
+      ctx.fillStyle = "rgba(246,70,93,0.06)";
+      ctx.fillRect(chartL, sT, chartW, y70 - sT);
+      // Fill oversold zone
+      ctx.fillStyle = "rgba(0,192,135,0.06)";
+      ctx.fillRect(chartL, y30, chartW, sB - y30);
+
+      // Reference lines
+      ctx.strokeStyle = COLORS.rsiOverbought;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(chartL, y70);
+      ctx.lineTo(chartR, y70);
+      ctx.stroke();
+
+      ctx.strokeStyle = COLORS.rsiOversold;
+      ctx.beginPath();
+      ctx.moveTo(chartL, y30);
+      ctx.lineTo(chartR, y30);
+      ctx.stroke();
+
+      ctx.strokeStyle = COLORS.rsiMid;
+      ctx.beginPath();
+      ctx.moveTo(chartL, y50);
+      ctx.lineTo(chartR, y50);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Reference labels
+      ctx.fillStyle = "rgba(255,255,255,0.4)";
+      ctx.font = "9px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("70", chartR + 4, y70 + 3);
+      ctx.fillText("30", chartR + 4, y30 + 3);
+
+      // RSI line
+      ctx.beginPath();
+      ctx.strokeStyle = COLORS.rsiLine;
+      ctx.lineWidth = 1.5;
+      let started = false;
+      for (let i = startIdx; i < endIdx; i++) {
+        if (rsi[i] == null) continue;
+        const x = idxToX(i);
+        const y = rsiToY(rsi[i]!);
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Current RSI value label
+      const lastRSI = rsi[arr.length - 1];
+      if (lastRSI != null) {
+        const y = rsiToY(lastRSI);
+        ctx.fillStyle = COLORS.rsiLine;
+        roundRect(ctx, chartR, y - 9, 40, 18, 3);
+        ctx.fill();
+        ctx.fillStyle = "#0a0e17";
+        ctx.font = "bold 10px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(lastRSI.toFixed(2), chartR + 20, y + 3);
+      }
+
+      // Crosshair line for subchart
+      if (crosshair.active && crosshair.x >= chartL && crosshair.x <= chartR) {
+        ctx.beginPath();
+        ctx.strokeStyle = COLORS.crosshair;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.moveTo(crosshair.x, sT);
+        ctx.lineTo(crosshair.x, sB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Border
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(chartL, sT, chartW, sH);
+    }
+
+    /* ──── MACD Subchart ──── */
+    function drawMACDSubchart(
+      ctx: CanvasRenderingContext2D,
+      arr: Candle[],
+      macd: { macd: (number | null)[]; signal: (number | null)[]; hist: (number | null)[] },
+      startIdx: number,
+      endIdx: number,
+      idxToX: (i: number) => number,
+      sub: { top: number; bottom: number; height: number },
+      chartL: number,
+      chartR: number,
+      crosshair: { x: number; y: number; active: boolean }
+    ) {
+      const sT = sub.top;
+      const sB = sub.bottom;
+      const sH = sub.height;
+      const chartW = chartR - chartL;
+
+      // Background
+      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.fillRect(chartL, sT, chartW, sH);
+
+      // Label
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = "10px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("MACD(12,26,9)", chartL + 6, sT + 12);
+
+      // Compute range from visible MACD/hist values
+      let vMin = Infinity, vMax = -Infinity;
+      for (let i = startIdx; i < endIdx; i++) {
+        if (macd.macd[i] != null) {
+          vMin = Math.min(vMin, macd.macd[i]!);
+          vMax = Math.max(vMax, macd.macd[i]!);
+        }
+        if (macd.signal[i] != null) {
+          vMin = Math.min(vMin, macd.signal[i]!);
+          vMax = Math.max(vMax, macd.signal[i]!);
+        }
+        if (macd.hist[i] != null) {
+          vMin = Math.min(vMin, macd.hist[i]!);
+          vMax = Math.max(vMax, macd.hist[i]!);
+        }
+      }
+      if (vMin === Infinity) { vMin = -1; vMax = 1; }
+      const pad = (vMax - vMin) * 0.1 || 1;
+      vMin -= pad;
+      vMax += pad;
+      const macdToY = (val: number) => sT + ((vMax - val) / (vMax - vMin)) * sH;
+
+      // Zero line
+      const yZero = macdToY(0);
+      ctx.strokeStyle = "rgba(255,255,255,0.15)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(chartL, yZero);
+      ctx.lineTo(chartR, yZero);
+      ctx.stroke();
+
+      // Histogram bars
+      const candleW = viewRef.current.candleWidth;
+      for (let i = startIdx; i < endIdx; i++) {
+        if (macd.hist[i] == null) continue;
+        const x = idxToX(i) - candleW / 2;
+        const val = macd.hist[i]!;
+        const y = macdToY(val);
+        const isUp = val >= 0;
+        ctx.fillStyle = isUp ? COLORS.macdHistUp : COLORS.macdHistDown;
+        const barH = Math.abs(y - yZero);
+        ctx.fillRect(x, Math.min(y, yZero), candleW, Math.max(1, barH));
+      }
+
+      // MACD line
+      ctx.beginPath();
+      ctx.strokeStyle = COLORS.macdLine;
+      ctx.lineWidth = 1.5;
+      let started = false;
+      for (let i = startIdx; i < endIdx; i++) {
+        if (macd.macd[i] == null) continue;
+        const x = idxToX(i);
+        const y = macdToY(macd.macd[i]!);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Signal line
+      ctx.beginPath();
+      ctx.strokeStyle = COLORS.macdSignal;
+      ctx.lineWidth = 1.5;
+      started = false;
+      for (let i = startIdx; i < endIdx; i++) {
+        if (macd.signal[i] == null) continue;
+        const x = idxToX(i);
+        const y = macdToY(macd.signal[i]!);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Current MACD value label
+      const lastMacd = macd.macd[arr.length - 1];
+      if (lastMacd != null) {
+        const y = macdToY(lastMacd);
+        ctx.fillStyle = COLORS.macdLine;
+        roundRect(ctx, chartR, y - 9, 50, 18, 3);
+        ctx.fill();
+        ctx.fillStyle = "#0a0e17";
+        ctx.font = "bold 10px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(lastMacd.toFixed(4), chartR + 25, y + 3);
+      }
+
+      // Crosshair line for subchart
+      if (crosshair.active && crosshair.x >= chartL && crosshair.x <= chartR) {
+        ctx.beginPath();
+        ctx.strokeStyle = COLORS.crosshair;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.moveTo(crosshair.x, sT);
+        ctx.lineTo(crosshair.x, sB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Border
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(chartL, sT, chartW, sH);
     }
 
     /* Rounded rect helper */
@@ -641,13 +1326,102 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
     }
 
     /* ──── Mouse Events ──── */
+    /* Helper: convert screen coords to data coords using stored converter */
+    const screenToData = (x: number, y: number): Point | null => {
+      const conv = convRef.current;
+      if (!conv) return null;
+      return {
+        time: conv.xToTime(x),
+        price: conv.yToPrice(y),
+      };
+    };
+
+    /* Helper: commit a drawing to the parent state */
+    const commitDrawing = (d: Drawing) => {
+      const next = [...drawingsRef.current, d];
+      onDrawingsChange?.(next);
+    };
+
+    /* Helper: delete a drawing by id */
+    const deleteDrawing = (id: string) => {
+      const next = drawingsRef.current.filter((d) => d.id !== id);
+      onDrawingsChange?.(next);
+    };
+
     const handleMouseDown = useCallback(
       (e: React.MouseEvent<HTMLCanvasElement>) => {
         const v = viewRef.current;
-        v.isDragging = true;
-        v.dragStartX = e.clientX;
-        v.dragStartOffset = v.offsetX;
+        const tool = activeToolRef.current;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // Drawing tools take priority over dragging
+        if (tool === "cursor") {
+          v.isDragging = true;
+          v.dragStartX = e.clientX;
+          v.dragStartOffset = v.offsetX;
+          return;
+        }
+
+        if (tool === "eraser") {
+          // Find first drawing under the cursor and delete it
+          const conv = convRef.current;
+          if (conv) {
+            for (const d of drawingsRef.current) {
+              if (hitTestDrawing(d, x, y, conv)) {
+                deleteDrawing(d.id);
+                return;
+              }
+            }
+          }
+          return;
+        }
+
+        // Single-click tools (no second point needed)
+        if (tool === "horizontal" || tool === "vertical" || tool === "text") {
+          const p = screenToData(x, y);
+          if (!p) return;
+          if (tool === "text") {
+            const text = window.prompt("أدخل النص:");
+            if (!text) return;
+            commitDrawing({
+              id: genDrawingId(),
+              type: "text",
+              p1: p,
+              text,
+              color: drawingColorRef.current,
+              createdAt: Date.now(),
+            });
+          } else {
+            commitDrawing({
+              id: genDrawingId(),
+              type: tool,
+              p1: p,
+              color: drawingColorRef.current,
+              createdAt: Date.now(),
+            });
+          }
+          return;
+        }
+
+        // Two-click tools: trendline, fib, rectangle
+        // Start draft
+        const p = screenToData(x, y);
+        if (!p) return;
+        draftDrawingRef.current = {
+          id: genDrawingId(),
+          type: tool,
+          p1: p,
+          p2: p, // initially same point
+          color: drawingColorRef.current,
+          createdAt: Date.now(),
+        };
+        requestRender();
       },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       []
     );
 
@@ -659,14 +1433,23 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         const v = viewRef.current;
+        const tool = activeToolRef.current;
 
         v.crosshair = { x, y, active: true };
 
-        if (v.isDragging) {
+        // Update draft drawing if one is in progress
+        if (draftDrawingRef.current && draftDrawingRef.current.p2) {
+          const p = screenToData(x, y);
+          if (p) {
+            draftDrawingRef.current.p2 = p;
+            requestRender();
+            return;
+          }
+        }
+
+        if (tool === "cursor" && v.isDragging) {
           const dx = e.clientX - v.dragStartX;
-          /* In RTL, dragging left should increase offset (scroll forward) */
           v.offsetX = v.dragStartOffset - dx;
-          /* Clamp */
           const arr = candlesRef.current;
           const step = v.candleWidth + CANDLE_GAP;
           const chartW =
@@ -681,13 +1464,34 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
     );
 
     const handleMouseUp = useCallback(() => {
-      viewRef.current.isDragging = false;
-    }, []);
+      const v = viewRef.current;
+      v.isDragging = false;
+
+      // Commit draft drawing if it has two distinct points
+      if (draftDrawingRef.current) {
+        const d = draftDrawingRef.current;
+        draftDrawingRef.current = null;
+        // Only commit if points are meaningfully different
+        if (
+          d.p2 &&
+          (Math.abs(d.p1.time - d.p2.time) > 0.001 ||
+            Math.abs(d.p1.price - d.p2.price) > 0.0001)
+        ) {
+          commitDrawing(d);
+        }
+        requestRender();
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestRender]);
 
     const handleMouseLeave = useCallback(() => {
       const v = viewRef.current;
       v.isDragging = false;
       v.crosshair.active = false;
+      // Cancel draft on leave (so the user has to start over)
+      if (draftDrawingRef.current) {
+        draftDrawingRef.current = null;
+      }
       requestRender();
     }, [requestRender]);
 
@@ -702,7 +1506,6 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
           Math.min(MAX_CANDLE_WIDTH, oldW + delta * 1.5)
         );
 
-        /* Zoom towards mouse position */
         const canvas = canvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
@@ -713,13 +1516,11 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
 
         const step = oldW + CANDLE_GAP;
         const newStep = newW + CANDLE_GAP;
-        const mouseIdx =
-          (mouseX - chartL + v.offsetX) / step;
+        const mouseIdx = (mouseX - chartL + v.offsetX) / step;
 
         v.candleWidth = newW;
         v.offsetX = mouseIdx * newStep - (mouseX - chartL);
 
-        /* Clamp */
         const arr = candlesRef.current;
         const maxStep = newW + CANDLE_GAP;
         const chartW = chartR - chartL;
@@ -739,7 +1540,13 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       >
         <canvas
           ref={canvasRef}
-          className="w-full h-full cursor-crosshair"
+          className={`w-full h-full ${
+            activeTool === "cursor"
+              ? "cursor-crosshair"
+              : activeTool === "eraser"
+              ? "cursor-pointer"
+              : "cursor-crosshair"
+          }`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}

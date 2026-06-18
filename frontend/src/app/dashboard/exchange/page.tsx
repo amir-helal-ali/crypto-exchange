@@ -17,7 +17,10 @@ import DepthChart from "@/components/exchange/DepthChart";
 import TradeForm from "@/components/exchange/TradeForm";
 import TradesFeed from "@/components/exchange/TradesFeed";
 import OrdersPanel from "@/components/exchange/OrdersPanel";
+import DrawingToolbar from "@/components/exchange/DrawingToolbar";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
+import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
+import { DRAWING_COLORS } from "@/components/exchange/drawings";
 
 import type {
   TickerData,
@@ -66,6 +69,11 @@ export default function ExchangePage() {
     volume: true,
   });
   const [showDepthChart, setShowDepthChart] = useState(true);
+
+  /* Drawing tools state */
+  const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [drawingColor, setDrawingColor] = useState<string>(DRAWING_COLORS[0]);
 
   const chartRef = useRef<ProChartHandle>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -146,6 +154,30 @@ export default function ExchangePage() {
     fetchWallets();
     fetchFees();
   }, [fetchOrders, fetchWallets, fetchFees]);
+
+  /* Load drawings for the selected pair from localStorage */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`exchange_drawings_${selectedPair}`);
+      if (raw) {
+        setDrawings(JSON.parse(raw));
+      } else {
+        setDrawings([]);
+      }
+    } catch {
+      setDrawings([]);
+    }
+  }, [selectedPair]);
+
+  /* Persist drawings to localStorage whenever they change */
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        `exchange_drawings_${selectedPair}`,
+        JSON.stringify(drawings)
+      );
+    } catch {}
+  }, [drawings, selectedPair]);
 
   /* Refetch when pair/timeframe changes */
   useEffect(() => {
@@ -534,12 +566,26 @@ export default function ExchangePage() {
               isFullscreen={chartFullscreen}
               onToggleFullscreen={() => setChartFullscreen((v) => !v)}
             />
+            <DrawingToolbar
+              activeTool={activeTool}
+              onToolChange={setActiveTool}
+              activeColor={drawingColor}
+              onColorChange={setDrawingColor}
+              onClearAll={() => setDrawings([])}
+              drawingCount={drawings.length}
+            />
             <div className="flex-1 min-h-0 relative">
               <ProChart
                 ref={chartRef}
                 candles={candles}
                 onCrosshairMove={handleCrosshairMove}
                 className="w-full h-full"
+                chartType={chartType}
+                indicators={indicators}
+                activeTool={activeTool}
+                drawings={drawings}
+                onDrawingsChange={setDrawings}
+                drawingColor={drawingColor}
               />
             </div>
           </div>
