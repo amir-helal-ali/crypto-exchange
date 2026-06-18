@@ -22,6 +22,7 @@ import PriceAlerts from "@/components/exchange/PriceAlerts";
 import QuickPairSearch from "@/components/exchange/QuickPairSearch";
 import AssetInfoPanel from "@/components/exchange/AssetInfoPanel";
 import MobileTabBar, { MobileTab } from "@/components/exchange/MobileTabBar";
+import PnLCalculator from "@/components/exchange/PnLCalculator";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
@@ -73,6 +74,7 @@ export default function ExchangePage() {
     macd: false,
     vwap: false,
     stochastic: false,
+    ichimoku: false,
     volume: true,
   });
   const [showDepthChart, setShowDepthChart] = useState(true);
@@ -514,6 +516,19 @@ export default function ExchangePage() {
           >
             <Camera className="h-4 w-4" />
           </button>
+
+          {/* P&L Calculator */}
+          <PnLCalculator
+            pair={selectedPair}
+            base={base}
+            ticker={p}
+            feeRate={
+              feeSchedules.find(
+                (f) => f.user_type === "regular" && f.order_type === "LIMIT"
+              )?.taker_fee ?? 0.001
+            }
+            currentPrice={p?.price}
+          />
 
           {/* Price alerts */}
           <PriceAlerts

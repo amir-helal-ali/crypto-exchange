@@ -22,6 +22,7 @@ export interface ChartIndicators {
   macd: boolean;
   vwap: boolean;
   stochastic: boolean;
+  ichimoku: boolean;
   volume: boolean;
 }
 
@@ -47,6 +48,7 @@ const DEFAULT_INDICATORS: ChartIndicators = {
   macd: false,
   vwap: false,
   stochastic: false,
+  ichimoku: false,
   volume: true,
 };
 
@@ -198,6 +200,12 @@ export default function ChartToolbar({
           color="#a855f7"
           active={indicators.stochastic}
           onClick={() => toggleIndicator("stochastic")}
+        />
+        <IndicatorChip
+          label="ICH"
+          color="#3b82f6"
+          active={indicators.ichimoku}
+          onClick={() => toggleIndicator("ichimoku")}
         />
         <IndicatorChip
           label="VOL"

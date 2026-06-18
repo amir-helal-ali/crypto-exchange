@@ -39,6 +39,7 @@ export interface ChartIndicators {
   macd: boolean;
   vwap: boolean;
   stochastic: boolean;
+  ichimoku: boolean;
   volume: boolean;
 }
 
@@ -105,6 +106,13 @@ const COLORS = {
   stochOverbought: "rgba(246,70,93,0.4)",
   stochOversold: "rgba(0,192,135,0.4)",
   stochMid: "rgba(255,255,255,0.15)",
+  ichimokuTenkan: "#3b82f6",
+  ichimokuKijun: "#f0b90b",
+  ichimokuChikou: "rgba(138,43,226,0.7)",
+  ichimokuCloudUp: "rgba(0,192,135,0.18)",
+  ichimokuCloudDown: "rgba(246,70,93,0.18)",
+  ichimokuCloudUpBorder: "rgba(0,192,135,0.45)",
+  ichimokuCloudDownBorder: "rgba(246,70,93,0.45)",
   macdLine: "#3b82f6",
   macdSignal: "#f97316",
   macdHistUp: "rgba(0,192,135,0.5)",
@@ -400,6 +408,70 @@ function computeStochastic(
   return { k, d };
 }
 
+/* Ichimoku Cloud (One Glance Equilibrium)
+   - Tenkan-sen (Conversion Line): (9-period high + 9-period low) / 2
+   - Kijun-sen (Base Line): (26-period high + 26-period low) / 2
+   - Senkou Span A (Leading Span A): (Tenkan + Kijun) / 2, plotted 26 periods ahead
+   - Senkou Span B (Leading Span B): (52-period high + 52-period low) / 2, plotted 26 periods ahead
+   - Chikou Span (Lagging Span): Close plotted 26 periods behind
+   The cloud (Kumo) is the area between Senkou A and Senkou B. */
+function computeIchimoku(
+  candles: Candle[],
+  conversionPeriod: number = 9,
+  basePeriod: number = 26,
+  spanBPeriod: number = 52,
+  displacement: number = 26
+): {
+  tenkan: (number | null)[];
+  kijun: (number | null)[];
+  spanA: (number | null)[];
+  spanB: (number | null)[];
+  chikou: (number | null)[];
+} {
+  const n = candles.length;
+  const tenkan: (number | null)[] = new Array(n).fill(null);
+  const kijun: (number | null)[] = new Array(n).fill(null);
+  const spanA: (number | null)[] = new Array(n + displacement).fill(null);
+  const spanB: (number | null)[] = new Array(n + displacement).fill(null);
+  const chikou: (number | null)[] = new Array(n).fill(null);
+
+  // Helper: midpoint of highest high + lowest low over period ending at index i
+  const midpoint = (i: number, period: number): number | null => {
+    if (i < period - 1) return null;
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - period + 1; j <= i; j++) {
+      if (candles[j].high > hh) hh = candles[j].high;
+      if (candles[j].low < ll) ll = candles[j].low;
+    }
+    return (hh + ll) / 2;
+  };
+
+  for (let i = 0; i < n; i++) {
+    tenkan[i] = midpoint(i, conversionPeriod);
+    kijun[i] = midpoint(i, basePeriod);
+
+    // Chikou: close shifted back by `displacement` (plotted behind)
+    // chikou[i - displacement] = candles[i].close
+    const chikouIdx = i - displacement;
+    if (chikouIdx >= 0) {
+      chikou[chikouIdx] = candles[i].close;
+    }
+
+    // Senkou spans are projected forward by `displacement`
+    // We'll fill them at i + displacement
+    if (tenkan[i] != null && kijun[i] != null) {
+      spanA[i + displacement] = (tenkan[i]! + kijun[i]!) / 2;
+    }
+    const sb = midpoint(i, spanBPeriod);
+    if (sb != null) {
+      spanB[i + displacement] = sb;
+    }
+  }
+
+  return { tenkan, kijun, spanA, spanB, chikou };
+}
+
 /* ═══════════════════════════════════════════
    ProChart Component
    ═══════════════════════════════════════════ */
@@ -412,6 +484,7 @@ const DEFAULT_INDICATORS: ChartIndicators = {
   macd: false,
   vwap: false,
   stochastic: false,
+  ichimoku: false,
   volume: true,
 };
 
@@ -470,6 +543,13 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         k: [] as (number | null)[],
         d: [] as (number | null)[],
       },
+      ichimoku: {
+        tenkan: [] as (number | null)[],
+        kijun: [] as (number | null)[],
+        spanA: [] as (number | null)[],
+        spanB: [] as (number | null)[],
+        chikou: [] as (number | null)[],
+      },
     });
 
     /* Keep refs in sync */
@@ -503,6 +583,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       v.rsi = computeRSI(arr, 14);
       v.macd = computeMACD(arr);
       v.stoch = computeStochastic(arr, 14, 3);
+      v.ichimoku = computeIchimoku(arr);
     }, []);
 
     /* Keep candles ref in sync */
@@ -743,6 +824,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       const emaArr = v.ema50;
       const boll = v.bollinger;
       const vwapArr = v.vwap;
+      const ichi = v.ichimoku;
       for (let i = startIdx; i < endIdx; i++) {
         if (inds.sma20 && smaArr[i] != null) {
           if (smaArr[i]! < minPrice) minPrice = smaArr[i]!;
@@ -765,6 +847,37 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         if (inds.vwap && vwapArr[i] != null) {
           if (vwapArr[i]! < minPrice) minPrice = vwapArr[i]!;
           if (vwapArr[i]! > maxPrice) maxPrice = vwapArr[i]!;
+        }
+        if (inds.ichimoku) {
+          if (ichi.tenkan[i] != null) {
+            if (ichi.tenkan[i]! < minPrice) minPrice = ichi.tenkan[i]!;
+            if (ichi.tenkan[i]! > maxPrice) maxPrice = ichi.tenkan[i]!;
+          }
+          if (ichi.kijun[i] != null) {
+            if (ichi.kijun[i]! < minPrice) minPrice = ichi.kijun[i]!;
+            if (ichi.kijun[i]! > maxPrice) maxPrice = ichi.kijun[i]!;
+          }
+          if (ichi.chikou[i] != null) {
+            if (ichi.chikou[i]! < minPrice) minPrice = ichi.chikou[i]!;
+            if (ichi.chikou[i]! > maxPrice) maxPrice = ichi.chikou[i]!;
+          }
+        }
+      }
+      // Ichimoku Span A and Span B are projected forward — check the projected range too
+      if (inds.ichimoku) {
+        const maxProjectedIdx = Math.min(
+          ichi.spanA.length,
+          endIdx + 30 // small lookahead for cloud that extends past visible
+        );
+        for (let i = startIdx; i < maxProjectedIdx; i++) {
+          if (ichi.spanA[i] != null) {
+            if (ichi.spanA[i]! < minPrice) minPrice = ichi.spanA[i]!;
+            if (ichi.spanA[i]! > maxPrice) maxPrice = ichi.spanA[i]!;
+          }
+          if (ichi.spanB[i] != null) {
+            if (ichi.spanB[i]! < minPrice) minPrice = ichi.spanB[i]!;
+            if (ichi.spanB[i]! > maxPrice) maxPrice = ichi.spanB[i]!;
+          }
         }
       }
 
@@ -1051,6 +1164,200 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       if (inds.sma20 && !inds.bollinger) drawMA(smaArr, COLORS.sma20);
       if (inds.ema50) drawMA(emaArr, COLORS.ema50);
 
+      /* ──── Ichimoku helper functions ──── */
+      function drawIchimokuLine(
+        data: (number | null)[],
+        color: string,
+        sIdx: number,
+        eIdx: number,
+        xOf: (i: number) => number,
+        yOf: (p: number) => number
+      ) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.4;
+        let started = false;
+        for (let i = sIdx; i < eIdx; i++) {
+          if (data[i] == null) continue;
+          const x = xOf(i);
+          const y = yOf(data[i]!);
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      function drawIchimokuCloudSegment(
+        segStart: number,
+        segEnd: number,
+        bullish: boolean,
+        ichiData: {
+          spanA: (number | null)[];
+          spanB: (number | null)[];
+        },
+        xOf: (i: number) => number,
+        yOf: (p: number) => number,
+        cL: number,
+        cR: number
+      ) {
+        if (segEnd < segStart) return;
+        // Fill the area between spanA and spanB for [segStart, segEnd]
+        ctx.beginPath();
+        // Forward path along spanA (upper when bullish, lower when bearish)
+        for (let i = segStart; i <= segEnd; i++) {
+          const a = ichiData.spanA[i];
+          if (a == null) continue;
+          const x = Math.min(cR, xOf(i));
+          const y = yOf(a);
+          if (i === segStart || ichiData.spanA[i - 1] == null) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        // Backward path along spanB
+        for (let i = segEnd; i >= segStart; i--) {
+          const b = ichiData.spanB[i];
+          if (b == null) continue;
+          const x = Math.min(cR, xOf(i));
+          const y = yOf(b);
+          ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = bullish
+          ? COLORS.ichimokuCloudUp
+          : COLORS.ichimokuCloudDown;
+        ctx.fill();
+        // Border lines
+        ctx.beginPath();
+        ctx.strokeStyle = bullish
+          ? COLORS.ichimokuCloudUpBorder
+          : COLORS.ichimokuCloudDownBorder;
+        ctx.lineWidth = 1;
+        for (let i = segStart; i <= segEnd; i++) {
+          const a = ichiData.spanA[i];
+          if (a == null) continue;
+          const x = Math.min(cR, xOf(i));
+          const y = yOf(a);
+          if (i === segStart || ichiData.spanA[i - 1] == null) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        for (let i = segStart; i <= segEnd; i++) {
+          const b = ichiData.spanB[i];
+          if (b == null) continue;
+          const x = Math.min(cR, xOf(i));
+          const y = yOf(b);
+          if (i === segStart || ichiData.spanB[i - 1] == null) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+      }
+
+      /* ──── Ichimoku Cloud ──── */
+      if (inds.ichimoku) {
+        // 1) Cloud (Kumo) — filled area between Span A and Span B
+        // Cloud is bullish (green) when Span A >= Span B, bearish (red) otherwise
+        // Project forward up to chartR
+        const projectionLimit = Math.min(
+          ichi.spanA.length,
+          endIdx + 30 // small projection past the visible candles
+        );
+
+        // Build the cloud in segments where bullish/bearible state is consistent
+        let segStart = -1;
+        let prevBullish: boolean | null = null;
+        for (let i = startIdx; i <= projectionLimit; i++) {
+          const a = ichi.spanA[i];
+          const b = ichi.spanB[i];
+          if (a == null || b == null) {
+            // gap — flush previous segment
+            if (segStart >= 0 && prevBullish !== null) {
+              drawIchimokuCloudSegment(
+                segStart,
+                i - 1,
+                prevBullish,
+                ichi,
+                idxToX,
+                priceToY,
+                chartL,
+                chartR
+              );
+              segStart = -1;
+              prevBullish = null;
+            }
+            continue;
+          }
+          const isBullish = a >= b;
+          if (prevBullish === null) {
+            segStart = i;
+            prevBullish = isBullish;
+          } else if (isBullish !== prevBullish) {
+            // close previous segment
+            if (segStart >= 0) {
+              drawIchimokuCloudSegment(
+                segStart,
+                i - 1,
+                prevBullish,
+                ichi,
+                idxToX,
+                priceToY,
+                chartL,
+                chartR
+              );
+            }
+            segStart = i;
+            prevBullish = isBullish;
+          }
+        }
+        // Flush last segment
+        if (segStart >= 0 && prevBullish !== null) {
+          drawIchimokuCloudSegment(
+            segStart,
+            projectionLimit - 1,
+            prevBullish,
+            ichi,
+            idxToX,
+            priceToY,
+            chartL,
+            chartR
+          );
+        }
+
+        // 2) Tenkan-sen (Conversion Line) — solid blue
+        drawIchimokuLine(ichi.tenkan, COLORS.ichimokuTenkan, startIdx, endIdx, idxToX, priceToY);
+
+        // 3) Kijun-sen (Base Line) — solid orange/yellow
+        drawIchimokuLine(ichi.kijun, COLORS.ichimokuKijun, startIdx, endIdx, idxToX, priceToY);
+
+        // 4) Chikou Span (Lagging Span) — close shifted back, drawn as dots/line in purple
+        ctx.beginPath();
+        ctx.strokeStyle = COLORS.ichimokuChikou;
+        ctx.lineWidth = 1.2;
+        let chikouStarted = false;
+        for (let i = startIdx; i < endIdx; i++) {
+          if (ichi.chikou[i] == null) continue;
+          const x = idxToX(i);
+          const y = priceToY(ichi.chikou[i]!);
+          if (!chikouStarted) {
+            ctx.moveTo(x, y);
+            chikouStarted = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+      }
+
       /* ──── VWAP (Volume Weighted Average Price) ──── */
       if (inds.vwap) {
         ctx.beginPath();
@@ -1221,6 +1528,16 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         ctx.fillRect(legendX, legendY - 7, 12, 2);
         ctx.fillText("VWAP", legendX + 16, legendY);
         legendX += 60;
+      }
+      if (inds.ichimoku) {
+        // Cloud swatch
+        ctx.fillStyle = COLORS.ichimokuCloudUp;
+        ctx.fillRect(legendX, legendY - 8, 6, 8);
+        ctx.fillStyle = COLORS.ichimokuCloudDown;
+        ctx.fillRect(legendX + 6, legendY - 8, 6, 8);
+        ctx.fillStyle = COLORS.ichimokuTenkan;
+        ctx.fillText("ICH", legendX + 16, legendY);
+        legendX += 50;
       }
 
       /* ──── OHLC Legend (when crosshair is active) ──── */
