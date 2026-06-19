@@ -24,6 +24,11 @@ import AssetInfoPanel from "@/components/exchange/AssetInfoPanel";
 import MobileTabBar, { MobileTab } from "@/components/exchange/MobileTabBar";
 import PnLCalculator from "@/components/exchange/PnLCalculator";
 import AdvancedOrders from "@/components/exchange/AdvancedOrders";
+import OrderConfirmModal, {
+  OrderConfirmData,
+} from "@/components/exchange/OrderConfirmModal";
+import MultiTimeframeStrip from "@/components/exchange/MultiTimeframeStrip";
+import MarketSentiment from "@/components/exchange/MarketSentiment";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
@@ -88,6 +93,12 @@ export default function ExchangePage() {
   /* Quick pair search state */
   const [searchOpen, setSearchOpen] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
+
+  /* Order confirmation modal state */
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    data: OrderConfirmData | null;
+  }>({ open: false, data: null });
 
   /* Mobile active tab state */
   const [mobileTab, setMobileTab] = useState<MobileTab>("chart");
@@ -327,23 +338,48 @@ export default function ExchangePage() {
   }, [selectedPair]);
 
   /* ─────── Order Handlers ─────── */
-  const handleSubmit = async (form: {
+  /* Open confirmation modal with order details (Binance/Bybit-style preview) */
+  const handleSubmit = (form: {
     quantity: string;
     price: string;
     stopPrice: string;
   }) => {
+    setConfirmModal({
+      open: true,
+      data: {
+        side,
+        orderType,
+        quantity: form.quantity,
+        price: form.price,
+        stopPrice: form.stopPrice,
+        base,
+      },
+    });
+  };
+
+  /* Actually place the order after confirmation */
+  const handleConfirmOrder = async (extra: {
+    stopLoss?: string;
+    takeProfit?: string;
+    reduceOnly: boolean;
+    postOnly: boolean;
+  }) => {
+    if (!confirmModal.data) return;
+    const form = confirmModal.data;
     setLoading(true);
     try {
       const body: any = {
         symbol: selectedPair,
-        side,
-        type: orderType,
+        side: form.side,
+        type: form.orderType,
         quantity: form.quantity,
       };
-      if (orderType === "LIMIT" || orderType === "STOP_LIMIT")
+      if (form.orderType === "LIMIT" || form.orderType === "STOP_LIMIT")
         body.price = form.price;
-      if (orderType === "STOP_LIMIT" || orderType === "TAKE_PROFIT")
+      if (form.orderType === "STOP_LIMIT" || form.orderType === "TAKE_PROFIT")
         body.stop_price = form.stopPrice;
+      if (extra.reduceOnly) body.reduce_only = true;
+      if (extra.postOnly) body.post_only = true;
 
       const res = await authPost("/api/v1/exchange/order", body);
       const data = await res.json();
@@ -359,8 +395,18 @@ export default function ExchangePage() {
       } else {
         getSoundManager().play("order_placed");
       }
+
+      /* If SL/TP provided, show informational toast about attached orders */
+      if (extra.stopLoss || extra.takeProfit) {
+        const parts: string[] = [];
+        if (extra.stopLoss) parts.push(`وقف: ${extra.stopLoss}`);
+        if (extra.takeProfit) parts.push(`ربح: ${extra.takeProfit}`);
+        toast(`سيتم إعداد SL/TP: ${parts.join(" • ")}`, { icon: "🎯" });
+      }
+
       fetchOrders();
       fetchWallets();
+      setConfirmModal({ open: false, data: null });
     } catch {
       toast.error("حدث خطأ في الاتصال");
       getSoundManager().play("error");
@@ -682,6 +728,17 @@ export default function ExchangePage() {
             mobileTab === "chart" || mobileTab === "orders" ? "flex" : "hidden lg:flex"
           }`}
         >
+          {/* Multi-timeframe mini charts strip — hidden on mobile + when chart fullscreen */}
+          {!chartFullscreen && (
+            <div className="hidden md:block shrink-0">
+              <MultiTimeframeStrip
+                pair={selectedPair}
+                activeTimeframe={timeframe}
+                onSelectTimeframe={setTimeframe}
+              />
+            </div>
+          )}
+
           {/* Chart Panel — hidden on mobile when orders tab is active */}
           <div
             className={`glass-panel rounded-xl overflow-hidden flex flex-col min-h-0 ${
@@ -813,6 +870,15 @@ export default function ExchangePage() {
               />
             </div>
 
+            {/* Market Sentiment widget — hidden on mobile */}
+            <div className="hidden lg:block">
+              <MarketSentiment
+                ticker={p}
+                trades={marketTrades}
+                base={base}
+              />
+            </div>
+
             {/* Asset Info Panel — hidden on mobile */}
             <div className="hidden lg:block">
               <AssetInfoPanel
@@ -862,6 +928,17 @@ export default function ExchangePage() {
         selectedPair={selectedPair}
         favorites={favorites}
         onToggleFavorite={toggleFavorite}
+      />
+
+      {/* ─────── Order Confirmation Modal (with optional SL/TP) ─────── */}
+      <OrderConfirmModal
+        open={confirmModal.open}
+        data={confirmModal.data}
+        ticker={p}
+        feeSchedules={feeSchedules}
+        onConfirm={handleConfirmOrder}
+        onClose={() => setConfirmModal({ open: false, data: null })}
+        loading={loading}
       />
 
       {/* ─────── Mobile Tab Bar (bottom navigation for small screens) ─────── */}

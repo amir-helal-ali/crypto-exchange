@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
-import { Search, Star, X } from "lucide-react";
+import { Search, Star, X, Flame, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import {
   PAIRS,
   CURRENCY_NAMES,
@@ -16,6 +16,8 @@ interface MarketListProps {
   selectedPair: string;
   onSelectPair: (pair: string) => void;
 }
+
+type MarketTab = "all" | "favorites" | "gainers" | "losers" | "volume";
 
 interface MarketRow {
   pair: string;
@@ -37,7 +39,7 @@ export default function MarketList({
   onSelectPair,
 }: MarketListProps) {
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"all" | "favorites">("all");
+  const [tab, setTab] = useState<MarketTab>("all");
   const [favorites, setFavorites] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -92,6 +94,21 @@ export default function MarketList({
     let list = rows;
     if (tab === "favorites") {
       list = rows.filter((r) => favorites.includes(r.pair));
+    } else if (tab === "gainers") {
+      list = [...rows]
+        .filter((r) => r.price > 0)
+        .sort((a, b) => b.change - a.change)
+        .slice(0, 10);
+    } else if (tab === "losers") {
+      list = [...rows]
+        .filter((r) => r.price > 0)
+        .sort((a, b) => a.change - b.change)
+        .slice(0, 10);
+    } else if (tab === "volume") {
+      list = [...rows]
+        .filter((r) => r.volume > 0)
+        .sort((a, b) => b.volume - a.volume)
+        .slice(0, 10);
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -116,6 +133,7 @@ export default function MarketList({
     <div className="glass-panel rounded-xl flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="p-2 border-b border-border/20 shrink-0 space-y-2">
+        {/* Tab buttons - row 1 */}
         <div className="flex items-center gap-1">
           <button
             onClick={() => setTab("all")}
@@ -137,6 +155,42 @@ export default function MarketList({
           >
             <Star className="h-3 w-3" />
             المفضلة
+          </button>
+        </div>
+        {/* Tab buttons - row 2 (Top Movers) */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setTab("gainers")}
+            className={`flex-1 py-1.5 rounded-md text-[10px] font-medium transition-all flex items-center justify-center gap-1 ${
+              tab === "gainers"
+                ? "bg-emerald-500/10 text-emerald-400"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/20"
+            }`}
+          >
+            <TrendingUp className="h-3 w-3" />
+            الرابحون
+          </button>
+          <button
+            onClick={() => setTab("losers")}
+            className={`flex-1 py-1.5 rounded-md text-[10px] font-medium transition-all flex items-center justify-center gap-1 ${
+              tab === "losers"
+                ? "bg-red-500/10 text-red-400"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/20"
+            }`}
+          >
+            <TrendingDown className="h-3 w-3" />
+            الخاسرون
+          </button>
+          <button
+            onClick={() => setTab("volume")}
+            className={`flex-1 py-1.5 rounded-md text-[10px] font-medium transition-all flex items-center justify-center gap-1 ${
+              tab === "volume"
+                ? "bg-blue-500/10 text-blue-400"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/20"
+            }`}
+          >
+            <BarChart3 className="h-3 w-3" />
+            الحجم
           </button>
         </div>
 
@@ -174,18 +228,34 @@ export default function MarketList({
       <div className="flex-1 overflow-y-auto">
         {filteredRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 px-4">
-            <Star className="h-6 w-6 text-muted-foreground/30 mb-2" />
+            {tab === "gainers" ? (
+              <TrendingUp className="h-6 w-6 text-muted-foreground/30 mb-2" />
+            ) : tab === "losers" ? (
+              <TrendingDown className="h-6 w-6 text-muted-foreground/30 mb-2" />
+            ) : tab === "volume" ? (
+              <BarChart3 className="h-6 w-6 text-muted-foreground/30 mb-2" />
+            ) : (
+              <Star className="h-6 w-6 text-muted-foreground/30 mb-2" />
+            )}
             <p className="text-[11px] text-muted-foreground">
               {tab === "favorites"
                 ? "لا توجد مفضلة بعد"
-                : "لا توجد نتائج"}
+                : tab === "gainers"
+                  ? "لا توجد بيانات الرابحين"
+                  : tab === "losers"
+                    ? "لا توجد بيانات الخاسرين"
+                    : tab === "volume"
+                      ? "لا توجد بيانات الحجم"
+                      : "لا توجد نتائج"}
             </p>
           </div>
         ) : (
-          filteredRows.map((row) => {
+          filteredRows.map((row, idx) => {
             const isUp = row.change >= 0;
             const isFav = favorites.includes(row.pair);
             const isActive = row.pair === selectedPair;
+            const showHotBadge =
+              (tab === "gainers" || tab === "volume") && idx < 3;
             return (
               <button
                 key={row.pair}
@@ -213,9 +283,12 @@ export default function MarketList({
                     {row.icon}
                   </span>
                   <div className="flex flex-col items-start">
-                    <span className="font-bold leading-tight">
+                    <span className="font-bold leading-tight flex items-center gap-1">
                       {row.base}
                       <span className="text-muted-foreground/50 text-[9px]">/USDT</span>
+                      {showHotBadge && (
+                        <Flame className="h-2.5 w-2.5 text-orange-400" />
+                      )}
                     </span>
                     {row.volume > 0 && (
                       <span className="text-[8px] text-muted-foreground/60 tabular-nums">

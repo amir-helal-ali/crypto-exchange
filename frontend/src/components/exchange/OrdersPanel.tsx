@@ -8,6 +8,7 @@ import {
   History,
   ListOrdered,
   Wallet as WalletIcon,
+  Download,
 } from "lucide-react";
 import {
   STATUS_LABELS,
@@ -63,6 +64,58 @@ export default function OrdersPanel({
   const baseWallet = wallets.find((w) => w.currency === base);
   const quoteWallet = wallets.find((w) => w.currency === "USDT");
 
+  /* CSV export for order history */
+  const exportCSV = () => {
+    const headers = [
+      "ID",
+      "الوقت",
+      "الزوج",
+      "النوع",
+      "الجانب",
+      "السعر",
+      "سعر الإيقاف",
+      "الكمية",
+      "المنفذ",
+      "متوسط سعر التنفيذ",
+      "الحالة",
+    ];
+    const rows = orderHistory.map((o) => [
+      o.id,
+      formatDateTime(o.created_at || o.CreatedAt || ""),
+      o.symbol || "",
+      ORDER_TYPE_LABELS[o.type] || o.type,
+      o.side === "BUY" ? "شراء" : "بيع",
+      o.price || "",
+      o.stop_price || "",
+      o.quantity || "",
+      o.filled_quantity || "0",
+      o.avg_fill_price || "",
+      STATUS_LABELS[o.status] || o.status,
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((cell) => {
+            const s = String(cell ?? "");
+            return s.includes(",") || s.includes('"') || s.includes("\n")
+              ? `"${s.replace(/"/g, '""')}"`
+              : s;
+          })
+          .join(",")
+      )
+      .join("\n");
+    /* Add BOM for Arabic Excel compatibility */
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders_history_${base}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="glass-panel rounded-xl flex flex-col h-full overflow-hidden">
       {/* Tabs */}
@@ -102,13 +155,25 @@ export default function OrdersPanel({
         </button>
         <div className="flex-1" />
         {tab !== "balance" && (
-          <button
-            onClick={onRefresh}
-            className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-all mr-1"
-            title="تحديث"
-          >
-            <RefreshCw className="h-3 w-3" />
-          </button>
+          <>
+            {tab === "history" && orderHistory.length > 0 && (
+              <button
+                onClick={exportCSV}
+                className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-all mr-1 flex items-center gap-1"
+                title="تصدير CSV"
+              >
+                <Download className="h-3 w-3" />
+                <span className="text-[9px]">CSV</span>
+              </button>
+            )}
+            <button
+              onClick={onRefresh}
+              className="p-1 rounded hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-all mr-1"
+              title="تحديث"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </button>
+          </>
         )}
       </div>
 
