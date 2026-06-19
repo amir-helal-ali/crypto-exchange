@@ -40,10 +40,16 @@ import PositionSizeCalculator from "@/components/exchange/PositionSizeCalculator
 import LiquidationsFeed from "@/components/exchange/LiquidationsFeed";
 import OpenInterest from "@/components/exchange/OpenInterest";
 import ScreenerModal from "@/components/exchange/ScreenerModal";
+import NotificationsInbox, {
+  pushNotification,
+} from "@/components/exchange/NotificationsInbox";
+import TutorialOverlay, {
+  useTutorialAutoShow,
+} from "@/components/exchange/TutorialOverlay";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
-import { Camera, Search, Zap, Repeat, ListChecks, Filter } from "lucide-react";
+import { Camera, Search, Zap, Repeat, ListChecks, Filter, Bell, HelpCircle } from "lucide-react";
 
 import type {
   TickerData,
@@ -122,6 +128,14 @@ export default function ExchangePage() {
 
   /* Screener modal state */
   const [screenerOpen, setScreenerOpen] = useState(false);
+
+  /* Notifications inbox state */
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  /* Tutorial overlay state (auto-shows on first visit) */
+  const { shouldShow: showTutorial, markSeen: markTutorialSeen } =
+    useTutorialAutoShow();
+  const [tutorialOpen, setTutorialOpen] = useState(false);
 
   /* Mobile active tab state */
   const [mobileTab, setMobileTab] = useState<MobileTab>("chart");
@@ -415,8 +429,18 @@ export default function ExchangePage() {
       // Different sound: filled vs pending
       if (data.data?.status === "FILLED" || data.data?.status === "filled") {
         getSoundManager().play("order_filled");
+        pushNotification({
+          type: "order_filled",
+          title: "تم تنفيذ الأمر",
+          message: `${form.side === "BUY" ? "شراء" : "بيع"} ${form.quantity} ${form.base} @ ${form.orderType === "MARKET" ? "سوقي" : form.price}`,
+        });
       } else {
         getSoundManager().play("order_placed");
+        pushNotification({
+          type: "order_placed",
+          title: "تم وضع الأمر",
+          message: `${form.side === "BUY" ? "شراء" : "بيع"} ${form.quantity} ${form.base} بانتظار التنفيذ`,
+        });
       }
 
       /* If SL/TP provided, show informational toast about attached orders */
@@ -449,6 +473,11 @@ export default function ExchangePage() {
       }
       toast.success(data.message || "تم إلغاء الأمر بنجاح");
       getSoundManager().play("order_cancelled");
+      pushNotification({
+        type: "order_cancelled",
+        title: "تم إلغاء الأمر",
+        message: `تم إلغاء الأمر #${orderId}`,
+      });
       fetchOrders();
       fetchWallets();
     } catch {
@@ -674,6 +703,25 @@ export default function ExchangePage() {
             currentPrice={p?.price}
             compact
           />
+
+          {/* Notifications inbox */}
+          <button
+            onClick={() => setNotificationsOpen(true)}
+            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all relative"
+            title="الإشعارات"
+          >
+            <Bell className="h-4 w-4" />
+            <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary animate-pulse" />
+          </button>
+
+          {/* Tutorial / Help */}
+          <button
+            onClick={() => setTutorialOpen(true)}
+            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+            title="دليل الميزات"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
 
           {/* Sound toggle */}
           <button
@@ -1093,6 +1141,21 @@ export default function ExchangePage() {
         prices={prices}
         selectedPair={selectedPair}
         onSelectPair={setSelectedPair}
+      />
+
+      {/* ─────── Notifications Inbox ─────── */}
+      <NotificationsInbox
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+      />
+
+      {/* ─────── Tutorial Overlay (auto-show on first visit + manual) ─────── */}
+      <TutorialOverlay
+        open={showTutorial || tutorialOpen}
+        onClose={() => {
+          markTutorialSeen();
+          setTutorialOpen(false);
+        }}
       />
 
       {/* ─────── Mobile Tab Bar (bottom navigation for small screens) ─────── */}
