@@ -56,6 +56,7 @@ export interface ProChartProps {
   className?: string;
   chartType?: ChartType;
   indicators?: ChartIndicators;
+  logScale?: boolean;
   /* Drawing tools */
   activeTool?: DrawingTool;
   drawings?: Drawing[];
@@ -497,6 +498,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       className = "",
       chartType = "candles",
       indicators = DEFAULT_INDICATORS,
+      logScale = false,
       activeTool = "cursor",
       drawings = [],
       onDrawingsChange,
@@ -509,6 +511,7 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
     const candlesRef = useRef<Candle[]>(candles);
     const indicatorsRef = useRef<ChartIndicators>(indicators);
     const chartTypeRef = useRef<ChartType>(chartType);
+    const logScaleRef = useRef<boolean>(logScale);
     const activeToolRef = useRef<DrawingTool>(activeTool);
     const drawingsRef = useRef<Drawing[]>(drawings);
     const drawingColorRef = useRef<string>(drawingColor);
@@ -561,6 +564,11 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
       requestRender();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chartType]);
+    useEffect(() => {
+      logScaleRef.current = logScale;
+      requestRender();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [logScale]);
     useEffect(() => {
       activeToolRef.current = activeTool;
     }, [activeTool]);
@@ -889,8 +897,19 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         minPrice -= 1;
       }
 
-      const priceToY = (price: number) =>
-        chartT + ((maxPrice - price) / (maxPrice - minPrice)) * priceH;
+      /* For log scale, all prices must be > 0 */
+      const useLog = logScaleRef.current && minPrice > 0;
+      const logMin = useLog ? Math.log(minPrice) : 0;
+      const logMax = useLog ? Math.log(maxPrice) : 0;
+      const logRange = useLog ? logMax - logMin : 0;
+
+      const priceToY = (price: number) => {
+        if (useLog && price > 0) {
+          const logP = Math.log(price);
+          return chartT + ((logMax - logP) / logRange) * priceH;
+        }
+        return chartT + ((maxPrice - price) / (maxPrice - minPrice)) * priceH;
+      };
       const volToH = (vol: number) => (maxVol > 0 ? (vol / maxVol) * volH : 0);
       const idxToX = (idx: number) =>
         chartL + (idx * step - v.offsetX) + candleW / 2;
@@ -909,8 +928,13 @@ const ProChart = forwardRef<ProChartHandle, ProChartProps>(
         }
         return arr[i].time;
       };
-      const yToPrice = (y: number) =>
-        maxPrice - ((y - chartT) / priceH) * (maxPrice - minPrice);
+      const yToPrice = (y: number) => {
+        if (useLog) {
+          const logP = logMax - ((y - chartT) / priceH) * logRange;
+          return Math.exp(logP);
+        }
+        return maxPrice - ((y - chartT) / priceH) * (maxPrice - minPrice);
+      };
       const timeToX = (time: number) => {
         if (arr.length === 0) return chartL;
         const first = arr[0];

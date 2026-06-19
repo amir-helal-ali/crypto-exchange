@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
 import { authGet, authPost } from "@/lib/api";
 import ProChart, { ProChartHandle, Candle } from "@/components/ProChart";
@@ -86,6 +86,8 @@ export default function ExchangePage() {
   const [chartType, setChartType] = useState<"candles" | "line" | "area">(
     "candles"
   );
+  const [heikinAshi, setHeikinAshi] = useState(false);
+  const [logScale, setLogScale] = useState(false);
   const [marketListOpen, setMarketListOpen] = useState(true);
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -565,6 +567,32 @@ export default function ExchangePage() {
   const quoteWallet = wallets.find((w) => w.currency === "USDT");
   const openOrdersCount = orders.filter((o) => o.status === "PENDING").length;
 
+  /* Convert candles to Heikin Ashi when enabled */
+  const displayCandles = useMemo(() => {
+    if (!heikinAshi || candles.length === 0) return candles;
+    const result: Candle[] = [];
+    let prevHAOpen = candles[0].open;
+    let prevHAClose = candles[0].close;
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      const haClose = (c.open + c.high + c.low + c.close) / 4;
+      const haOpen = i === 0 ? (c.open + c.close) / 2 : (prevHAOpen + prevHAClose) / 2;
+      const haHigh = Math.max(c.high, haOpen, haClose);
+      const haLow = Math.min(c.low, haOpen, haClose);
+      result.push({
+        time: c.time,
+        open: haOpen,
+        high: haHigh,
+        low: haLow,
+        close: haClose,
+        volume: c.volume,
+      });
+      prevHAOpen = haOpen;
+      prevHAClose = haClose;
+    }
+    return result;
+  }, [candles, heikinAshi]);
+
   /* ═══════════════════════════════════════════
      Render
      ═══════════════════════════════════════════ */
@@ -873,6 +901,10 @@ export default function ExchangePage() {
               onZoomIn={() => chartRef.current?.zoomIn()}
               onZoomOut={() => chartRef.current?.zoomOut()}
               onResetView={() => chartRef.current?.resetView()}
+              heikinAshi={heikinAshi}
+              onToggleHeikinAshi={() => setHeikinAshi(!heikinAshi)}
+              logScale={logScale}
+              onToggleLogScale={() => setLogScale(!logScale)}
             />
             <DrawingToolbar
               activeTool={activeTool}
@@ -885,11 +917,12 @@ export default function ExchangePage() {
             <div className="flex-1 min-h-0 relative">
               <ProChart
                 ref={chartRef}
-                candles={candles}
+                candles={displayCandles}
                 onCrosshairMove={handleCrosshairMove}
                 className="w-full h-full"
                 chartType={chartType}
                 indicators={indicators}
+                logScale={logScale}
                 activeTool={activeTool}
                 drawings={drawings}
                 onDrawingsChange={setDrawings}

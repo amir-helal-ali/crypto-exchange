@@ -38,6 +38,10 @@ interface ChartToolbarProps {
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onResetView?: () => void;
+  heikinAshi?: boolean;
+  onToggleHeikinAshi?: () => void;
+  logScale?: boolean;
+  onToggleLogScale?: () => void;
 }
 
 const DEFAULT_INDICATORS: ChartIndicators = {
@@ -68,6 +72,10 @@ export default function ChartToolbar({
   onZoomIn,
   onZoomOut,
   onResetView,
+  heikinAshi = false,
+  onToggleHeikinAshi,
+  logScale = false,
+  onToggleLogScale,
 }: ChartToolbarProps) {
   const toggleIndicator = (key: keyof ChartIndicators) => {
     if (!onIndicatorsChange) return;
@@ -154,6 +162,32 @@ export default function ChartToolbar({
           title="مساحة"
         >
           <BarChart3 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Heikin Ashi toggle + Log scale toggle */}
+      <div className="flex items-center gap-0.5 bg-muted/20 rounded-lg p-0.5">
+        <button
+          onClick={onToggleHeikinAshi}
+          className={`px-1.5 py-1 rounded-md text-[9px] font-medium transition-all ${
+            heikinAshi
+              ? "bg-primary/20 text-primary"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+          }`}
+          title="هايكن آشي (شموع معدّلة)"
+        >
+          HA
+        </button>
+        <button
+          onClick={onToggleLogScale}
+          className={`px-1.5 py-1 rounded-md text-[9px] font-medium transition-all ${
+            logScale
+              ? "bg-primary/20 text-primary"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+          }`}
+          title="مقياس لوغاريتمي"
+        >
+          Log
         </button>
       </div>
 
