@@ -36,6 +36,8 @@ import RecurringBuyModal, {
 import WatchlistsPanel from "@/components/exchange/WatchlistsPanel";
 import CheatSheet from "@/components/exchange/CheatSheet";
 import OpenPositions from "@/components/exchange/OpenPositions";
+import PositionSizeCalculator from "@/components/exchange/PositionSizeCalculator";
+import LiquidationsFeed from "@/components/exchange/LiquidationsFeed";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
@@ -593,6 +595,15 @@ export default function ExchangePage() {
             currentPrice={p?.price}
           />
 
+          {/* Position Size Calculator (risk-based) */}
+          <PositionSizeCalculator
+            pair={selectedPair}
+            base={base}
+            ticker={p}
+            currentPrice={p?.price}
+            quoteWallet={quoteWallet}
+          />
+
           {/* Convert (instant swap) */}
           <button
             onClick={() => setConvertOpen(true)}
@@ -934,6 +945,11 @@ export default function ExchangePage() {
                   getSoundManager().play("order_placed");
                 }}
               />
+            </div>
+
+            {/* Recent Liquidations feed — hidden on mobile */}
+            <div className="hidden lg:block" style={{ height: "180px" }}>
+              <LiquidationsFeed pair={selectedPair} base={base} maxRows={15} />
             </div>
 
             {/* Trader's Cheat Sheet (pivot levels) — hidden on mobile */}
