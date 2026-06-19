@@ -29,10 +29,15 @@ import OrderConfirmModal, {
 } from "@/components/exchange/OrderConfirmModal";
 import MultiTimeframeStrip from "@/components/exchange/MultiTimeframeStrip";
 import MarketSentiment from "@/components/exchange/MarketSentiment";
+import ConvertModal from "@/components/exchange/ConvertModal";
+import RecurringBuyModal, {
+  RecurringPlan,
+} from "@/components/exchange/RecurringBuyModal";
+import WatchlistsPanel from "@/components/exchange/WatchlistsPanel";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
-import { Camera, Search } from "lucide-react";
+import { Camera, Search, Zap, Repeat, ListChecks } from "lucide-react";
 
 import type {
   TickerData,
@@ -99,6 +104,15 @@ export default function ExchangePage() {
     open: boolean;
     data: OrderConfirmData | null;
   }>({ open: false, data: null });
+
+  /* Convert (instant swap) modal state */
+  const [convertOpen, setConvertOpen] = useState(false);
+
+  /* Recurring buy (DCA) modal state */
+  const [recurringOpen, setRecurringOpen] = useState(false);
+
+  /* Watchlists panel state */
+  const [watchlistsOpen, setWatchlistsOpen] = useState(false);
 
   /* Mobile active tab state */
   const [mobileTab, setMobileTab] = useState<MobileTab>("chart");
@@ -577,6 +591,33 @@ export default function ExchangePage() {
             currentPrice={p?.price}
           />
 
+          {/* Convert (instant swap) */}
+          <button
+            onClick={() => setConvertOpen(true)}
+            className="glass-panel rounded-lg p-2 text-primary hover:bg-primary/10 transition-all"
+            title="تحويل فوري بين الأصول"
+          >
+            <Zap className="h-4 w-4" />
+          </button>
+
+          {/* Recurring buy (DCA) */}
+          <button
+            onClick={() => setRecurringOpen(true)}
+            className="glass-panel rounded-lg p-2 text-emerald-400 hover:bg-emerald-500/10 transition-all"
+            title="خطة شراء متكرر (DCA)"
+          >
+            <Repeat className="h-4 w-4" />
+          </button>
+
+          {/* Watchlists */}
+          <button
+            onClick={() => setWatchlistsOpen(true)}
+            className="glass-panel rounded-lg p-2 text-yellow-400 hover:bg-yellow-500/10 transition-all"
+            title="قوائم المراقبة"
+          >
+            <ListChecks className="h-4 w-4" />
+          </button>
+
           {/* Advanced orders (OCO / Trailing Stop) */}
           <AdvancedOrders
             pair={selectedPair}
@@ -939,6 +980,54 @@ export default function ExchangePage() {
         onConfirm={handleConfirmOrder}
         onClose={() => setConfirmModal({ open: false, data: null })}
         loading={loading}
+      />
+
+      {/* ─────── Convert (Instant Swap) Modal ─────── */}
+      <ConvertModal
+        open={convertOpen}
+        onClose={() => setConvertOpen(false)}
+        prices={prices}
+        wallets={wallets}
+        defaultFrom="USDT"
+        defaultTo={base}
+        onConfirm={(params) => {
+          toast.success(
+            `تم تحويل ${params.amount} ${params.from} إلى ${params.expectedReceive} ${params.to}`
+          );
+          getSoundManager().play("order_filled");
+          fetchWallets();
+          setConvertOpen(false);
+        }}
+      />
+
+      {/* ─────── Recurring Buy (DCA) Modal ─────── */}
+      <RecurringBuyModal
+        open={recurringOpen}
+        onClose={() => setRecurringOpen(false)}
+        defaultPair={selectedPair}
+        ticker={p}
+        onConfirm={(plan: RecurringPlan) => {
+          const freqLabel = {
+            daily: "يومي",
+            weekly: "أسبوعي",
+            biweekly: "نصف شهري",
+            monthly: "شهري",
+          }[plan.frequency];
+          toast.success(
+            `تم إنشاء خطة ${freqLabel}: ${plan.amount} USDT → ${plan.pair.replace("USDT", "")}`
+          );
+          getSoundManager().play("order_placed");
+          setRecurringOpen(false);
+        }}
+      />
+
+      {/* ─────── Watchlists Panel ─────── */}
+      <WatchlistsPanel
+        open={watchlistsOpen}
+        onClose={() => setWatchlistsOpen(false)}
+        onSelectPair={setSelectedPair}
+        selectedPair={selectedPair}
+        prices={prices}
       />
 
       {/* ─────── Mobile Tab Bar (bottom navigation for small screens) ─────── */}
