@@ -286,3 +286,70 @@ Stage Summary:
   * Portfolio: open positions with live P&L, multi-watchlists, recent pairs quick switcher
   * Trading tools: P&L calculator, position size calculator (risk-based), convert (instant swap with slippage), recurring buy (DCA), price alerts, advanced orders
   * UX: notifications inbox with custom events, tutorial overlay (first-visit onboarding), 16 keyboard shortcuts, shortcuts help modal, mobile tab bar, sound notifications
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Continue SvelteKit frontend build — adopt NavTabs pattern + make EGP (Egyptian Pound) the main platform currency
+
+Work Log:
+- Created `src/lib/utils/currency.ts` (~120 lines): EGP-first currency utility with `usdToEgp`, `egpWithSymbol`, `egpCompact`, `formatEGP`, `usdEgpDisplay`, and a reactive `usdEgpRate` store (default 48.5, persisted in localStorage)
+- Created `src/lib/components/NavTabs.svelte` (~200 lines): reusable nav-tabs component with 3 visual variants (pill, underline, segmented), 3 sizes (sm/md/lg), supports icon + label + count badge + disabled state, dispatches `change` events
+- Updated `src/lib/utils/format.ts`: re-exports all EGP utilities so components can import from one place
+- Updated `src/routes/dashboard/+layout.svelte`:
+  * Topbar now shows a portfolio pill with EGP value (live) — links to wallet
+  * Top ticker tape shows prices in EGP instead of USD, with a "ج.م" badge at the start
+  * Subscribes to `marketStore` + `usdEgpRate` to recompute portfolio value in real time
+- Updated `src/routes/dashboard/+page.svelte`:
+  * Hero portfolio card now displays total in EGP (large, gold gradient) with USD as secondary reference
+  * Stat cards converted to EGP
+  * Added NavTabs section: overview / balances / activity
+  * All prices and totals now in EGP
+- Updated `src/routes/dashboard/wallet/+page.svelte`:
+  * Total balance card shows EGP primary, USD secondary
+  * NavTabs: assets / transactions / deposit
+  * New "deposit/withdraw" tab with quick-action cards + EGP info banner
+  * All balance values in EGP
+- Updated `src/routes/dashboard/history/+page.svelte`:
+  * NavTabs: orders / deposits
+  * Prices and totals in EGP
+  * Transaction amounts show EGP equivalent when in USDT
+- Updated `src/routes/dashboard/profile/+page.svelte`:
+  * NavTabs: personal / security / preferences
+  * New "preferences" tab with currency selector (EGP default, USD alt), language selector, notification toggles
+  * Profile header card shows EGP total badge
+- Updated `src/routes/dashboard/security/+page.svelte`:
+  * Stat cards (2FA, sessions, API keys)
+  * NavTabs: 2FA / sessions / API
+  * Cleaner API tab with security notice
+- Updated `src/routes/dashboard/fees/+page.svelte`:
+  * EGP rate banner at top
+  * NavTabs: tiers / details / calc
+  * New calculator tab — enter USD amount, see fees in EGP primary + USD secondary
+  * All daily limits in EGP
+- Updated `src/routes/dashboard/notifications/+page.svelte`:
+  * NavTabs: all / unread / trading / wallet / security (categorized filters)
+  * Cleaner unread count display
+- Updated `src/routes/dashboard/exchange/+page.svelte`:
+  * Pair header shows EGP equivalent price under USD price
+  * Orders panel uses NavTabs (underline variant) instead of custom tab-btn class
+  * Mobile orders panel also uses NavTabs
+  * Order prices shown in EGP
+  * Pair header has EGP currency badge
+
+Stage Summary:
+- 2 new files created (currency.ts, NavTabs.svelte, ~320 lines total)
+- 9 page files updated to use NavTabs + EGP currency
+- All NavTabs use 3 visual variants consistently (pill for primary nav, underline for inline tab strips, segmented for compact toggles)
+- EGP (ج.م) is now the primary display currency throughout the platform:
+  * Topbar portfolio pill
+  * Top ticker tape
+  * Dashboard hero card
+  * Wallet balance card + table
+  * History tables
+  * Exchange pair header
+  * Fees calculator + tier cards
+  * Profile preferences selector
+- All currency conversions use the reactive `usdEgpRate` store (default 48.5, persisted)
+- Production build succeeds with 0 errors
+- Build size: dashboard layout 36.4 kB / dashboard main 41.9 kB / exchange 53.3 kB
