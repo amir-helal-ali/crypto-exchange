@@ -46,10 +46,12 @@ import NotificationsInbox, {
 import TutorialOverlay, {
   useTutorialAutoShow,
 } from "@/components/exchange/TutorialOverlay";
+import MarketsHeatmapModal from "@/components/exchange/MarketsHeatmapModal";
+import RecentPairs from "@/components/exchange/RecentPairs";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
-import { Camera, Search, Zap, Repeat, ListChecks, Filter, Bell, HelpCircle } from "lucide-react";
+import { Camera, Search, Zap, Repeat, ListChecks, Filter, Bell, HelpCircle, Grid3x3 } from "lucide-react";
 
 import type {
   TickerData,
@@ -133,6 +135,9 @@ export default function ExchangePage() {
 
   /* Notifications inbox state */
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  /* Markets heatmap modal state */
+  const [heatmapOpen, setHeatmapOpen] = useState(false);
 
   /* Tutorial overlay state (auto-shows on first visit) */
   const { shouldShow: showTutorial, markSeen: markTutorialSeen } =
@@ -637,6 +642,15 @@ export default function ExchangePage() {
             <Filter className="h-4 w-4" />
           </button>
 
+          {/* Markets Heatmap */}
+          <button
+            onClick={() => setHeatmapOpen(true)}
+            className="glass-panel rounded-lg p-2 text-emerald-400 hover:bg-emerald-500/10 transition-all"
+            title="خريطة الأسواق الحرارية"
+          >
+            <Grid3x3 className="h-4 w-4" />
+          </button>
+
           {/* Chart screenshot export (Ctrl+E) */}
           <button
             onClick={() => {
@@ -874,13 +888,23 @@ export default function ExchangePage() {
         >
           {/* Multi-timeframe mini charts strip — hidden on mobile + when chart fullscreen */}
           {!chartFullscreen && (
-            <div className="hidden md:block shrink-0">
-              <MultiTimeframeStrip
-                pair={selectedPair}
-                activeTimeframe={timeframe}
-                onSelectTimeframe={setTimeframe}
-              />
-            </div>
+            <>
+              {/* Recent pairs quick switcher */}
+              <div className="hidden md:block shrink-0">
+                <RecentPairs
+                  selectedPair={selectedPair}
+                  onSelectPair={setSelectedPair}
+                  prices={prices}
+                />
+              </div>
+              <div className="hidden md:block shrink-0">
+                <MultiTimeframeStrip
+                  pair={selectedPair}
+                  activeTimeframe={timeframe}
+                  onSelectTimeframe={setTimeframe}
+                />
+              </div>
+            </>
           )}
 
           {/* Chart Panel — hidden on mobile when orders tab is active */}
@@ -1171,6 +1195,15 @@ export default function ExchangePage() {
       <ScreenerModal
         open={screenerOpen}
         onClose={() => setScreenerOpen(false)}
+        prices={prices}
+        selectedPair={selectedPair}
+        onSelectPair={setSelectedPair}
+      />
+
+      {/* ─────── Markets Heatmap Modal ─────── */}
+      <MarketsHeatmapModal
+        open={heatmapOpen}
+        onClose={() => setHeatmapOpen(false)}
         prices={prices}
         selectedPair={selectedPair}
         onSelectPair={setSelectedPair}
