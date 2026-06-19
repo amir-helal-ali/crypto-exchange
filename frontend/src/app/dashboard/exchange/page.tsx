@@ -34,6 +34,8 @@ import RecurringBuyModal, {
   RecurringPlan,
 } from "@/components/exchange/RecurringBuyModal";
 import WatchlistsPanel from "@/components/exchange/WatchlistsPanel";
+import CheatSheet from "@/components/exchange/CheatSheet";
+import OpenPositions from "@/components/exchange/OpenPositions";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
@@ -918,6 +920,25 @@ export default function ExchangePage() {
                 trades={marketTrades}
                 base={base}
               />
+            </div>
+
+            {/* Open Positions panel with live P&L — hidden on mobile */}
+            <div className="hidden lg:block">
+              <OpenPositions
+                wallets={wallets}
+                prices={prices}
+                onClosePosition={(currency) => {
+                  toast(`سيتم إغلاق مركز ${currency} وتحويله إلى USDT`, {
+                    icon: "💼",
+                  });
+                  getSoundManager().play("order_placed");
+                }}
+              />
+            </div>
+
+            {/* Trader's Cheat Sheet (pivot levels) — hidden on mobile */}
+            <div className="hidden lg:block">
+              <CheatSheet pair={selectedPair} currentPrice={p?.price} />
             </div>
 
             {/* Asset Info Panel — hidden on mobile */}
