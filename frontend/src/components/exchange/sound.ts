@@ -148,6 +148,12 @@ export function useKeyboardShortcuts(handlers: {
   onOpenSearch?: () => void;
   onExportChart?: () => void;
   onToggleFullscreen?: () => void;
+  onOpenNotifications?: () => void;
+  onOpenHeatmap?: () => void;
+  onOpenScreener?: () => void;
+  onOpenConvert?: () => void;
+  onOpenWatchlists?: () => void;
+  onOpenTutorial?: () => void;
 }) {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
@@ -172,6 +178,11 @@ export function useKeyboardShortcuts(handlers: {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
           e.preventDefault();
           handlersRef.current.onOpenSearch?.();
+        }
+        // Allow Ctrl+H to open heatmap even from inputs
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
+          e.preventDefault();
+          handlersRef.current.onOpenHeatmap?.();
         }
         return;
       }
@@ -205,6 +216,30 @@ export function useKeyboardShortcuts(handlers: {
           case "f":
             e.preventDefault();
             handlersRef.current.onToggleFullscreen?.();
+            break;
+          case "n":
+            e.preventDefault();
+            handlersRef.current.onOpenNotifications?.();
+            break;
+          case "h":
+            e.preventDefault();
+            handlersRef.current.onOpenHeatmap?.();
+            break;
+          case "j":
+            e.preventDefault();
+            handlersRef.current.onOpenScreener?.();
+            break;
+          case "v":
+            e.preventDefault();
+            handlersRef.current.onOpenConvert?.();
+            break;
+          case "w":
+            e.preventDefault();
+            handlersRef.current.onOpenWatchlists?.();
+            break;
+          case "t":
+            e.preventDefault();
+            handlersRef.current.onOpenTutorial?.();
             break;
           case "enter":
             e.preventDefault();

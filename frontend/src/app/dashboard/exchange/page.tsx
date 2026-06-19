@@ -48,10 +48,11 @@ import TutorialOverlay, {
 } from "@/components/exchange/TutorialOverlay";
 import MarketsHeatmapModal from "@/components/exchange/MarketsHeatmapModal";
 import RecentPairs from "@/components/exchange/RecentPairs";
+import ShortcutsHelpModal from "@/components/exchange/ShortcutsHelpModal";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
-import { Camera, Search, Zap, Repeat, ListChecks, Filter, Bell, HelpCircle, Grid3x3 } from "lucide-react";
+import { Camera, Search, Zap, Repeat, ListChecks, Filter, Bell, HelpCircle, Grid3x3, Keyboard } from "lucide-react";
 
 import type {
   TickerData,
@@ -138,6 +139,9 @@ export default function ExchangePage() {
 
   /* Markets heatmap modal state */
   const [heatmapOpen, setHeatmapOpen] = useState(false);
+
+  /* Shortcuts help modal state */
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   /* Tutorial overlay state (auto-shows on first visit) */
   const { shouldShow: showTutorial, markSeen: markTutorialSeen } =
@@ -507,6 +511,12 @@ export default function ExchangePage() {
       }
     },
     onToggleFullscreen: () => setChartFullscreen((v) => !v),
+    onOpenNotifications: () => setNotificationsOpen(true),
+    onOpenHeatmap: () => setHeatmapOpen(true),
+    onOpenScreener: () => setScreenerOpen(true),
+    onOpenConvert: () => setConvertOpen(true),
+    onOpenWatchlists: () => setWatchlistsOpen(true),
+    onOpenTutorial: () => setTutorialOpen(true),
   });
 
   /* ─────── Load favorites from localStorage ─────── */
@@ -760,9 +770,18 @@ export default function ExchangePage() {
           <button
             onClick={() => setTutorialOpen(true)}
             className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
-            title="دليل الميزات"
+            title="دليل الميزات (Ctrl+T)"
           >
             <HelpCircle className="h-4 w-4" />
+          </button>
+
+          {/* Keyboard shortcuts help */}
+          <button
+            onClick={() => setShortcutsHelpOpen(true)}
+            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+            title="اختصارات لوحة المفاتيح"
+          >
+            <Keyboard className="h-4 w-4" />
           </button>
 
           {/* Sound toggle */}
@@ -1094,21 +1113,15 @@ export default function ExchangePage() {
       </div>
 
       {/* Keyboard shortcuts hint */}
-      <div className="hidden md:flex items-center justify-center gap-3 text-[9px] text-muted-foreground/60 py-0.5 shrink-0">
+      <div className="hidden md:flex items-center justify-center gap-3 text-[9px] text-muted-foreground/60 py-0.5 shrink-0 flex-wrap">
         <span>
           <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+K</kbd> بحث
         </span>
         <span>
-          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+B</kbd> شراء
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+B/S</kbd> شراء/بيع
         </span>
         <span>
-          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+S</kbd> بيع
-        </span>
-        <span>
-          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+M</kbd> سوقي
-        </span>
-        <span>
-          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+L</kbd> محدد
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+M/L</kbd> سوقي/محدد
         </span>
         <span>
           <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+E</kbd> لقطة شارت
@@ -1117,8 +1130,29 @@ export default function ExchangePage() {
           <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+F</kbd> ملء الشاشة
         </span>
         <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+H</kbd> خريطة الأسواق
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+N</kbd> الإشعارات
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+V</kbd> تحويل
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+W</kbd> قوائم المراقبة
+        </span>
+        <span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+T</kbd> دليل الميزات
+        </span>
+        <span>
           <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Space</kbd> تبديل الشراء/البيع
         </span>
+        <button
+          onClick={() => setShortcutsHelpOpen(true)}
+          className="text-primary hover:underline"
+        >
+          عرض الكل ←
+        </button>
       </div>
 
       {/* ─────── Quick Pair Search Modal (Ctrl+K) ─────── */}
@@ -1207,6 +1241,12 @@ export default function ExchangePage() {
         prices={prices}
         selectedPair={selectedPair}
         onSelectPair={setSelectedPair}
+      />
+
+      {/* ─────── Shortcuts Help Modal ─────── */}
+      <ShortcutsHelpModal
+        open={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
       />
 
       {/* ─────── Notifications Inbox ─────── */}
