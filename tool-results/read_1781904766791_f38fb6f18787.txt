@@ -1,0 +1,877 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useEffect, useState, useRef, useCallback } from "react";
+     4→     4→import toast from "react-hot-toast";
+     5→     5→import { authGet, authPost } from "@/lib/api";
+     6→     6→import ProChart, { ProChartHandle, Candle } from "@/components/ProChart";
+     7→     7→
+     8→     8→/* Exchange sub-components */
+     9→     9→import TickerTape from "@/components/exchange/TickerTape";
+    10→    10→import MarketList from "@/components/exchange/MarketList";
+    11→    11→import PairHeader from "@/components/exchange/PairHeader";
+    12→    12→import ChartToolbar, {
+    13→    13→  ChartIndicators,
+    14→    14→} from "@/components/exchange/ChartToolbar";
+    15→    15→import OrderBookPanel from "@/components/exchange/OrderBookPanel";
+    16→    16→import DepthChart from "@/components/exchange/DepthChart";
+    17→    17→import TradeForm from "@/components/exchange/TradeForm";
+    18→    18→import TradesFeed from "@/components/exchange/TradesFeed";
+    19→    19→import OrdersPanel from "@/components/exchange/OrdersPanel";
+    20→    20→import DrawingToolbar from "@/components/exchange/DrawingToolbar";
+    21→    21→import PriceAlerts from "@/components/exchange/PriceAlerts";
+    22→    22→import QuickPairSearch from "@/components/exchange/QuickPairSearch";
+    23→    23→import AssetInfoPanel from "@/components/exchange/AssetInfoPanel";
+    24→    24→import MobileTabBar, { MobileTab } from "@/components/exchange/MobileTabBar";
+    25→    25→import PnLCalculator from "@/components/exchange/PnLCalculator";
+    26→    26→import AdvancedOrders from "@/components/exchange/AdvancedOrders";
+    27→    27→import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
+    28→    28→import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
+    29→    29→import { DRAWING_COLORS } from "@/components/exchange/drawings";
+    30→    30→import { Camera, Search } from "lucide-react";
+    31→    31→
+    32→    32→import type {
+    33→    33→  TickerData,
+    34→    34→  MarketTrade,
+    35→    35→  UserOrder,
+    36→    36→  Wallet as WalletType,
+    37→    37→  FeeSchedule,
+    38→    38→  OrderSide,
+    39→    39→  OrderType,
+    40→    40→  Timeframe,
+    41→    41→} from "@/components/exchange/types";
+    42→    42→
+    43→    43→/* ═══════════════════════════════════════════
+    44→    44→   Main Exchange Page — Binance/Bybit-grade UI
+    45→    45→   ═══════════════════════════════════════════ */
+    46→    46→export default function ExchangePage() {
+    47→    47→  /* ─────── State ─────── */
+    48→    48→  const [selectedPair, setSelectedPair] = useState("BTCUSDT");
+    49→    49→  const [prices, setPrices] = useState<Record<string, TickerData>>({});
+    50→    50→  const [orderBook, setOrderBook] = useState<{
+    51→    51→    bids: [string, string][];
+    52→    52→    asks: [string, string][];
+    53→    53→  }>({ bids: [], asks: [] });
+    54→    54→  const [side, setSide] = useState<OrderSide>("BUY");
+    55→    55→  const [orderType, setOrderType] = useState<OrderType>("MARKET");
+    56→    56→  const [orders, setOrders] = useState<UserOrder[]>([]);
+    57→    57→  const [wallets, setWallets] = useState<WalletType[]>([]);
+    58→    58→  const [feeSchedules, setFeeSchedules] = useState<FeeSchedule[]>([]);
+    59→    59→  const [loading, setLoading] = useState(false);
+    60→    60→  const [timeframe, setTimeframe] = useState<Timeframe>("15m");
+    61→    61→  const [candles, setCandles] = useState<Candle[]>([]);
+    62→    62→  const [marketTrades, setMarketTrades] = useState<MarketTrade[]>([]);
+    63→    63→  const [crosshairData, setCrosshairData] = useState<Candle | null>(null);
+    64→    64→  const [chartType, setChartType] = useState<"candles" | "line" | "area">(
+    65→    65→    "candles"
+    66→    66→  );
+    67→    67→  const [marketListOpen, setMarketListOpen] = useState(true);
+    68→    68→  const [chartFullscreen, setChartFullscreen] = useState(false);
+    69→    69→  const [soundEnabled, setSoundEnabled] = useState(true);
+    70→    70→  const [indicators, setIndicators] = useState<ChartIndicators>({
+    71→    71→    sma20: true,
+    72→    72→    ema50: true,
+    73→    73→    bollinger: false,
+    74→    74→    rsi: false,
+    75→    75→    macd: false,
+    76→    76→    vwap: false,
+    77→    77→    stochastic: false,
+    78→    78→    ichimoku: false,
+    79→    79→    volume: true,
+    80→    80→  });
+    81→    81→  const [showDepthChart, setShowDepthChart] = useState(true);
+    82→    82→
+    83→    83→  /* Drawing tools state */
+    84→    84→  const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
+    85→    85→  const [drawings, setDrawings] = useState<Drawing[]>([]);
+    86→    86→  const [drawingColor, setDrawingColor] = useState<string>(DRAWING_COLORS[0]);
+    87→    87→
+    88→    88→  /* Quick pair search state */
+    89→    89→  const [searchOpen, setSearchOpen] = useState(false);
+    90→    90→  const [favorites, setFavorites] = useState<string[]>([]);
+    91→    91→
+    92→    92→  /* Mobile active tab state */
+    93→    93→  const [mobileTab, setMobileTab] = useState<MobileTab>("chart");
+    94→    94→
+    95→    95→  const chartRef = useRef<ProChartHandle>(null);
+    96→    96→  const wsRef = useRef<WebSocket | null>(null);
+    97→    97→  const prevPrices = useRef<Record<string, number>>({});
+    98→    98→
+    99→    99→  /* ─────── Data Fetching ─────── */
+   100→   100→  const fetchOrders = useCallback(async () => {
+   101→   101→    try {
+   102→   102→      const r = await authGet("/api/v1/exchange/orders");
+   103→   103→      const d = await r.json();
+   104→   104→      setOrders(Array.isArray(d.data) ? d.data : []);
+   105→   105→    } catch {}
+   106→   106→  }, []);
+   107→   107→
+   108→   108→  const fetchWallets = useCallback(async () => {
+   109→   109→    try {
+   110→   110→      const r = await authGet("/api/v1/wallet/balances");
+   111→   111→      const d = await r.json();
+   112→   112→      setWallets(Array.isArray(d.data) ? d.data : []);
+   113→   113→    } catch {}
+   114→   114→  }, []);
+   115→   115→
+   116→   116→  const fetchFees = useCallback(async () => {
+   117→   117→    try {
+   118→   118→      const r = await fetch(
+   119→   119→        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/api/v1/fees`
+   120→   120→      );
+   121→   121→      if (r.ok) {
+   122→   122→        const d = await r.json();
+   123→   123→        setFeeSchedules(Array.isArray(d.data) ? d.data : []);
+   124→   124→      }
+   125→   125→    } catch {}
+   126→   126→  }, []);
+   127→   127→
+   128→   128→  const fetchKlines = useCallback(async () => {
+   129→   129→    try {
+   130→   130→      const res = await fetch(
+   131→   131→        `https://api.binance.com/api/v3/klines?symbol=${selectedPair}&interval=${timeframe}&limit=500`
+   132→   132→      );
+   133→   133→      if (!res.ok) return;
+   134→   134→      const data = await res.json();
+   135→   135→      const candleData: Candle[] = data.map((k: any) => ({
+   136→   136→        time: Math.floor(k[0] / 1000),
+   137→   137→        open: parseFloat(k[1]),
+   138→   138→        high: parseFloat(k[2]),
+   139→   139→        low: parseFloat(k[3]),
+   140→   140→        close: parseFloat(k[4]),
+   141→   141→        volume: parseFloat(k[5]),
+   142→   142→      }));
+   143→   143→      setCandles(candleData);
+   144→   144→    } catch (e) {
+   145→   145→      console.error("Failed to fetch klines:", e);
+   146→   146→    }
+   147→   147→  }, [selectedPair, timeframe]);
+   148→   148→
+   149→   149→  const fetchMarketTrades = useCallback(async () => {
+   150→   150→    try {
+   151→   151→      const res = await fetch(
+   152→   152→        `https://api.binance.com/api/v3/trades?symbol=${selectedPair}&limit=30`
+   153→   153→      );
+   154→   154→      if (!res.ok) return;
+   155→   155→      const data = await res.json();
+   156→   156→      setMarketTrades(
+   157→   157→        data.map((t: any) => ({
+   158→   158→          id: t.id,
+   159→   159→          price: parseFloat(t.price),
+   160→   160→          qty: parseFloat(t.qty),
+   161→   161→          time: t.time,
+   162→   162→          isBuyerMaker: t.isBuyerMaker,
+   163→   163→        }))
+   164→   164→      );
+   165→   165→    } catch {}
+   166→   166→  }, [selectedPair]);
+   167→   167→
+   168→   168→  /* Initial fetch */
+   169→   169→  useEffect(() => {
+   170→   170→    fetchOrders();
+   171→   171→    fetchWallets();
+   172→   172→    fetchFees();
+   173→   173→  }, [fetchOrders, fetchWallets, fetchFees]);
+   174→   174→
+   175→   175→  /* Load drawings for the selected pair from localStorage */
+   176→   176→  useEffect(() => {
+   177→   177→    try {
+   178→   178→      const raw = localStorage.getItem(`exchange_drawings_${selectedPair}`);
+   179→   179→      if (raw) {
+   180→   180→        setDrawings(JSON.parse(raw));
+   181→   181→      } else {
+   182→   182→        setDrawings([]);
+   183→   183→      }
+   184→   184→    } catch {
+   185→   185→      setDrawings([]);
+   186→   186→    }
+   187→   187→  }, [selectedPair]);
+   188→   188→
+   189→   189→  /* Persist drawings to localStorage whenever they change */
+   190→   190→  useEffect(() => {
+   191→   191→    try {
+   192→   192→      localStorage.setItem(
+   193→   193→        `exchange_drawings_${selectedPair}`,
+   194→   194→        JSON.stringify(drawings)
+   195→   195→      );
+   196→   196→    } catch {}
+   197→   197→  }, [drawings, selectedPair]);
+   198→   198→
+   199→   199→  /* Refetch when pair/timeframe changes */
+   200→   200→  useEffect(() => {
+   201→   201→    fetchKlines();
+   202→   202→    fetchMarketTrades();
+   203→   203→  }, [fetchKlines, fetchMarketTrades]);
+   204→   204→
+   205→   205→  /* ─────── Binance WebSocket (Ticker + Depth + All tickers tape) ─────── */
+   206→   206→  useEffect(() => {
+   207→   207→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   208→   208→    const streams = [
+   209→   209→      `${selectedPair.toLowerCase()}@ticker`,
+   210→   210→      `${selectedPair.toLowerCase()}@depth20@100ms`,
+   211→   211→      "!ticker@arr", // all tickers for the tape
+   212→   212→    ];
+   213→   213→    ws.onopen = () =>
+   214→   214→      ws.send(JSON.stringify({ method: "SUBSCRIBE", params: streams, id: 1 }));
+   215→   215→
+   216→   216→    ws.onmessage = (e) => {
+   217→   217→      const d = JSON.parse(e.data);
+   218→   218→
+   219→   219→      // Single ticker update
+   220→   220→      if (d.e === "24hrTicker" && d.s === selectedPair) {
+   221→   221→        prevPrices.current[selectedPair] =
+   222→   222→          prices[selectedPair]?.price || parseFloat(d.c);
+   223→   223→        setPrices((prev: any) => ({
+   224→   224→          ...prev,
+   225→   225→          [selectedPair]: {
+   226→   226→            price: parseFloat(d.c),
+   227→   227→            high: parseFloat(d.h),
+   228→   228→            low: parseFloat(d.l),
+   229→   229→            volume: d.v,
+   230→   230→            change: d.P,
+   231→   231→            quoteVolume: d.q,
+   232→   232→            openPrice: d.o,
+   233→   233→          },
+   234→   234→        }));
+   235→   235→      }
+   236→   236→      // All tickers array (for ticker tape)
+   237→   237→      else if (Array.isArray(d) && d.length > 0 && d[0]?.e === "24hrTicker") {
+   238→   238→        setPrices((prev: any) => {
+   239→   239→          const next = { ...prev };
+   240→   240→          for (const t of d) {
+   241→   241→            if (t.s && t.s.endsWith("USDT")) {
+   242→   242→              next[t.s] = {
+   243→   243→                price: parseFloat(t.c),
+   244→   244→                high: parseFloat(t.h),
+   245→   245→                low: parseFloat(t.l),
+   246→   246→                volume: t.v,
+   247→   247→                change: t.P,
+   248→   248→                quoteVolume: t.q,
+   249→   249→                openPrice: t.o,
+   250→   250→              };
+   251→   251→            }
+   252→   252→          }
+   253→   253→          return next;
+   254→   254→        });
+   255→   255→      }
+   256→   256→      // Depth update
+   257→   257→      else if (d.e === "depthUpdate" && d.bids && d.asks) {
+   258→   258→        setOrderBook({
+   259→   259→          bids: d.bids.slice(0, 15),
+   260→   260→          asks: d.asks.slice(0, 15),
+   261→   261→        });
+   262→   262→      }
+   263→   263→    };
+   264→   264→
+   265→   265→    wsRef.current = ws;
+   266→   266→    return () => ws.close();
+   267→   267→    // eslint-disable-next-line react-hooks/exhaustive-deps
+   268→   268→  }, [selectedPair]);
+   269→   269→
+   270→   270→  /* ─────── Real-time Kline WebSocket ─────── */
+   271→   271→  useEffect(() => {
+   272→   272→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   273→   273→    ws.onopen = () =>
+   274→   274→      ws.send(
+   275→   275→        JSON.stringify({
+   276→   276→          method: "SUBSCRIBE",
+   277→   277→          params: [`${selectedPair.toLowerCase()}@kline_${timeframe}`],
+   278→   278→          id: 1,
+   279→   279→        })
+   280→   280→      );
+   281→   281→    ws.onmessage = (e) => {
+   282→   282→      const d = JSON.parse(e.data);
+   283→   283→      if (d.e === "kline" && chartRef.current) {
+   284→   284→        const k = d.k;
+   285→   285→        chartRef.current.updateLastCandle({
+   286→   286→          time: Math.floor(k.t / 1000),
+   287→   287→          open: parseFloat(k.o),
+   288→   288→          high: parseFloat(k.h),
+   289→   289→          low: parseFloat(k.l),
+   290→   290→          close: parseFloat(k.c),
+   291→   291→          volume: parseFloat(k.v),
+   292→   292→        });
+   293→   293→      }
+   294→   294→    };
+   295→   295→    return () => ws.close();
+   296→   296→  }, [selectedPair, timeframe]);
+   297→   297→
+   298→   298→  /* ─────── Real-time Trade WebSocket ─────── */
+   299→   299→  useEffect(() => {
+   300→   300→    const ws = new WebSocket("wss://stream.binance.com:9443/ws");
+   301→   301→    ws.onopen = () =>
+   302→   302→      ws.send(
+   303→   303→        JSON.stringify({
+   304→   304→          method: "SUBSCRIBE",
+   305→   305→          params: [`${selectedPair.toLowerCase()}@trade`],
+   306→   306→          id: 1,
+   307→   307→        })
+   308→   308→      );
+   309→   309→    ws.onmessage = (e) => {
+   310→   310→      const d = JSON.parse(e.data);
+   311→   311→      if (d.e === "trade") {
+   312→   312→        setMarketTrades((prev) => {
+   313→   313→          const newTrade: MarketTrade = {
+   314→   314→            id: d.t,
+   315→   315→            price: parseFloat(d.p),
+   316→   316→            qty: parseFloat(d.q),
+   317→   317→            time: d.T,
+   318→   318→            isBuyerMaker: d.m,
+   319→   319→          };
+   320→   320→          // dedupe
+   321→   321→          if (prev.some((t) => t.id === newTrade.id)) return prev;
+   322→   322→          return [newTrade, ...prev].slice(0, 50);
+   323→   323→        });
+   324→   324→      }
+   325→   325→    };
+   326→   326→    return () => ws.close();
+   327→   327→  }, [selectedPair]);
+   328→   328→
+   329→   329→  /* ─────── Order Handlers ─────── */
+   330→   330→  const handleSubmit = async (form: {
+   331→   331→    quantity: string;
+   332→   332→    price: string;
+   333→   333→    stopPrice: string;
+   334→   334→  }) => {
+   335→   335→    setLoading(true);
+   336→   336→    try {
+   337→   337→      const body: any = {
+   338→   338→        symbol: selectedPair,
+   339→   339→        side,
+   340→   340→        type: orderType,
+   341→   341→        quantity: form.quantity,
+   342→   342→      };
+   343→   343→      if (orderType === "LIMIT" || orderType === "STOP_LIMIT")
+   344→   344→        body.price = form.price;
+   345→   345→      if (orderType === "STOP_LIMIT" || orderType === "TAKE_PROFIT")
+   346→   346→        body.stop_price = form.stopPrice;
+   347→   347→
+   348→   348→      const res = await authPost("/api/v1/exchange/order", body);
+   349→   349→      const data = await res.json();
+   350→   350→      if (!res.ok) {
+   351→   351→        toast.error(data.error || "فشل تنفيذ الأمر");
+   352→   352→        getSoundManager().play("error");
+   353→   353→        return;
+   354→   354→      }
+   355→   355→      toast.success(data.message || "تم تنفيذ الأمر بنجاح");
+   356→   356→      // Different sound: filled vs pending
+   357→   357→      if (data.data?.status === "FILLED" || data.data?.status === "filled") {
+   358→   358→        getSoundManager().play("order_filled");
+   359→   359→      } else {
+   360→   360→        getSoundManager().play("order_placed");
+   361→   361→      }
+   362→   362→      fetchOrders();
+   363→   363→      fetchWallets();
+   364→   364→    } catch {
+   365→   365→      toast.error("حدث خطأ في الاتصال");
+   366→   366→      getSoundManager().play("error");
+   367→   367→    } finally {
+   368→   368→      setLoading(false);
+   369→   369→    }
+   370→   370→  };
+   371→   371→
+   372→   372→  const handleCancel = async (orderId: number) => {
+   373→   373→    try {
+   374→   374→      const res = await authPost(`/api/v1/exchange/order/${orderId}/cancel`);
+   375→   375→      const data = await res.json();
+   376→   376→      if (!res.ok) {
+   377→   377→        toast.error(data.error || "فشل إلغاء الأمر");
+   378→   378→        getSoundManager().play("error");
+   379→   379→        return;
+   380→   380→      }
+   381→   381→      toast.success(data.message || "تم إلغاء الأمر بنجاح");
+   382→   382→      getSoundManager().play("order_cancelled");
+   383→   383→      fetchOrders();
+   384→   384→      fetchWallets();
+   385→   385→    } catch {
+   386→   386→      toast.error("حدث خطأ في الاتصال");
+   387→   387→    }
+   388→   388→  };
+   389→   389→
+   390→   390→  /* ─────── Keyboard shortcuts ─────── */
+   391→   391→  useKeyboardShortcuts({
+   392→   392→    onToggleSide: () => setSide((s) => (s === "BUY" ? "SELL" : "BUY")),
+   393→   393→    onSetBuy: () => setSide("BUY"),
+   394→   394→    onSetSell: () => setSide("SELL"),
+   395→   395→    onSetMarket: () => setOrderType("MARKET"),
+   396→   396→    onSetLimit: () => setOrderType("LIMIT"),
+   397→   397→    onOpenSearch: () => setSearchOpen(true),
+   398→   398→    onExportChart: () => {
+   399→   399→      if (chartRef.current) {
+   400→   400→        chartRef.current.exportPng(`chart_${selectedPair}_${timeframe}.png`);
+   401→   401→        toast.success("تم تصدير صورة الشارت");
+   402→   402→      }
+   403→   403→    },
+   404→   404→    onToggleFullscreen: () => setChartFullscreen((v) => !v),
+   405→   405→  });
+   406→   406→
+   407→   407→  /* ─────── Load favorites from localStorage ─────── */
+   408→   408→  useEffect(() => {
+   409→   409→    try {
+   410→   410→      const raw = localStorage.getItem("exchange_favorites");
+   411→   411→      if (raw) setFavorites(JSON.parse(raw));
+   412→   412→    } catch {}
+   413→   413→    // Listen for changes from MarketList or QuickPairSearch
+   414→   414→    const syncFavorites = () => {
+   415→   415→      try {
+   416→   416→        const stored = localStorage.getItem("exchange_favorites");
+   417→   417→        if (stored) setFavorites(JSON.parse(stored));
+   418→   418→      } catch {}
+   419→   419→    };
+   420→   420→    window.addEventListener("exchange:favorites-changed", syncFavorites);
+   421→   421→    return () =>
+   422→   422→      window.removeEventListener("exchange:favorites-changed", syncFavorites);
+   423→   423→  }, []);
+   424→   424→
+   425→   425→  /* ─────── Persist favorites ─────── */
+   426→   426→  useEffect(() => {
+   427→   427→    try {
+   428→   428→      localStorage.setItem("exchange_favorites", JSON.stringify(favorites));
+   429→   429→      window.dispatchEvent(new CustomEvent("exchange:favorites-changed"));
+   430→   430→    } catch {}
+   431→   431→  }, [favorites]);
+   432→   432→
+   433→   433→  /* ─────── Toggle favorite pair ─────── */
+   434→   434→  const toggleFavorite = useCallback((pair: string) => {
+   435→   435→    setFavorites((prev) =>
+   436→   436→      prev.includes(pair)
+   437→   437→        ? prev.filter((p) => p !== pair)
+   438→   438→        : [...prev, pair]
+   439→   439→    );
+   440→   440→  }, []);
+   441→   441→
+   442→   442→  /* ─────── Sync sound enabled state ─────── */
+   443→   443→  useEffect(() => {
+   444→   444→    getSoundManager().setEnabled(soundEnabled);
+   445→   445→  }, [soundEnabled]);
+   446→   446→
+   447→   447→  /* ─────── Crosshair handler ─────── */
+   448→   448→  const handleCrosshairMove = useCallback(
+   449→   449→    (data: { candle: Candle | null; x: number; y: number } | null) => {
+   450→   450→      setCrosshairData(data?.candle || null);
+   451→   451→    },
+   452→   452→    []
+   453→   453→  );
+   454→   454→
+   455→   455→  /* ─────── Order book price click → propagate to form ─────── */
+   456→   456→  const handlePriceClick = useCallback((price: number) => {
+   457→   457→    window.dispatchEvent(
+   458→   458→      new CustomEvent("exchange:set-price", { detail: price })
+   459→   459→    );
+   460→   460→  }, []);
+   461→   461→
+   462→   462→  /* ─────── Computed ─────── */
+   463→   463→  const base = selectedPair.replace("USDT", "");
+   464→   464→  const p = prices[selectedPair];
+   465→   465→  const prevPrice = prevPrices.current[selectedPair];
+   466→   466→  const baseWallet = wallets.find((w) => w.currency === base);
+   467→   467→  const quoteWallet = wallets.find((w) => w.currency === "USDT");
+   468→   468→  const openOrdersCount = orders.filter((o) => o.status === "PENDING").length;
+   469→   469→
+   470→   470→  /* ═══════════════════════════════════════════
+   471→   471→     Render
+   472→   472→     ═══════════════════════════════════════════ */
+   473→   473→  return (
+   474→   474→    <div className="flex flex-col h-[calc(100vh-4rem)] gap-1.5 animate-fade-in overflow-hidden p-1.5">
+   475→   475→      {/* ─────── Ticker Tape (top, scrolling) ─────── */}
+   476→   476→      <TickerTape
+   477→   477→        prices={prices}
+   478→   478→        onSelectPair={setSelectedPair}
+   479→   479→        selectedPair={selectedPair}
+   480→   480→      />
+   481→   481→
+   482→   482→      {/* ─────── Pair Header (price + 24h stats + quick actions) ─────── */}
+   483→   483→      <div className="flex items-center gap-1.5">
+   484→   484→        <div className="flex-1 min-w-0">
+   485→   485→          <PairHeader
+   486→   486→            selectedPair={selectedPair}
+   487→   487→            prices={prices}
+   488→   488→            prevPrice={prevPrice}
+   489→   489→            onSelectPair={setSelectedPair}
+   490→   490→            crosshairData={crosshairData}
+   491→   491→          />
+   492→   492→        </div>
+   493→   493→
+   494→   494→        {/* Quick action buttons */}
+   495→   495→        <div className="flex items-center gap-1 shrink-0">
+   496→   496→          {/* Quick pair search (Ctrl+K) */}
+   497→   497→          <button
+   498→   498→            onClick={() => setSearchOpen(true)}
+   499→   499→            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+   500→   500→            title="بحث سريع عن زوج (Ctrl+K)"
+   501→   501→          >
+   502→   502→            <Search className="h-4 w-4" />
+   503→   503→          </button>
+   504→   504→
+   505→   505→          {/* Chart screenshot export (Ctrl+E) */}
+   506→   506→          <button
+   507→   507→            onClick={() => {
+   508→   508→              if (chartRef.current) {
+   509→   509→                chartRef.current.exportPng(
+   510→   510→                  `chart_${selectedPair}_${timeframe}.png`
+   511→   511→                );
+   512→   512→                toast.success("تم تصدير صورة الشارت");
+   513→   513→              }
+   514→   514→            }}
+   515→   515→            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+   516→   516→            title="تصدير صورة الشارت (Ctrl+E)"
+   517→   517→          >
+   518→   518→            <Camera className="h-4 w-4" />
+   519→   519→          </button>
+   520→   520→
+   521→   521→          {/* P&L Calculator */}
+   522→   522→          <PnLCalculator
+   523→   523→            pair={selectedPair}
+   524→   524→            base={base}
+   525→   525→            ticker={p}
+   526→   526→            feeRate={
+   527→   527→              feeSchedules.find(
+   528→   528→                (f) => f.user_type === "regular" && f.order_type === "LIMIT"
+   529→   529→              )?.taker_fee ?? 0.001
+   530→   530→            }
+   531→   531→            currentPrice={p?.price}
+   532→   532→          />
+   533→   533→
+   534→   534→          {/* Advanced orders (OCO / Trailing Stop) */}
+   535→   535→          <AdvancedOrders
+   536→   536→            pair={selectedPair}
+   537→   537→            base={base}
+   538→   538→            ticker={p}
+   539→   539→            currentPrice={p?.price}
+   540→   540→            side={side}
+   541→   541→            onPlaceOCO={(params) => {
+   542→   542→              toast(
+   543→   543→                `أمر OCO: ${params.quantity} ${base} • وقف: ${params.stopPrice} • ربح: ${params.takeProfitPrice}`,
+   544→   544→                { icon: "🎯" }
+   545→   545→              );
+   546→   546→              getSoundManager().play("order_placed");
+   547→   547→            }}
+   548→   548→            onPlaceTrailingStop={(params) => {
+   549→   549→              toast(
+   550→   550→                `إيقاف متتبع: ${params.quantity} ${base} • تتبع: ${params.trailPercent}%`,
+   551→   551→                { icon: "📈" }
+   552→   552→              );
+   553→   553→              getSoundManager().play("order_placed");
+   554→   554→            }}
+   555→   555→          />
+   556→   556→
+   557→   557→          {/* Price alerts */}
+   558→   558→          <PriceAlerts
+   559→   559→            pair={selectedPair}
+   560→   560→            currentPrice={p?.price}
+   561→   561→            compact
+   562→   562→          />
+   563→   563→
+   564→   564→          {/* Sound toggle */}
+   565→   565→          <button
+   566→   566→            onClick={() => setSoundEnabled(!soundEnabled)}
+   567→   567→            className={`glass-panel rounded-lg p-2 transition-all ${
+   568→   568→              soundEnabled
+   569→   569→                ? "text-primary hover:bg-primary/10"
+   570→   570→                : "text-muted-foreground hover:bg-muted/30"
+   571→   571→            }`}
+   572→   572→            title={soundEnabled ? "كتم الصوت" : "تشغيل الصوت"}
+   573→   573→          >
+   574→   574→            {soundEnabled ? (
+   575→   575→              <svg
+   576→   576→                xmlns="http://www.w3.org/2000/svg"
+   577→   577→                width="14"
+   578→   578→                height="14"
+   579→   579→                viewBox="0 0 24 24"
+   580→   580→                fill="none"
+   581→   581→                stroke="currentColor"
+   582→   582→                strokeWidth="2"
+   583→   583→                strokeLinecap="round"
+   584→   584→                strokeLinejoin="round"
+   585→   585→              >
+   586→   586→                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+   587→   587→                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+   588→   588→                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+   589→   589→              </svg>
+   590→   590→            ) : (
+   591→   591→              <svg
+   592→   592→                xmlns="http://www.w3.org/2000/svg"
+   593→   593→                width="14"
+   594→   594→                height="14"
+   595→   595→                viewBox="0 0 24 24"
+   596→   596→                fill="none"
+   597→   597→                stroke="currentColor"
+   598→   598→                strokeWidth="2"
+   599→   599→                strokeLinecap="round"
+   600→   600→                strokeLinejoin="round"
+   601→   601→              >
+   602→   602→                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+   603→   603→                <line x1="23" y1="9" x2="17" y2="15" />
+   604→   604→                <line x1="17" y1="9" x2="23" y2="15" />
+   605→   605→              </svg>
+   606→   606→            )}
+   607→   607→          </button>
+   608→   608→
+   609→   609→          {/* Market list toggle */}
+   610→   610→          <button
+   611→   611→            onClick={() => setMarketListOpen(!marketListOpen)}
+   612→   612→            className="glass-panel rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-all"
+   613→   613→            title={marketListOpen ? "إخفاء قائمة الأسواق" : "إظهار قائمة الأسواق"}
+   614→   614→          >
+   615→   615→            <svg
+   616→   616→              xmlns="http://www.w3.org/2000/svg"
+   617→   617→              width="14"
+   618→   618→              height="14"
+   619→   619→              viewBox="0 0 24 24"
+   620→   620→              fill="none"
+   621→   621→              stroke="currentColor"
+   622→   622→              strokeWidth="2"
+   623→   623→              strokeLinecap="round"
+   624→   624→              strokeLinejoin="round"
+   625→   625→            >
+   626→   626→              <line x1="8" y1="6" x2="21" y2="6" />
+   627→   627→              <line x1="8" y1="12" x2="21" y2="12" />
+   628→   628→              <line x1="8" y1="18" x2="21" y2="18" />
+   629→   629→              <line x1="3" y1="6" x2="3.01" y2="6" />
+   630→   630→              <line x1="3" y1="12" x2="3.01" y2="12" />
+   631→   631→              <line x1="3" y1="18" x2="3.01" y2="18" />
+   632→   632→            </svg>
+   633→   633→          </button>
+   634→   634→
+   635→   635→          {/* Depth chart toggle */}
+   636→   636→          <button
+   637→   637→            onClick={() => setShowDepthChart(!showDepthChart)}
+   638→   638→            className={`glass-panel rounded-lg p-2 transition-all ${
+   639→   639→              showDepthChart
+   640→   640→                ? "text-primary hover:bg-primary/10"
+   641→   641→                : "text-muted-foreground hover:bg-muted/30"
+   642→   642→            }`}
+   643→   643→            title={showDepthChart ? "إخفاء منحنى العمق" : "إظهار منحنى العمق"}
+   644→   644→          >
+   645→   645→            <svg
+   646→   646→              xmlns="http://www.w3.org/2000/svg"
+   647→   647→              width="14"
+   648→   648→              height="14"
+   649→   649→              viewBox="0 0 24 24"
+   650→   650→              fill="none"
+   651→   651→              stroke="currentColor"
+   652→   652→              strokeWidth="2"
+   653→   653→              strokeLinecap="round"
+   654→   654→              strokeLinejoin="round"
+   655→   655→            >
+   656→   656→              <path d="M3 3v18h18" />
+   657→   657→              <path d="M7 16l4-8 4 4 5-7" />
+   658→   658→            </svg>
+   659→   659→          </button>
+   660→   660→        </div>
+   661→   661→      </div>
+   662→   662→
+   663→   663→      {/* ─────── Main 3-column layout ─────── */}
+   664→   664→      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-1.5 min-h-0 pb-14 lg:pb-0">
+   665→   665→        {/* ─── LEFT: Market List (collapsible, desktop only) ─── */}
+   666→   666→        {marketListOpen && (
+   667→   667→          <div className="hidden lg:block lg:col-span-2 min-h-0">
+   668→   668→            <MarketList
+   669→   669→              prices={prices}
+   670→   670→              selectedPair={selectedPair}
+   671→   671→              onSelectPair={setSelectedPair}
+   672→   672→            />
+   673→   673→          </div>
+   674→   674→        )}
+   675→   675→
+   676→   676→        {/* ─── CENTER: Chart + Orders Panel ─── */}
+   677→   677→        <div
+   678→   678→          className={`flex flex-col gap-1.5 min-h-0 ${
+   679→   679→            marketListOpen ? "lg:col-span-6 xl:col-span-7" : "lg:col-span-8 xl:col-span-9"
+   680→   680→          } ${chartFullscreen ? "fixed inset-0 z-50 bg-background/95 backdrop-blur-lg p-2" : ""} ${
+   681→   681→            // On mobile: only show this column when chart or orders tab is active
+   682→   682→            mobileTab === "chart" || mobileTab === "orders" ? "flex" : "hidden lg:flex"
+   683→   683→          }`}
+   684→   684→        >
+   685→   685→          {/* Chart Panel — hidden on mobile when orders tab is active */}
+   686→   686→          <div
+   687→   687→            className={`glass-panel rounded-xl overflow-hidden flex flex-col min-h-0 ${
+   688→   688→              chartFullscreen ? "h-full" : "flex-1"
+   689→   689→            } ${mobileTab === "orders" ? "hidden lg:flex" : "flex"}`}
+   690→   690→          >
+   691→   691→            <ChartToolbar
+   692→   692→              timeframe={timeframe}
+   693→   693→              onTimeframeChange={setTimeframe}
+   694→   694→              chartType={chartType}
+   695→   695→              onChartTypeChange={setChartType}
+   696→   696→              indicators={indicators}
+   697→   697→              onIndicatorsChange={setIndicators}
+   698→   698→              isFullscreen={chartFullscreen}
+   699→   699→              onToggleFullscreen={() => setChartFullscreen((v) => !v)}
+   700→   700→              onZoomIn={() => chartRef.current?.zoomIn()}
+   701→   701→              onZoomOut={() => chartRef.current?.zoomOut()}
+   702→   702→              onResetView={() => chartRef.current?.resetView()}
+   703→   703→            />
+   704→   704→            <DrawingToolbar
+   705→   705→              activeTool={activeTool}
+   706→   706→              onToolChange={setActiveTool}
+   707→   707→              activeColor={drawingColor}
+   708→   708→              onColorChange={setDrawingColor}
+   709→   709→              onClearAll={() => setDrawings([])}
+   710→   710→              drawingCount={drawings.length}
+   711→   711→            />
+   712→   712→            <div className="flex-1 min-h-0 relative">
+   713→   713→              <ProChart
+   714→   714→                ref={chartRef}
+   715→   715→                candles={candles}
+   716→   716→                onCrosshairMove={handleCrosshairMove}
+   717→   717→                className="w-full h-full"
+   718→   718→                chartType={chartType}
+   719→   719→                indicators={indicators}
+   720→   720→                activeTool={activeTool}
+   721→   721→                drawings={drawings}
+   722→   722→                onDrawingsChange={setDrawings}
+   723→   723→                drawingColor={drawingColor}
+   724→   724→              />
+   725→   725→            </div>
+   726→   726→          </div>
+   727→   727→
+   728→   728→          {/* Bottom Orders/History/Balance Panel */}
+   729→   729→          {!chartFullscreen && (
+   730→   730→            <div
+   731→   731→              className={`glass-panel rounded-xl overflow-hidden shrink-0 ${
+   732→   732→                mobileTab === "chart" ? "hidden lg:block" : "block"
+   733→   733→              }`}
+   734→   734→              style={{ height: mobileTab === "orders" ? "100%" : "220px" }}
+   735→   735→            >
+   736→   736→              <OrdersPanel
+   737→   737→                orders={orders}
+   738→   738→                wallets={wallets}
+   739→   739→                onCancel={handleCancel}
+   740→   740→                onRefresh={() => {
+   741→   741→                  fetchOrders();
+   742→   742→                  fetchWallets();
+   743→   743→                }}
+   744→   744→                base={base}
+   745→   745→              />
+   746→   746→            </div>
+   747→   747→          )}
+   748→   748→        </div>
+   749→   749→
+   750→   750→        {/* ─── RIGHT: Order Book + Depth Chart + Trade Form + Trades Feed ─── */}
+   751→   751→        {!chartFullscreen && (
+   752→   752→          <div
+   753→   753→            className={`flex flex-col gap-1.5 min-h-0 ${
+   754→   754→              marketListOpen ? "lg:col-span-4 xl:col-span-3" : "lg:col-span-4 xl:col-span-3"
+   755→   755→            } ${
+   756→   756→              // On mobile: show this column when orderbook or trade tab is active
+   757→   757→              mobileTab === "orderbook" || mobileTab === "trade" ? "flex" : "hidden lg:flex"
+   758→   758→            }`}
+   759→   759→          >
+   760→   760→            {/* Order Book + Depth Chart side by side — only show on orderbook tab (mobile) */}
+   761→   761→            <div
+   762→   762→              className={`flex gap-1.5 min-h-0 ${mobileTab === "trade" ? "hidden lg:flex" : "flex"}`}
+   763→   763→              style={{ flex: "1 1 0" }}
+   764→   764→            >
+   765→   765→              {/* Order book (wider) */}
+   766→   766→              <div className="flex-1 min-w-0">
+   767→   767→                <OrderBookPanel
+   768→   768→                  bids={orderBook.bids}
+   769→   769→                  asks={orderBook.asks}
+   770→   770→                  ticker={p}
+   771→   771→                  prevPrice={prevPrice}
+   772→   772→                  base={base}
+   773→   773→                  onPriceClick={handlePriceClick}
+   774→   774→                  maxRows={10}
+   775→   775→                />
+   776→   776→              </div>
+   777→   777→              {/* Depth chart (narrower) */}
+   778→   778→              {showDepthChart && (
+   779→   779→                <div className="w-1/3 min-w-0 hidden md:block">
+   780→   780→                  <DepthChart
+   781→   781→                    bids={orderBook.bids}
+   782→   782→                    asks={orderBook.asks}
+   783→   783→                    currentPrice={p?.price}
+   784→   784→                  />
+   785→   785→                </div>
+   786→   786→              )}
+   787→   787→            </div>
+   788→   788→
+   789→   789→            {/* Trade Form — show on trade tab on mobile, always on desktop */}
+   790→   790→            <div className={mobileTab === "orderbook" ? "hidden lg:block" : "block"}>
+   791→   791→              <TradeForm
+   792→   792→                base={base}
+   793→   793→                side={side}
+   794→   794→                orderType={orderType}
+   795→   795→                onSideChange={setSide}
+   796→   796→                onTypeChange={setOrderType}
+   797→   797→                onSubmit={handleSubmit}
+   798→   798→                loading={loading}
+   799→   799→                baseWallet={baseWallet}
+   800→   800→                quoteWallet={quoteWallet}
+   801→   801→                ticker={p}
+   802→   802→                feeSchedules={feeSchedules}
+   803→   803→              />
+   804→   804→            </div>
+   805→   805→
+   806→   806→            {/* Trades Feed — hidden on mobile (orderbook tab is too cramped) */}
+   807→   807→            <div className="shrink-0 hidden lg:block" style={{ height: "180px" }}>
+   808→   808→              <TradesFeed
+   809→   809→                trades={marketTrades}
+   810→   810→                base={base}
+   811→   811→                onPriceClick={handlePriceClick}
+   812→   812→                maxRows={10}
+   813→   813→              />
+   814→   814→            </div>
+   815→   815→
+   816→   816→            {/* Asset Info Panel — hidden on mobile */}
+   817→   817→            <div className="hidden lg:block">
+   818→   818→              <AssetInfoPanel
+   819→   819→                base={base}
+   820→   820→                pair={selectedPair}
+   821→   821→                ticker={p}
+   822→   822→              />
+   823→   823→            </div>
+   824→   824→          </div>
+   825→   825→        )}
+   826→   826→      </div>
+   827→   827→
+   828→   828→      {/* Keyboard shortcuts hint */}
+   829→   829→      <div className="hidden md:flex items-center justify-center gap-3 text-[9px] text-muted-foreground/60 py-0.5 shrink-0">
+   830→   830→        <span>
+   831→   831→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+K</kbd> بحث
+   832→   832→        </span>
+   833→   833→        <span>
+   834→   834→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+B</kbd> شراء
+   835→   835→        </span>
+   836→   836→        <span>
+   837→   837→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+S</kbd> بيع
+   838→   838→        </span>
+   839→   839→        <span>
+   840→   840→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+M</kbd> سوقي
+   841→   841→        </span>
+   842→   842→        <span>
+   843→   843→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+L</kbd> محدد
+   844→   844→        </span>
+   845→   845→        <span>
+   846→   846→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+E</kbd> لقطة شارت
+   847→   847→        </span>
+   848→   848→        <span>
+   849→   849→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Ctrl+F</kbd> ملء الشاشة
+   850→   850→        </span>
+   851→   851→        <span>
+   852→   852→          <kbd className="px-1 py-0.5 rounded bg-muted/30 border border-border/30">Space</kbd> تبديل الشراء/البيع
+   853→   853→        </span>
+   854→   854→      </div>
+   855→   855→
+   856→   856→      {/* ─────── Quick Pair Search Modal (Ctrl+K) ─────── */}
+   857→   857→      <QuickPairSearch
+   858→   858→        open={searchOpen}
+   859→   859→        onClose={() => setSearchOpen(false)}
+   860→   860→        onSelectPair={setSelectedPair}
+   861→   861→        prices={prices}
+   862→   862→        selectedPair={selectedPair}
+   863→   863→        favorites={favorites}
+   864→   864→        onToggleFavorite={toggleFavorite}
+   865→   865→      />
+   866→   866→
+   867→   867→      {/* ─────── Mobile Tab Bar (bottom navigation for small screens) ─────── */}
+   868→   868→      <MobileTabBar
+   869→   869→        active={mobileTab}
+   870→   870→        onChange={setMobileTab}
+   871→   871→        onOpenSearch={() => setSearchOpen(true)}
+   872→   872→        openOrdersCount={openOrdersCount}
+   873→   873→      />
+   874→   874→    </div>
+   875→   875→  );
+   876→   876→}
+   877→   877→

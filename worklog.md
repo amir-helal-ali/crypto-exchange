@@ -197,3 +197,92 @@ Stage Summary:
 - Price Alerts: per-pair alerts with browser notifications + sound, persisted to localStorage, fires on actual price crossing
 - Order Book heatmap: visual mode that highlights order walls through color intensity
 - Trading page now has feature parity with Binance/Bybit for: charting (7 indicators + 3 chart types + 6 drawing tools), order book (depth + heatmap + precision grouping), alerts (price + sound + browser notifications), and live data (3 WebSocket streams)
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Continue professional trading development - add Order Confirmation Modal with SL/TP, Multi-Timeframe Strip, Market Sentiment, Top Movers, CSV Export, Convert, Recurring Buy, Watchlists, Cheat Sheet, Open Positions
+
+Work Log:
+- Created OrderConfirmModal.tsx (~360 lines): Binance/Bybit-style order confirmation modal with optional Stop-Loss / Take-Profit fields, live risk/reward ratio calculation, Reduce-Only & Post-Only flags
+- Created MultiTimeframeStrip.tsx (~180 lines): 6 mini canvas sparklines (1m/5m/15m/1h/4h/1d) with live % change, click to switch chart timeframe, auto-refreshes every 10s
+- Created MarketSentiment.tsx (~180 lines): half-circle buy/sell pressure gauge from recent taker trades, long/short ratio, 24h volume display
+- Created ConvertModal.tsx (~290 lines): Binance-style instant asset swap with live conversion rate, slippage tolerance setting (0.1/0.5/1/3% or custom), quick percentage buttons, swap direction button
+- Created RecurringBuyModal.tsx (~330 lines): DCA plan setup with frequency (daily/weekly/biweekly/monthly), day picker, time, total cycles, investment summary
+- Created WatchlistsPanel.tsx (~250 lines): multi-watchlist manager modal - create/rename/delete lists, add/remove pairs, click pair to switch chart, persists to localStorage
+- Created CheatSheet.tsx (~225 lines): auto-calculated pivot points using previous day's H/L/C from Binance. Three methods: Classic, Fibonacci, Camarilla. Shows R1/R2/R3/S1/S2/S3/P levels with current price position
+- Created OpenPositions.tsx (~190 lines): portfolio panel showing all non-zero balances with live USDT value, 24h change %, 24h P&L, and total portfolio summary
+- Modified MarketList.tsx: added Top Movers tabs (Gainers/Losers/Volume) with hot flame badge for top 3
+- Modified OrdersPanel.tsx: added CSV export button on history tab (Arabic-compatible with BOM)
+- Modified page.tsx: handleSubmit now opens OrderConfirmModal instead of placing order directly. Added 6 new modal action buttons in header. Integrated all new components into right column.
+
+Stage Summary:
+- 8 new component files created (~2300 lines of new code)
+- 4 existing components modified (MarketList, OrdersPanel, ChartToolbar integration, page.tsx)
+- All TypeScript checks pass with 0 errors
+- Production build successful: /dashboard/exchange bundle grew from ~31kB to 53.8kB across 3 commits
+- 3 commits pushed to GitHub:
+  * 228052d feat(exchange): Order confirm modal with SL/TP, multi-timeframe strip, market sentiment, top movers, CSV export
+  * 67f0b2e feat(exchange): Convert instant swap, Recurring Buy DCA, Watchlists multi-list manager
+  * 5da287f feat(exchange): Trader's Cheat Sheet (pivot levels) + Open Positions panel with live P&L
+- Trading page now has feature parity with Binance/Bybit for: order placement (4 types + OCO + trailing stop + SL/TP confirmation), charting (8 indicators + 3 chart types + 6 drawing tools + multi-timeframe preview), order book (depth + heatmap + precision grouping), portfolio (open positions + P&L + multi-watchlists), market intelligence (sentiment + cheat sheet + top movers + ticker tape), trading tools (P&L calculator + convert + recurring buy + price alerts)
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Continue professional trading development - add Position Size Calculator, Liquidations Feed, Open Interest, Screener, Notifications Inbox, Tutorial Overlay, Heikin Ashi, Log Scale, Markets Heatmap, Recent Pairs
+
+Work Log:
+- Created PositionSizeCalculator.tsx (~340 lines): risk-based position sizing with Long/Short toggle, account size, risk %, entry/SL/TP inputs, validates SL/TP direction, shows position size/value/risk/reward/RR ratio with color-coded quality indicator
+- Created LiquidationsFeed.tsx (~210 lines): connects to Binance Futures !forceOrder@arr WebSocket for real-time liquidation events, long vs short totals, intensity-based background bars, lightning badge for >$100k events, pair filter toggle
+- Created OpenInterest.tsx (~210 lines): Binance Futures API showing funding rate with countdown, mark price vs index price premium/discount, open interest value with sparkline history, dynamic interpretation hint
+- Created Screener.tsx (~225 lines) + ScreenerModal.tsx (~75 lines): filter all pairs by gainers/losers/high-volume/low-volume/volatile, search by name, sortable by price/change/volume/name
+- Created NotificationsInbox.tsx (~285 lines): custom event listener (exchange:notification), unread badge, mark all read/clear all/delete one, type-based color coding (order_filled/placed/cancelled/alert/info/error), relative time, localStorage persistence
+- Created TutorialOverlay.tsx (~245 lines): 6-step first-visit onboarding tutorial, auto-shows via useTutorialAutoShow hook, keyboard navigation, progress dots, skip button
+- Modified ProChart.tsx: added logScale prop with log/Math.exp transformations for price-to-y and y-to-price conversions, safely falls back to linear when minPrice <= 0
+- Modified ChartToolbar.tsx: added Heikin Ashi toggle and Log Scale toggle buttons
+- Modified page.tsx: added heikinAshi + logScale state, displayCandles useMemo for HA conversion, integrated all new components
+- Created MarketsHeatmap.tsx (~165 lines) + MarketsHeatmapModal.tsx (~70 lines): visual grid of all pairs with color intensity by 24h change, sortable by change/volume/name, compact/large size toggle
+- Created RecentPairs.tsx (~105 lines): horizontal strip showing last 8 viewed pairs as quick-access chips with live change %, hover to remove, persists to localStorage
+- Modified page.tsx: order handlers now push notifications on every order action (filled/placed/cancelled)
+
+Stage Summary:
+- 11 new component files created (~2200 lines of new code)
+- 3 existing components modified (ProChart, ChartToolbar, page.tsx)
+- All TypeScript checks pass with 0 errors
+- Production build successful: /dashboard/exchange bundle grew from 53.8kB to 63.8kB across 5 commits
+- 5 commits pushed to GitHub:
+  * 75d14ba feat(exchange): Position Size Calculator (risk-based) + Liquidations Feed (real-time)
+  * 548c9b9 feat(exchange): Open Interest & Funding Rate widget + Market Screener
+  * 13def8d feat(exchange): Notifications Inbox + Tutorial Overlay (first-visit onboarding)
+  * b516efe feat(exchange): Heikin Ashi chart type + Logarithmic price scale
+  * d83c29a feat(exchange): Markets Heatmap + Recent Pairs quick switcher
+- Trading page now has 30+ professional features matching or exceeding Binance/Bybit parity
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Final batch - Shortcuts Help Modal + 8 new keyboard shortcuts for all new modals
+
+Work Log:
+- Created ShortcutsHelpModal.tsx (~125 lines): comprehensive modal showing all 16 keyboard shortcuts grouped by category (Trading, Navigation, Tools, Help). Each shortcut shows description with formatted kbd element
+- Extended useKeyboardShortcuts hook with 6 new handlers: onOpenNotifications (Ctrl+N), onOpenHeatmap (Ctrl+H), onOpenScreener (Ctrl+J), onOpenConvert (Ctrl+V), onOpenWatchlists (Ctrl+W), onOpenTutorial (Ctrl+T)
+- Ctrl+H and Ctrl+K now work even from input fields for quick access while typing
+- Updated shortcuts hint bar at bottom of page to show all 11 main shortcuts with 'view all' link
+- Added Keyboard icon button to header
+
+Stage Summary:
+- Total new features added in this session: 21 components/feature areas
+- Total new files created: 19
+- Total commits pushed: 9
+- Final exchange bundle size: 64.6 kB (was ~31 kB before session, +33.6 kB / +108%)
+- All TypeScript checks pass with 0 errors
+- All production builds successful (24 pages)
+- Trading page now matches or exceeds Binance/Bybit feature parity across:
+  * Chart: 3 chart types (candles/line/area) + Heikin Ashi + log scale, 8 indicators (SMA/EMA/Bollinger/VWAP/RSI/MACD/Stochastic/Ichimoku), 6 drawing tools, multi-timeframe preview, zoom controls, OHLC legend, PNG export
+  * Orders: 4 order types + OCO + Trailing Stop + SL/TP confirm modal + Reduce-Only/Post-Only flags + CSV export
+  * Market data: order book (depth+heatmap+precision), depth chart, ticker tape, multi-timeframe sparklines, recent trades feed
+  * Market intelligence: market sentiment (buy/sell gauge), liquidations feed (real-time), open interest & funding rate, cheat sheet (pivot points - 3 methods), top movers (gainers/losers/volume), markets heatmap, screener
+  * Portfolio: open positions with live P&L, multi-watchlists, recent pairs quick switcher
+  * Trading tools: P&L calculator, position size calculator (risk-based), convert (instant swap with slippage), recurring buy (DCA), price alerts, advanced orders
+  * UX: notifications inbox with custom events, tutorial overlay (first-visit onboarding), 16 keyboard shortcuts, shortcuts help modal, mobile tab bar, sound notifications
