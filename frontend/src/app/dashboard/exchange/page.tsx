@@ -38,10 +38,12 @@ import CheatSheet from "@/components/exchange/CheatSheet";
 import OpenPositions from "@/components/exchange/OpenPositions";
 import PositionSizeCalculator from "@/components/exchange/PositionSizeCalculator";
 import LiquidationsFeed from "@/components/exchange/LiquidationsFeed";
+import OpenInterest from "@/components/exchange/OpenInterest";
+import ScreenerModal from "@/components/exchange/ScreenerModal";
 import { getSoundManager, useKeyboardShortcuts } from "@/components/exchange/sound";
 import type { Drawing, DrawingTool } from "@/components/exchange/drawings";
 import { DRAWING_COLORS } from "@/components/exchange/drawings";
-import { Camera, Search, Zap, Repeat, ListChecks } from "lucide-react";
+import { Camera, Search, Zap, Repeat, ListChecks, Filter } from "lucide-react";
 
 import type {
   TickerData,
@@ -117,6 +119,9 @@ export default function ExchangePage() {
 
   /* Watchlists panel state */
   const [watchlistsOpen, setWatchlistsOpen] = useState(false);
+
+  /* Screener modal state */
+  const [screenerOpen, setScreenerOpen] = useState(false);
 
   /* Mobile active tab state */
   const [mobileTab, setMobileTab] = useState<MobileTab>("chart");
@@ -566,6 +571,15 @@ export default function ExchangePage() {
             <Search className="h-4 w-4" />
           </button>
 
+          {/* Screener — find pairs by criteria */}
+          <button
+            onClick={() => setScreenerOpen(true)}
+            className="glass-panel rounded-lg p-2 text-blue-400 hover:bg-blue-500/10 transition-all"
+            title="فرز الأسواق"
+          >
+            <Filter className="h-4 w-4" />
+          </button>
+
           {/* Chart screenshot export (Ctrl+E) */}
           <button
             onClick={() => {
@@ -957,6 +971,11 @@ export default function ExchangePage() {
               <CheatSheet pair={selectedPair} currentPrice={p?.price} />
             </div>
 
+            {/* Open Interest & Funding Rate (futures data) — hidden on mobile */}
+            <div className="hidden lg:block">
+              <OpenInterest pair={selectedPair} base={base} />
+            </div>
+
             {/* Asset Info Panel — hidden on mobile */}
             <div className="hidden lg:block">
               <AssetInfoPanel
@@ -1065,6 +1084,15 @@ export default function ExchangePage() {
         onSelectPair={setSelectedPair}
         selectedPair={selectedPair}
         prices={prices}
+      />
+
+      {/* ─────── Screener Modal ─────── */}
+      <ScreenerModal
+        open={screenerOpen}
+        onClose={() => setScreenerOpen(false)}
+        prices={prices}
+        selectedPair={selectedPair}
+        onSelectPair={setSelectedPair}
       />
 
       {/* ─────── Mobile Tab Bar (bottom navigation for small screens) ─────── */}
