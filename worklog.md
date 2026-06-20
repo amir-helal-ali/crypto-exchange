@@ -559,3 +559,64 @@ Stage Summary:
 - All pages support dark/light theme via existing CSS variables
 - All EGP amounts use live USD→EGP rate from currency store
 - Backend healthy on port 3000, frontend on port 3001
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Build a fully custom NEXUS-branded trading chart (like Binance's chart but proprietary to NEXUS — NOT via TradingView, NOT pulling data from Binance)
+
+Work Log:
+- Built `mock-backend/market.go` — a complete NEXUS-native market engine with:
+  - Deterministic OHLCV generator (xorshift PRNG + GBM-style drift + volatility clustering + spike candles)
+  - 20 supported symbols (BTC, ETH, BNB, SOL, XRP, ADA, DOGE, AVAX, DOT, LINK, MATIC, TRX, LTC, ATOM, NEAR, APT, ARB, OP, INJ, SUI)
+  - 7 timeframes (1m, 5m, 15m, 1H, 4H, 1D, 1W)
+  - REST endpoints: /api/v1/market/klines, /api/v1/market/ticker, /api/v1/market/tickers
+  - WebSocket /ws/market — live ticker stream with mean-reverting random walk (~700ms ticks)
+  - WebSocket /ws/kline — live forming-candle stream (proper OHLCV that evolves tick-by-tick)
+  - Candle continuity: each candle's open == previous candle's close
+- Wired new endpoints into main.go (replaced empty stubs)
+- Created `frontend/src/lib/components/NexusChart.svelte` — a fully custom Canvas-based trading chart:
+  - Candlesticks with proper wicks + body, up/down colors
+  - Volume bars at bottom (alpha-blended)
+  - Live price line with animated pulse ring + colored tag
+  - Crosshair with OHLCV tooltip (O, H, L, C, Vol, Chg%)
+  - Indicators: SMA20, SMA50, EMA12, EMA26, Bollinger Bands
+  - Zoom: mouse wheel + Ctrl+wheel for pinch-zoom
+  - Pan: click-and-drag
+  - Touch: pinch-to-zoom + drag-to-pan
+  - Theme-aware: dark + light, reads CSS variables, recomputes on theme change
+  - High-DPI rendering with proper devicePixelRatio scaling
+  - NEXUS watermark in chart center
+  - LIVE badge top-right
+  - Export to PNG
+  - goLive() action to snap to latest candles
+  - Real-time updates via /ws/kline WebSocket (last-candle updates + flash on up/down)
+- Created `frontend/src/lib/stores/nexus-market.ts` — unified market data abstraction:
+  - Singleton NexusMarketFeed class managing a single WS connection
+  - subscribe(symbol, fn) / subscribeAll(fn) API
+  - switchSymbol(symbol) — sends subscribe message to backend
+  - Auto-reconnect with backoff
+  - REST snapshots: getTicker, getAllTickers, getKlines
+  - deriveOrderBook(price) — generates realistic L2 depth from mid price
+  - deriveTrade(symbol, price) — generates realistic trade prints
+- Migrated ALL components off Binance → NEXUS native feeds:
+  - LiveMiniChart.svelte — uses nexusMarket.subscribe + seeds history from klines
+  - MarketList.svelte — bootstraps with getAllTickers, subscribes globally
+  - OrderBook.svelte — derives book from live NEXUS price via deriveOrderBook()
+  - TradesFeed.svelte — derives trades from live NEXUS price via deriveTrade()
+  - dashboard/+layout.svelte — sidebar ticker tape cycles through symbols
+  - dashboard/+page.svelte — portfolio page cycles through 6 symbols
+  - routes/+page.svelte (landing) — hero preview cycles through 6 symbols
+  - dashboard/exchange/+page.svelte — uses NexusChart, removed Binance ticker WS
+- Deleted legacy Chart.svelte (no longer imported anywhere)
+- Updated exchange page toolbar: added goLive button + Camera icon for PNG export
+- Build passes with 0 errors (npm run build)
+- Backend running on port 3000 (verified with curl + Python WS client)
+- Frontend production preview running on port 3001
+
+Stage Summary:
+- NEXUS now has its OWN proprietary market data engine — no Binance, no TradingView
+- The chart is 100% custom-built (Canvas + Svelte), themed, mobile-friendly, Binance-grade
+- All market UI components (chart, order book, trades feed, market list, mini charts, ticker tape) now consume NEXUS-native data
+- Live data flows over WebSocket with realistic price action (mean reversion + volatility spikes)
+- Chart features match/exceed Binance: candlesticks, volume, indicators, crosshair, OHLC tooltip, theme support, touch, zoom/pan, PNG export, live tag with pulse
