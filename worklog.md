@@ -497,3 +497,65 @@ Stage Summary:
 - EGP currency throughout (target price in USD, EGP equivalent displayed)
 - Mobile-responsive: table collapses to cards, modal works on touch
 - Total ~1000 lines of new code; 0 errors, 0 warnings
+
+---
+Task ID: 11
+Agent: Main Agent
+Task: Add 4 major features: Staking/Earn, Referral Program, Command Palette (Cmd+K), Settings/Preferences
+
+Work Log:
+- Created `/dashboard/earn` page (~470 lines): full Staking/Earn platform
+  * Hero stats: Total Staked, Rewards Earned (live ticker), Daily Income, Active Positions
+  * Rewards Calculator: choose asset/amount/duration → daily/monthly/yearly rewards in EGP
+  * My Positions sidebar: active staking positions with rewards, lock status, time remaining
+  * Staking Pools grid: 8 pools (BTC, ETH, SOL, BNB, USDT, AVAX, ADA, DOT) with APR (flexible/30/90/180 days)
+  * Sort: popular/apr/tvl, badges (HOT, POPULAR), live balance display per pool
+  * Stake Modal: amount input with MAX button, duration selector with APR per option, full summary
+  * "How it works" 4-step guide
+  * Live rewards ticker (updates every 1.5s)
+- Created `/dashboard/referral` page (~520 lines): complete referral program
+  * Referral link card with copy button + decorative gradient blobs
+  * Referral code with copy + generate new code
+  * Share buttons: Twitter, Facebook, Telegram, Email, native share (when supported)
+  * 3 quick stats: Total Earnings, Pending Rewards, This Month (with comparison %)
+  * 4 stat cards: Total Invited, Active Users, Conversion Rate, Avg Earnings/User
+  * Tier system: Bronze (15%) → Silver (25%) → Gold (35%) → Platinum (45%) with progress bar
+  * Invited users table with filter tabs (all/active/pending/inactive)
+  * "How it works" 4-step guide + lifetime commission highlight
+- Created `src/lib/components/CommandPalette.svelte` (~290 lines): Cmd+K productivity tool
+  * Opens with Cmd+K (Mac) or Ctrl+K (Windows/Linux) from anywhere
+  * Search navigation commands (13 pages) + action commands (6 actions)
+  * Live crypto search: type BTC/ETH/etc → shows price + jump to trading
+  * Grouped results by section (التنقل / إجراءات / العملات)
+  * Recent commands saved to localStorage (max 5, shown first)
+  * Keyboard navigation: ↑↓ arrows, Enter to execute, ESC to close
+  * Hotkey hints (G H, G E, etc.) shown next to commands
+  * Footer with all keyboard shortcuts
+  * SSR-safe: uses onMount cleanup instead of onDestroy, browser checks for localStorage
+- Created `/dashboard/settings` page (~580 lines): comprehensive preferences
+  * 5 tabs: Appearance / Notifications / Trading / Currency / Security
+  * Appearance: theme mode (dark/light/system), accent color picker (6 colors), density, chart type, animations toggle
+  * Notifications: per-channel (email/push/SMS) × per-type (price/security/trades/newsletter) matrix
+  * Trading: default order type, slippage slider, default leverage selector, confirm orders toggle
+  * Currency: display currency (EGP/USD), live USD→EGP rate with manual override, language placeholder
+  * Security: links to 2FA/KYC pages, session timeout selector, login alerts toggle, IP whitelist
+  * All settings persisted to localStorage, with reset button
+- Updated `+layout.svelte`:
+  * Added 3 new nav items: Earn & Staking (with "جديد" badge), برنامج الإحالة (with badge), الإعدادات
+  * Added new "النمو" (Growth) section for Referral
+  * Added badge support in nav links (gold pill for new items)
+  * Replaced plain search input with Command Palette trigger button (shows Cmd+K kbd hint)
+  * Added `<CommandPalette bind:open={paletteOpen} />` to layout
+- Build: 0 errors, 0 warnings, ~10s
+- All 3 new pages verified: HTTP 200, full content rendered (Earn: 67KB, Referral: 75KB, Settings: 47KB)
+- SSR-safe: fixed marketStore.getTicker (didn't exist), fixed onDestroy calling window during SSR
+
+Stage Summary:
+- 4 new routes: /dashboard/earn, /dashboard/referral, /dashboard/settings
+- 1 new component: CommandPalette.svelte (bindable open prop, Cmd+K handler)
+- ~1860 lines of new code across all features
+- Sidebar expanded with 3 new items + new "Growth" section
+- Command Palette integrates with all 13 nav destinations + 6 actions + live crypto search
+- All pages support dark/light theme via existing CSS variables
+- All EGP amounts use live USD→EGP rate from currency store
+- Backend healthy on port 3000, frontend on port 3001
