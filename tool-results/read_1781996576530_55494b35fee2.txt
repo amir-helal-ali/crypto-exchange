@@ -1,0 +1,957 @@
+     1→<script lang="ts">
+     2→  /**
+     3→   * NEXUS Chart — proprietary canvas-based candlestick chart for the
+     4→   * NEXUS Exchange platform. Pulls OHLCV data from NEXUS's own market
+     5→   * engine (`/api/v1/market/klines`) and streams live updates over the
+     6→   * NEXUS WebSocket (`/ws/kline`). Theme-aware, touch-friendly, fully
+     7→   * custom — no TradingView, no third-party chart libs.
+     8→   *
+     9→   * Features:
+    10→   *  - Candlesticks with proper wicks + body
+    11→   *  - Volume bars
+    12→   *  - Live price line + animated tag
+    13→   *  - Crosshair with OHLC tooltip
+    14→   *  - SMA / EMA / Bollinger Bands indicators
+    15→   *  - Zoom (wheel + pinch), Pan (drag), touch support
+    16→   *  - Theme-aware (dark + light)
+    17→   *  - Export to PNG
+    18→   *  - High-DPI rendering
+    19→   */
+    20→  import { onMount, onDestroy } from 'svelte';
+    21→  import { theme as themeStore } from '$lib/stores/theme';
+    22→  import { API_BASE } from '$lib/api/client';
+    23→
+    24→  interface Props {
+    25→    symbol: string;
+    26→    timeframe: string;
+    27→    indicators?: string[];
+    28→    height?: number;
+    29→  }
+    30→
+    31→  let {
+    32→    symbol,
+    33→    timeframe,
+    34→    indicators = ['SMA20'],
+    35→    height = 460
+    36→  }: Props = $props();
+    37→
+    38→  // --- Canvas refs ---
+    39→  let canvas: HTMLCanvasElement;
+    40→  let container: HTMLElement;
+    41→  let ctx: CanvasRenderingContext2D;
+    42→
+    43→  // --- Chart state ---
+    44→  interface Candle {
+    45→    time: number;
+    46→    open: number;
+    47→    high: number;
+    48→    low: number;
+    49→    close: number;
+    50→    volume: number;
+    51→  }
+    52→
+    53→  let candles: Candle[] = [];
+    54→  let visibleCandles: Candle[] = [];
+    55→  let offsetX = 0; // index of leftmost visible candle
+    56→  let candleWidth = 8;
+    57→  let candleSpacing = 2;
+    58→  let priceRange: { min: number; max: number } = { min: 0, max: 1 };
+    59→  let volumeMax = 1;
+    60→  let hoveredCandle: Candle | null = null;
+    61→  let crosshairPos: { x: number; y: number } | null = null;
+    62→  let isDragging = false;
+    63→  let lastDragX = 0;
+    64→  let pinchDist = 0;
+    65→  let klineWs: WebSocket | null = null;
+    66→  let tickerWs: WebSocket | null = null;
+    67→  let rafId = 0;
+    68→  let resizeObserver: ResizeObserver;
+    69→  let lastFlash: 'up' | 'down' | null = null;
+    70→  let flashAt = 0;
+    71→  let livePricePulse = 0;
+    72→  let lastPriceY = -1;
+    73→  let theme = 'dark';
+    74→
+    75→  // --- Indicator buffers ---
+    76→  let sma20: (number | null)[] = [];
+    77→  let sma50: (number | null)[] = [];
+    78→  let ema12: (number | null)[] = [];
+    79→  let ema26: (number | null)[] = [];
+    80→  let bollUpper: (number | null)[] = [];
+    81→  let bollMiddle: (number | null)[] = [];
+    82→  let bollLower: (number | null)[] = [];
+    83→
+    84→  // --- Subscribers ---
+    85→  const unsubTheme = themeStore.subscribe((t) => {
+    86→    theme = t?.resolved ?? 'dark';
+    87→    scheduleRender();
+    88→  });
+    89→
+    90→  // ============================================================
+    91→  // Lifecycle
+    92→  // ============================================================
+    93→  onMount(() => {
+    94→    (async () => {
+    95→      ctx = canvas.getContext('2d')!;
+    96→      setupCanvas();
+    97→      await loadCandles();
+    98→      connectKlineWS();
+    99→      connectTickerWS();
+   100→      startRenderLoop();
+   101→
+   102→      resizeObserver = new ResizeObserver(() => {
+   103→        setupCanvas();
+   104→        updateVisibleRange();
+   105→        render();
+   106→      });
+   107→      resizeObserver.observe(container);
+   108→    })();
+   109→
+   110→    return () => {
+   111→      cancelAnimationFrame(rafId);
+   112→      resizeObserver?.disconnect();
+   113→      klineWs?.close();
+   114→      tickerWs?.close();
+   115→      unsubTheme();
+   116→    };
+   117→  });
+   118→
+   119→  onDestroy(() => {
+   120→    cancelAnimationFrame(rafId);
+   121→    klineWs?.close();
+   122→    tickerWs?.close();
+   123→    unsubTheme();
+   124→  });
+   125→
+   126→  // Reload when symbol or timeframe changes
+   127→  let lastSymbol = symbol;
+   128→  let lastTF = timeframe;
+   129→  $effect(() => {
+   130→    if ((symbol !== lastSymbol || timeframe !== lastTF) && candles.length > 0) {
+   131→      lastSymbol = symbol;
+   132→      lastTF = timeframe;
+   133→      candles = [];
+   134→      offsetX = 0;
+   135→      loadCandles().then(() => {
+   136→        connectKlineWS();
+   137→        connectTickerWS();
+   138→        render();
+   139→      });
+   140→    }
+   141→  });
+   142→
+   143→  // ============================================================
+   144→  // Data loading
+   145→  // ============================================================
+   146→  async function loadCandles() {
+   147→    try {
+   148→      const res = await fetch(
+   149→        `${API_BASE}/api/v1/market/klines?symbol=${symbol}&interval=${timeframe}&limit=300`
+   150→      );
+   151→      if (!res.ok) throw new Error('klines failed');
+   152→      const data = await res.json();
+   153→      candles = (data || []).map((k: any) => ({
+   154→        time: k.time,
+   155→        open: +k.open,
+   156→        high: +k.high,
+   157→        low: +k.low,
+   158→        close: +k.close,
+   159→        volume: +k.volume
+   160→      }));
+   161→      computeIndicators();
+   162→      // Snap to the latest candles on first load
+   163→      offsetX = Math.max(0, candles.length - 60);
+   164→      updateVisibleRange();
+   165→      render();
+   166→    } catch (err) {
+   167→      console.error('NEXUS Chart: failed to load candles', err);
+   168→    }
+   169→  }
+   170→
+   171→  function connectKlineWS() {
+   172→    try {
+   173→      klineWs?.close();
+   174→      const url = `${API_BASE.replace(/^http/, 'ws')}/ws/kline?symbol=${symbol}&interval=${timeframe}`;
+   175→      klineWs = new WebSocket(url);
+   176→      klineWs.onmessage = (ev) => {
+   177→        try {
+   178→          const msg = JSON.parse(ev.data);
+   179→          const k = msg.kline;
+   180→          if (!k) return;
+   181→          const candle: Candle = {
+   182→            time: k.time,
+   183→            open: +k.open,
+   184→            high: +k.high,
+   185→            low: +k.low,
+   186→            close: +k.close,
+   187→            volume: +k.volume
+   188→          };
+   189→          const prev = candles[candles.length - 1];
+   190→          if (prev && prev.time === candle.time) {
+   191→            const prevClose = prev.close;
+   192→            candles[candles.length - 1] = candle;
+   193→            if (candle.close > prevClose) {
+   194→              lastFlash = 'up';
+   195→              flashAt = performance.now();
+   196→            } else if (candle.close < prevClose) {
+   197→              lastFlash = 'down';
+   198→              flashAt = performance.now();
+   199→            }
+   200→          } else if (!prev || candle.time > prev.time) {
+   201→            candles.push(candle);
+   202→            if (candles.length > 500) candles.shift();
+   203→            offsetX = Math.max(0, offsetX); // keep view stable
+   204→          }
+   205→          computeIndicators();
+   206→          updateVisibleRange();
+   207→          livePricePulse = 1;
+   208→          // No immediate render — the RAF loop will pick it up
+   209→        } catch {}
+   210→      };
+   211→      klineWs.onerror = () => {};
+   212→    } catch {}
+   213→  }
+   214→
+   215→  function connectTickerWS() {
+   216→    try {
+   217→      tickerWs?.close();
+   218→      const url = `${API_BASE.replace(/^http/, 'ws')}/ws/market?symbol=${symbol}`;
+   219→      tickerWs = new WebSocket(url);
+   220→      tickerWs.onmessage = (ev) => {
+   221→        try {
+   222→          const d = JSON.parse(ev.data);
+   223→          // Forward to marketStore via a custom event so the rest of the
+   224→          // exchange page picks up live prices
+   225→          if (d.symbol && typeof d.price === 'number') {
+   226→            window.dispatchEvent(
+   227→              new CustomEvent('nexus-ticker', {
+   228→                detail: {
+   229→                  symbol: d.symbol,
+   230→                  price: d.price,
+   231→                  change24h: d.change_24h,
+   232→                  high24h: d.high_24h,
+   233→                  low24h: d.low_24h,
+   234→                  volume24h: d.volume_24h
+   235→                }
+   236→              })
+   237→            );
+   238→          }
+   239→        } catch {}
+   240→      };
+   241→      tickerWs.onerror = () => {};
+   242→    } catch {}
+   243→  }
+   244→
+   245→  // ============================================================
+   246→  // Indicators
+   247→  // ============================================================
+   248→  function computeIndicators() {
+   249→    const closes = candles.map((c) => c.close);
+   250→    sma20 = computeSMA(closes, 20);
+   251→    sma50 = computeSMA(closes, 50);
+   252→    ema12 = computeEMA(closes, 12);
+   253→    ema26 = computeEMA(closes, 26);
+   254→    const boll = computeBollinger(closes, 20, 2);
+   255→    bollUpper = boll.upper;
+   256→    bollMiddle = boll.middle;
+   257→    bollLower = boll.lower;
+   258→  }
+   259→
+   260→  function computeSMA(values: number[], period: number): (number | null)[] {
+   261→    const out: (number | null)[] = [];
+   262→    for (let i = 0; i < values.length; i++) {
+   263→      if (i < period - 1) {
+   264→        out.push(null);
+   265→      } else {
+   266→        let sum = 0;
+   267→        for (let j = i - period + 1; j <= i; j++) sum += values[j];
+   268→        out.push(sum / period);
+   269→      }
+   270→    }
+   271→    return out;
+   272→  }
+   273→
+   274→  function computeEMA(values: number[], period: number): (number | null)[] {
+   275→    const out: (number | null)[] = [];
+   276→    const k = 2 / (period + 1);
+   277→    let prev: number | null = null;
+   278→    for (let i = 0; i < values.length; i++) {
+   279→      if (i < period - 1) {
+   280→        out.push(null);
+   281→      } else if (i === period - 1) {
+   282→        let sum = 0;
+   283→        for (let j = 0; j < period; j++) sum += values[j];
+   284→        prev = sum / period;
+   285→        out.push(prev);
+   286→      } else {
+   287→        prev = values[i] * k + (prev as number) * (1 - k);
+   288→        out.push(prev);
+   289→      }
+   290→    }
+   291→    return out;
+   292→  }
+   293→
+   294→  function computeBollinger(values: number[], period: number, mult: number) {
+   295→    const middle = computeSMA(values, period);
+   296→    const upper: (number | null)[] = [];
+   297→    const lower: (number | null)[] = [];
+   298→    for (let i = 0; i < values.length; i++) {
+   299→      if (i < period - 1 || middle[i] === null) {
+   300→        upper.push(null);
+   301→        lower.push(null);
+   302→      } else {
+   303→        let variance = 0;
+   304→        const mean = middle[i] as number;
+   305→        for (let j = i - period + 1; j <= i; j++) {
+   306→          variance += Math.pow(values[j] - mean, 2);
+   307→        }
+   308→        const std = Math.sqrt(variance / period);
+   309→        upper.push(mean + mult * std);
+   310→        lower.push(mean - mult * std);
+   311→      }
+   312→    }
+   313→    return { upper, middle, lower };
+   314→  }
+   315→
+   316→  // ============================================================
+   317→  // Layout
+   318→  // ============================================================
+   319→  function setupCanvas() {
+   320→    if (!ctx) return;
+   321→    const dpr = window.devicePixelRatio || 1;
+   322→    const rect = container.getBoundingClientRect();
+   323→    canvas.width = Math.max(1, rect.width * dpr);
+   324→    canvas.height = Math.max(1, rect.height * dpr);
+   325→    canvas.style.width = `${rect.width}px`;
+   326→    canvas.style.height = `${rect.height}px`;
+   327→    ctx.setTransform(1, 0, 0, 1, 0, 0);
+   328→    ctx.scale(dpr, dpr);
+   329→  }
+   330→
+   331→  function updateVisibleRange() {
+   332→    const rect = container.getBoundingClientRect();
+   333→    const totalWidth = candleWidth + candleSpacing;
+   334→    const visibleCount = Math.max(20, Math.floor(rect.width / totalWidth));
+   335→    if (candles.length === 0) {
+   336→      visibleCandles = [];
+   337→      return;
+   338→    }
+   339→    const maxOffset = Math.max(0, candles.length - visibleCount);
+   340→    offsetX = Math.max(0, Math.min(offsetX, maxOffset));
+   341→    visibleCandles = candles.slice(offsetX, offsetX + visibleCount);
+   342→    if (visibleCandles.length === 0) return;
+   343→    let min = Infinity;
+   344→    let max = -Infinity;
+   345→    let vMax = 0;
+   346→    for (const c of visibleCandles) {
+   347→      if (c.low < min) min = c.low;
+   348→      if (c.high > max) max = c.high;
+   349→      if (c.volume > vMax) vMax = c.volume;
+   350→    }
+   351→    if (indicators.includes('BOLL')) {
+   352→      for (let i = offsetX; i < offsetX + visibleCount && i < candles.length; i++) {
+   353→        if (bollUpper[i] !== null && (bollUpper[i] as number) > max) max = bollUpper[i] as number;
+   354→        if (bollLower[i] !== null && (bollLower[i] as number) < min) min = bollLower[i] as number;
+   355→      }
+   356→    }
+   357→    const pad = (max - min) * 0.08;
+   358→    priceRange = { min: min - pad, max: max + pad };
+   359→    volumeMax = vMax || 1;
+   360→  }
+   361→
+   362→  // ============================================================
+   363→  // Theme helpers
+   364→  // ============================================================
+   365→  function cssVar(name: string): string {
+   366→    if (typeof getComputedStyle === 'undefined') return '';
+   367→    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+   368→  }
+   369→
+   370→  function themeColors() {
+   371→    const isLight = theme === 'light';
+   372→    return {
+   373→      bg: isLight ? '#ffffff' : cssVar('--bg-elev-1') || '#0a0e1f',
+   374→      grid: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.04)',
+   375→      gridStrong: isLight ? 'rgba(15,23,42,0.10)' : 'rgba(255,255,255,0.08)',
+   376→      axisText: isLight ? '#94a3b8' : '#6b769c',
+   377→      axisTextStrong: isLight ? '#475569' : '#a3accd',
+   378→      up: isLight ? '#059669' : '#22d3a4',
+   379→      down: isLight ? '#e11d48' : '#f43f7a',
+   380→      upAlpha: isLight ? 'rgba(5,150,105,0.25)' : 'rgba(34,211,164,0.25)',
+   381→      downAlpha: isLight ? 'rgba(225,29,72,0.25)' : 'rgba(244,63,122,0.25)',
+   382→      gold: isLight ? '#d97706' : '#f5b544',
+   383→      crosshair: isLight ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.35)',
+   384→      tooltipBg: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(10,14,31,0.92)',
+   385→      tooltipBorder: isLight ? 'rgba(15,23,42,0.12)' : 'rgba(255,255,255,0.10)',
+   386→      lastLine: isLight ? 'rgba(217,119,6,0.5)' : 'rgba(245,181,68,0.5)',
+   387→      panelBorder: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.05)'
+   388→    };
+   389→  }
+   390→
+   391→  // ============================================================
+   392→  // Render loop (RAF for smooth flash animations)
+   393→  // ============================================================
+   394→  function startRenderLoop() {
+   395→    const loop = () => {
+   396→      rafId = requestAnimationFrame(loop);
+   397→      // Decay pulse
+   398→      livePricePulse = Math.max(0, livePricePulse - 0.04);
+   399→      const flashAge = performance.now() - flashAt;
+   400→      const flashActive = flashAge < 600;
+   401→      if (livePricePulse > 0 || flashActive) {
+   402→        render();
+   403→      }
+   404→    };
+   405→    rafId = requestAnimationFrame(loop);
+   406→  }
+   407→
+   408→  function scheduleRender() {
+   409→    if (rafId) {
+   410→      // Already looping
+   411→      render();
+   412→    } else {
+   413→      render();
+   414→    }
+   415→  }
+   416→
+   417→  // ============================================================
+   418→  // Main render
+   419→  // ============================================================
+   420→  function render() {
+   421→    if (!ctx || candles.length === 0) return;
+   422→    const rect = container.getBoundingClientRect();
+   423→    const W = rect.width;
+   424→    const H = rect.height;
+   425→    const padRight = 76;
+   426→    const padBottom = 64;
+   427→    const padTop = 12;
+   428→    const chartW = W - padRight;
+   429→    const chartH = H - padBottom - padTop;
+   430→
+   431→    const C = themeColors();
+   432→
+   433→    // Background
+   434→    ctx.fillStyle = C.bg;
+   435→    ctx.fillRect(0, 0, W, H);
+   436→
+   437→    // Subtle horizontal gradient overlay
+   438→    const grad = ctx.createLinearGradient(0, 0, 0, H);
+   439→    if (theme !== 'light') {
+   440→      grad.addColorStop(0, 'rgba(245,181,68,0.02)');
+   441→      grad.addColorStop(1, 'rgba(34,211,164,0.015)');
+   442→    } else {
+   443→      grad.addColorStop(0, 'rgba(217,119,6,0.03)');
+   444→      grad.addColorStop(1, 'rgba(5,150,105,0.02)');
+   445→    }
+   446→    ctx.fillStyle = grad;
+   447→    ctx.fillRect(0, padTop, chartW, chartH);
+   448→
+   449→    // ---- Grid ----
+   450→    ctx.strokeStyle = C.grid;
+   451→    ctx.lineWidth = 1;
+   452→    ctx.beginPath();
+   453→    for (let i = 0; i <= 6; i++) {
+   454→      const y = padTop + (chartH / 6) * i;
+   455→      ctx.moveTo(0, y);
+   456→      ctx.lineTo(chartW, y);
+   457→    }
+   458→    for (let i = 0; i <= 8; i++) {
+   459→      const x = (chartW / 8) * i;
+   460→      ctx.moveTo(x, padTop);
+   461→      ctx.lineTo(x, padTop + chartH);
+   462→    }
+   463→    ctx.stroke();
+   464→
+   465→    // ---- Volume bars (drawn first so candles sit on top) ----
+   466→    const volH = 40;
+   467→    const volY = padTop + chartH - volH;
+   468→    const totalWidth = candleWidth + candleSpacing;
+   469→    for (let i = 0; i < visibleCandles.length; i++) {
+   470→      const c = visibleCandles[i];
+   471→      const x = i * totalWidth;
+   472→      const h = (c.volume / volumeMax) * volH;
+   473→      ctx.fillStyle = c.close >= c.open ? C.upAlpha : C.downAlpha;
+   474→      ctx.fillRect(x, volY + (volH - h), candleWidth, h);
+   475→    }
+   476→
+   477→    // ---- Candles ----
+   478→    const yScale = chartH / (priceRange.max - priceRange.min || 1);
+   479→    for (let i = 0; i < visibleCandles.length; i++) {
+   480→      const c = visibleCandles[i];
+   481→      const x = i * totalWidth + candleWidth / 2;
+   482→      const yOpen = padTop + chartH - (c.open - priceRange.min) * yScale;
+   483→      const yClose = padTop + chartH - (c.close - priceRange.min) * yScale;
+   484→      const yHigh = padTop + chartH - (c.high - priceRange.min) * yScale;
+   485→      const yLow = padTop + chartH - (c.low - priceRange.min) * yScale;
+   486→
+   487→      const isUp = c.close >= c.open;
+   488→      const color = isUp ? C.up : C.down;
+   489→
+   490→      // Wick
+   491→      ctx.strokeStyle = color;
+   492→      ctx.lineWidth = 1;
+   493→      ctx.beginPath();
+   494→      ctx.moveTo(x, yHigh);
+   495→      ctx.lineTo(x, yLow);
+   496→      ctx.stroke();
+   497→
+   498→      // Body
+   499→      const bodyTop = Math.min(yOpen, yClose);
+   500→      const bodyH = Math.max(1, Math.abs(yClose - yOpen));
+   501→      ctx.fillStyle = color;
+   502→      ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyH);
+   503→    }
+   504→
+   505→    // ---- Indicators ----
+   506→    if (indicators.includes('BOLL')) {
+   507→      drawBand(bollUpper, bollLower, bollMiddle, padTop, chartH, totalWidth, yScale);
+   508→    }
+   509→    if (indicators.includes('SMA20')) drawLine(sma20, C.gold, padTop, chartH, totalWidth, yScale);
+   510→    if (indicators.includes('SMA50'))
+   511→      drawLine(sma50, theme === 'light' ? '#9333ea' : '#a855f7', padTop, chartH, totalWidth, yScale);
+   512→    if (indicators.includes('EMA12'))
+   513→      drawLine(ema12, theme === 'light' ? '#2563eb' : '#3b82f6', padTop, chartH, totalWidth, yScale);
+   514→    if (indicators.includes('EMA26')) drawLine(ema26, C.up, padTop, chartH, totalWidth, yScale);
+   515→
+   516→    // ---- Price axis labels (right) ----
+   517→    ctx.fillStyle = C.axisText;
+   518→    ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
+   519→    ctx.textAlign = 'left';
+   520→    ctx.textBaseline = 'middle';
+   521→    for (let i = 0; i <= 6; i++) {
+   522→      const y = padTop + (chartH / 6) * i;
+   523→      const price = priceRange.max - ((priceRange.max - priceRange.min) / 6) * i;
+   524→      ctx.fillText(formatPrice(price), chartW + 6, y);
+   525→    }
+   526→
+   527→    // ---- Time axis labels (bottom) ----
+   528→    ctx.textAlign = 'center';
+   529→    ctx.textBaseline = 'top';
+   530→    const skip = Math.max(1, Math.ceil(visibleCandles.length / 8));
+   531→    for (let i = 0; i < visibleCandles.length; i += skip) {
+   532→      const c = visibleCandles[i];
+   533→      const x = i * totalWidth + candleWidth / 2;
+   534→      const label = formatTimeLabel(c.time, timeframe);
+   535→      ctx.fillStyle = C.axisText;
+   536→      ctx.fillText(label, x, padTop + chartH + 6);
+   537→    }
+   538→
+   539→    // ---- Last price line + animated tag ----
+   540→    if (candles.length > 0) {
+   541→      const lastCandle = candles[candles.length - 1];
+   542→      const visibleIdx = offsetX + visibleCandles.length - 1;
+   543→      const isLastVisible = visibleIdx === candles.length - 1;
+   544→      const y = padTop + chartH - (lastCandle.close - priceRange.min) * yScale;
+   545→      lastPriceY = y;
+   546→
+   547→      const lineColor =
+   548→        lastFlash === 'up' ? C.up : lastFlash === 'down' ? C.down : C.gold;
+   549→
+   550→      // Dashed horizontal line
+   551→      ctx.strokeStyle = isLastVisible ? lineColor : C.lastLine;
+   552→      ctx.lineWidth = 1;
+   553→      ctx.setLineDash([3, 4]);
+   554→      ctx.beginPath();
+   555→      ctx.moveTo(0, y);
+   556→      ctx.lineTo(chartW, y);
+   557→      ctx.stroke();
+   558→      ctx.setLineDash([]);
+   559→
+   560→      // Animated tag on right axis
+   561→      const tagW = padRight;
+   562→      const tagH = 18;
+   563→      ctx.fillStyle = lineColor;
+   564→      ctx.fillRect(chartW, y - tagH / 2, tagW, tagH);
+   565→      // Pulse ring
+   566→      if (livePricePulse > 0) {
+   567→        ctx.strokeStyle = lineColor;
+   568→        ctx.globalAlpha = livePricePulse * 0.6;
+   569→        ctx.lineWidth = 2;
+   570→        ctx.beginPath();
+   571→        ctx.arc(chartW + tagW / 2, y, 8 + (1 - livePricePulse) * 12, 0, Math.PI * 2);
+   572→        ctx.stroke();
+   573→        ctx.globalAlpha = 1;
+   574→      }
+   575→      ctx.fillStyle = theme === 'light' ? '#fff' : '#050813';
+   576→      ctx.font = 'bold 11px "JetBrains Mono", ui-monospace, monospace';
+   577→      ctx.textAlign = 'center';
+   578→      ctx.textBaseline = 'middle';
+   579→      ctx.fillText(formatPrice(lastCandle.close), chartW + tagW / 2, y);
+   580→    }
+   581→
+   582→    // ---- Crosshair + tooltip ----
+   583→    if (crosshairPos && crosshairPos.x < chartW) {
+   584→      ctx.strokeStyle = C.crosshair;
+   585→      ctx.lineWidth = 1;
+   586→      ctx.setLineDash([4, 4]);
+   587→      ctx.beginPath();
+   588→      ctx.moveTo(crosshairPos.x, padTop);
+   589→      ctx.lineTo(crosshairPos.x, padTop + chartH);
+   590→      ctx.moveTo(0, crosshairPos.y);
+   591→      ctx.lineTo(chartW, crosshairPos.y);
+   592→      ctx.stroke();
+   593→      ctx.setLineDash([]);
+   594→
+   595→      // Price label on right axis
+   596→      const price = priceRange.max - ((crosshairPos.y - padTop) / chartH) * (priceRange.max - priceRange.min);
+   597→      if (crosshairPos.y >= padTop && crosshairPos.y <= padTop + chartH) {
+   598→        ctx.fillStyle = C.tooltipBg;
+   599→        ctx.fillRect(chartW, crosshairPos.y - 10, padRight, 20);
+   600→        ctx.strokeStyle = C.tooltipBorder;
+   601→        ctx.strokeRect(chartW, crosshairPos.y - 10, padRight, 20);
+   602→        ctx.fillStyle = C.axisTextStrong;
+   603→        ctx.font = 'bold 11px "JetBrains Mono", ui-monospace, monospace';
+   604→        ctx.textAlign = 'center';
+   605→        ctx.textBaseline = 'middle';
+   606→        ctx.fillText(formatPrice(price), chartW + padRight / 2, crosshairPos.y);
+   607→      }
+   608→
+   609→      // OHLC tooltip (top-left)
+   610→      if (hoveredCandle) {
+   611→        const c = hoveredCandle;
+   612→        const isUp = c.close >= c.open;
+   613→        const chg = ((c.close - c.open) / c.open) * 100;
+   614→        const lines = [
+   615→          { label: 'O', value: formatPrice(c.open), color: C.axisText },
+   616→          { label: 'H', value: formatPrice(c.high), color: C.axisText },
+   617→          { label: 'L', value: formatPrice(c.low), color: C.axisText },
+   618→          { label: 'C', value: formatPrice(c.close), color: isUp ? C.up : C.down },
+   619→          { label: 'Vol', value: formatCompact(c.volume), color: C.axisText },
+   620→          { label: 'Chg', value: `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`, color: isUp ? C.up : C.down }
+   621→        ];
+   622→        ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
+   623→        const rowH = 16;
+   624→        const w = 200;
+   625→        const h = lines.length * rowH + 22;
+   626→        const tx = 10;
+   627→        const ty = padTop + 4;
+   628→        ctx.fillStyle = C.tooltipBg;
+   629→        ctx.fillRect(tx, ty, w, h);
+   630→        ctx.strokeStyle = C.tooltipBorder;
+   631→        ctx.strokeRect(tx, ty, w, h);
+   632→        // Title row — date
+   633→        ctx.fillStyle = C.axisTextStrong;
+   634→        ctx.font = 'bold 11px "JetBrains Mono", ui-monospace, monospace';
+   635→        ctx.textAlign = 'left';
+   636→        ctx.textBaseline = 'top';
+   637→        ctx.fillText(formatDateFull(c.time), tx + 8, ty + 6);
+   638→        // OHLC rows
+   639→        ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
+   640→        lines.forEach((ln, i) => {
+   641→          const y = ty + 22 + i * rowH;
+   642→          ctx.fillStyle = C.axisText;
+   643→          ctx.textAlign = 'left';
+   644→          ctx.fillText(ln.label, tx + 8, y);
+   645→          ctx.fillStyle = ln.color;
+   646→          ctx.textAlign = 'right';
+   647→          ctx.fillText(ln.value, tx + w - 8, y);
+   648→        });
+   649→      }
+   650→    }
+   651→
+   652→    // ---- NEXUS watermark ----
+   653→    ctx.fillStyle = theme === 'light' ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.025)';
+   654→    ctx.font = 'bold 28px "Inter", "Arial", sans-serif';
+   655→    ctx.textAlign = 'center';
+   656→    ctx.textBaseline = 'middle';
+   657→    ctx.fillText('NEXUS', chartW / 2, padTop + chartH / 2 - 10);
+   658→    ctx.font = '10px "JetBrains Mono", ui-monospace, monospace';
+   659→    ctx.fillText(symbol, chartW / 2, padTop + chartH / 2 + 16);
+   660→  }
+   661→
+   662→  function drawLine(
+   663→    values: (number | null)[],
+   664→    color: string,
+   665→    padTop: number,
+   666→    chartH: number,
+   667→    totalWidth: number,
+   668→    yScale: number
+   669→  ) {
+   670→    ctx.strokeStyle = color;
+   671→    ctx.lineWidth = 1.5;
+   672→    ctx.beginPath();
+   673→    let started = false;
+   674→    for (let i = 0; i < visibleCandles.length; i++) {
+   675→      const idx = offsetX + i;
+   676→      const v = values[idx];
+   677→      if (v === null || v === undefined) continue;
+   678→      const x = i * totalWidth + (candleWidth + candleSpacing) / 2;
+   679→      const y = padTop + chartH - (v - priceRange.min) * yScale;
+   680→      if (!started) {
+   681→        ctx.moveTo(x, y);
+   682→        started = true;
+   683→      } else {
+   684→        ctx.lineTo(x, y);
+   685→      }
+   686→    }
+   687→    ctx.stroke();
+   688→  }
+   689→
+   690→  function drawBand(
+   691→    upper: (number | null)[],
+   692→    lower: (number | null)[],
+   693→    middle: (number | null)[],
+   694→    padTop: number,
+   695→    chartH: number,
+   696→    totalWidth: number,
+   697→    yScale: number
+   698→  ) {
+   699→    ctx.fillStyle = theme === 'light' ? 'rgba(217,119,6,0.08)' : 'rgba(245,181,68,0.06)';
+   700→    ctx.beginPath();
+   701→    let started = false;
+   702→    for (let i = 0; i < visibleCandles.length; i++) {
+   703→      const idx = offsetX + i;
+   704→      const v = upper[idx];
+   705→      if (v === null) continue;
+   706→      const x = i * totalWidth + (candleWidth + candleSpacing) / 2;
+   707→      const y = padTop + chartH - (v - priceRange.min) * yScale;
+   708→      if (!started) {
+   709→        ctx.moveTo(x, y);
+   710→        started = true;
+   711→      } else {
+   712→        ctx.lineTo(x, y);
+   713→      }
+   714→    }
+   715→    for (let i = visibleCandles.length - 1; i >= 0; i--) {
+   716→      const idx = offsetX + i;
+   717→      const v = lower[idx];
+   718→      if (v === null) continue;
+   719→      const x = i * totalWidth + (candleWidth + candleSpacing) / 2;
+   720→      const y = padTop + chartH - (v - priceRange.min) * yScale;
+   721→      ctx.lineTo(x, y);
+   722→    }
+   723→    ctx.closePath();
+   724→    ctx.fill();
+   725→    drawLine(middle, theme === 'light' ? 'rgba(217,119,6,0.5)' : 'rgba(245,181,68,0.5)', padTop, chartH, totalWidth, yScale);
+   726→  }
+   727→
+   728→  // ============================================================
+   729→  // Helpers
+   730→  // ============================================================
+   731→  function formatPrice(n: number): string {
+   732→    if (!isFinite(n)) return '--';
+   733→    if (n >= 1000) return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+   734→    if (n >= 1) return n.toFixed(2);
+   735→    if (n >= 0.01) return n.toFixed(4);
+   736→    return n.toFixed(6);
+   737→  }
+   738→
+   739→  function formatCompact(n: number): string {
+   740→    if (!isFinite(n)) return '--';
+   741→    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+   742→    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+   743→    if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+   744→    return n.toFixed(2);
+   745→  }
+   746→
+   747→  function formatTimeLabel(ms: number, tf: string): string {
+   748→    const d = new Date(ms);
+   749→    if (tf === '1m' || tf === '5m' || tf === '15m') {
+   750→      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+   751→    }
+   752→    if (tf === '1H' || tf === '4H') {
+   753→      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+   754→    }
+   755→    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+   756→  }
+   757→
+   758→  function formatDateFull(ms: number): string {
+   759→    const d = new Date(ms);
+   760→    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+   761→  }
+   762→
+   763→  function pad2(n: number): string {
+   764→    return n.toString().padStart(2, '0');
+   765→  }
+   766→
+   767→  // ============================================================
+   768→  // Mouse + touch interactions
+   769→  // ============================================================
+   770→  function onMouseMove(e: MouseEvent) {
+   771→    const rect = canvas.getBoundingClientRect();
+   772→    const x = e.clientX - rect.left;
+   773→    const y = e.clientY - rect.top;
+   774→    crosshairPos = { x, y };
+   775→
+   776→    if (isDragging) {
+   777→      const dx = e.clientX - lastDragX;
+   778→      const totalWidth = candleWidth + candleSpacing;
+   779→      const shift = Math.round(dx / totalWidth);
+   780→      if (shift !== 0) {
+   781→        const maxOffset = Math.max(0, candles.length - visibleCandles.length);
+   782→        offsetX = Math.max(0, Math.min(maxOffset, offsetX - shift));
+   783→        lastDragX = e.clientX;
+   784→        updateVisibleRange();
+   785→      }
+   786→    }
+   787→
+   788→    const totalWidth = candleWidth + candleSpacing;
+   789→    const idx = Math.floor(x / totalWidth);
+   790→    if (idx >= 0 && idx < visibleCandles.length) {
+   791→      hoveredCandle = visibleCandles[idx];
+   792→    } else {
+   793→      hoveredCandle = null;
+   794→    }
+   795→    render();
+   796→  }
+   797→
+   798→  function onMouseDown(e: MouseEvent) {
+   799→    isDragging = true;
+   800→    lastDragX = e.clientX;
+   801→    canvas.style.cursor = 'grabbing';
+   802→  }
+   803→
+   804→  function onMouseUp() {
+   805→    isDragging = false;
+   806→    canvas.style.cursor = 'crosshair';
+   807→  }
+   808→
+   809→  function onMouseLeave() {
+   810→    crosshairPos = null;
+   811→    hoveredCandle = null;
+   812→    isDragging = false;
+   813→    canvas.style.cursor = 'crosshair';
+   814→    render();
+   815→  }
+   816→
+   817→  function onWheel(e: WheelEvent) {
+   818→    e.preventDefault();
+   819→    if (e.ctrlKey || e.metaKey) {
+   820→      // Pinch-zoom (Ctrl+Wheel)
+   821→      const delta = e.deltaY > 0 ? -2 : 2;
+   822→      candleWidth = Math.max(2, Math.min(24, candleWidth + delta));
+   823→    } else {
+   824→      // Pan
+   825→      const delta = e.deltaY > 0 ? 3 : -3;
+   826→      const maxOffset = Math.max(0, candles.length - visibleCandles.length);
+   827→      offsetX = Math.max(0, Math.min(maxOffset, offsetX + delta));
+   828→    }
+   829→    updateVisibleRange();
+   830→    render();
+   831→  }
+   832→
+   833→  // ---- Touch (pinch + pan) ----
+   834→  function onTouchStart(e: TouchEvent) {
+   835→    if (e.touches.length === 1) {
+   836→      isDragging = true;
+   837→      lastDragX = e.touches[0].clientX;
+   838→    } else if (e.touches.length === 2) {
+   839→      isDragging = false;
+   840→      pinchDist = Math.hypot(
+   841→        e.touches[0].clientX - e.touches[1].clientX,
+   842→        e.touches[0].clientY - e.touches[1].clientY
+   843→      );
+   844→    }
+   845→  }
+   846→
+   847→  function onTouchMove(e: TouchEvent) {
+   848→    e.preventDefault();
+   849→    if (e.touches.length === 1 && isDragging) {
+   850→      const x = e.touches[0].clientX;
+   851→      const dx = x - lastDragX;
+   852→      const totalWidth = candleWidth + candleSpacing;
+   853→      const shift = Math.round(dx / totalWidth);
+   854→      if (shift !== 0) {
+   855→        const maxOffset = Math.max(0, candles.length - visibleCandles.length);
+   856→        offsetX = Math.max(0, Math.min(maxOffset, offsetX - shift));
+   857→        lastDragX = x;
+   858→        updateVisibleRange();
+   859→        render();
+   860→      }
+   861→    } else if (e.touches.length === 2) {
+   862→      const newDist = Math.hypot(
+   863→        e.touches[0].clientX - e.touches[1].clientX,
+   864→        e.touches[0].clientY - e.touches[1].clientY
+   865→      );
+   866→      const delta = newDist - pinchDist;
+   867→      candleWidth = Math.max(2, Math.min(24, candleWidth + delta * 0.05));
+   868→      pinchDist = newDist;
+   869→      updateVisibleRange();
+   870→      render();
+   871→    }
+   872→  }
+   873→
+   874→  function onTouchEnd() {
+   875→    isDragging = false;
+   876→    pinchDist = 0;
+   877→  }
+   878→
+   879→  // ============================================================
+   880→  // Public actions
+   881→  // ============================================================
+   882→  function zoomIn() {
+   883→    candleWidth = Math.min(24, candleWidth + 2);
+   884→    updateVisibleRange();
+   885→    render();
+   886→  }
+   887→
+   888→  function zoomOut() {
+   889→    candleWidth = Math.max(2, candleWidth - 2);
+   890→    updateVisibleRange();
+   891→    render();
+   892→  }
+   893→
+   894→  function resetView() {
+   895→    offsetX = Math.max(0, candles.length - visibleCandles.length);
+   896→    candleWidth = 8;
+   897→    updateVisibleRange();
+   898→    render();
+   899→  }
+   900→
+   901→  function goLive() {
+   902→    // Snap to the latest candles
+   903→    const rect = container.getBoundingClientRect();
+   904→    const totalWidth = candleWidth + candleSpacing;
+   905→    const visibleCount = Math.max(20, Math.floor(rect.width / totalWidth));
+   906→    offsetX = Math.max(0, candles.length - visibleCount);
+   907→    updateVisibleRange();
+   908→    render();
+   909→  }
+   910→
+   911→  function exportPng() {
+   912→    const link = document.createElement('a');
+   913→    link.download = `NEXUS_${symbol}_${timeframe}_${Date.now()}.png`;
+   914→    link.href = canvas.toDataURL('image/png');
+   915→    link.click();
+   916→  }
+   917→</script>
+   918→
+   919→<div
+   920→  bind:this={container}
+   921→  class="relative w-full overflow-hidden"
+   922→  style="height: {height}px; background: var(--bg-elev-1);"
+   923→>
+   924→  <canvas
+   925→    bind:this={canvas}
+   926→    class="absolute inset-0 cursor-crosshair touch-none"
+   927→    onmousemove={onMouseMove}
+   928→    onmousedown={onMouseDown}
+   929→    onmouseup={onMouseUp}
+   930→    onmouseleave={onMouseLeave}
+   931→    onwheel={(e) => {
+   932→      e.preventDefault();
+   933→      onWheel(e);
+   934→    }}
+   935→    ontouchstart={onTouchStart}
+   936→    ontouchmove={onTouchMove}
+   937→    ontouchend={onTouchEnd}
+   938→    aria-label="مخطط NEXUS لـ {symbol}"
+   939→  ></canvas>
+   940→
+   941→  <!-- "LIVE" indicator (top-right) -->
+   942→  <div
+   943→    class="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold pointer-events-none"
+   944→    style="background: var(--bg-ink-900-80); color: var(--accent-mint); border: 1px solid var(--border-white-10);"
+   945→  >
+   946→    <span class="w-1.5 h-1.5 rounded-full bg-accent-mint animate-pulse"></span>
+   947→    LIVE
+   948→  </div>
+   949→</div>
+   950→
+   951→<style>
+   952→  :global([data-theme='light']) canvas {
+   953→    /* ensure crisp text on white */
+   954→    -webkit-font-smoothing: antialiased;
+   955→  }
+   956→</style>
+   957→
