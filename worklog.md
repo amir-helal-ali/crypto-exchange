@@ -408,3 +408,37 @@ Stage Summary:
 - Backend: standalone Go + SQLite mock API (no PostgreSQL/Redis needed)
 - Full integration tested: register → login → place order → deposit → notifications all working
 - Build: 0 errors, all assets served correctly
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Add dark/light theme toggle system + verify backend health
+
+Work Log:
+- Created `src/lib/stores/theme.ts`: reactive theme store supporting 'dark' | 'light' | 'system' modes with localStorage persistence + matchMedia listener for system changes
+- Refactored `src/app.css` to use CSS variables for all theme-able tokens (ink palette, text-white/slate-*, bg-white/*, borders, shadows, accents)
+- Added `[data-theme='light']` block overriding all variables for a paper/sky/ink palette suited for daylight reading
+- Added surgical Tailwind utility overrides (`.text-white`, `.text-slate-*`, `.bg-ink-*`, `.bg-white\/X`, `.border-white\/X`) that swap to CSS variables — keeps all existing component markup working in both themes
+- Refactored `.panel`, `.input`, `.nav-link`, `.tab-btn`, `.btn-*` component classes to use the variables directly (no more `@apply bg-ink-900/70` which produced static rgba)
+- Created `ThemeToggle.svelte`: animated Sun/Moon icon with rotation/scale transition, SSR-safe (waits for mount to avoid hydration mismatch)
+- Added anti-FOUC inline script in `app.html` head — reads localStorage BEFORE first paint and sets `data-theme` on `<html>` to prevent flash of dark theme on light-mode users
+- Updated `<meta name="color-scheme">` to `dark light` and added media-query-aware `theme-color` meta tags
+- Wired ThemeToggle into 7 locations:
+  * Dashboard topbar (between portfolio pill and notifications bell)
+  * Landing page hero (floating top-left in a panel)
+  * Login, Register, Forgot-password, Reset-password, Verify-email pages (floating top-left)
+- Initialized theme store in root `+layout.svelte` onMount
+- Verified mock-backend (Go + SQLite) is running healthy on port 3000:
+  * `GET /` returns version info
+  * `GET /api/health` returns `{"status":"ok","database":"sqlite"}`
+  * `GET /api/v1/fees` returns fee tiers correctly
+- Production build succeeds in ~10s with 0 errors / 0 warnings
+- Verified served HTML contains: anti-FOUC script, theme-toggle button, data-theme attribute, light-theme CSS block
+
+Stage Summary:
+- Theme system: dual dark/light with system-mode detection, anti-FOUC, smooth transitions
+- 1 new store (theme.ts, ~95 lines), 1 new component (ThemeToggle.svelte, ~50 lines)
+- app.css expanded from ~358 → ~530 lines (added light-theme variables + Tailwind utility overrides)
+- ThemeToggle present on all 7 user-facing pages (dashboard, landing, 5 auth pages)
+- Backend healthy; frontend healthy on port 3001
+- Build size stable; all 0-error svelte-check + production build
