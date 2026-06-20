@@ -442,3 +442,58 @@ Stage Summary:
 - ThemeToggle present on all 7 user-facing pages (dashboard, landing, 5 auth pages)
 - Backend healthy; frontend healthy on port 3001
 - Build size stable; all 0-error svelte-check + production build
+
+---
+Task ID: 10
+Agent: Main Agent
+Task: Implement full Price Alerts system with browser notifications
+
+Work Log:
+- Created `src/lib/stores/priceAlerts.ts` (~150 lines):
+  * Reactive store with localStorage persistence (max 50 alerts)
+  * Alert states: 'active' | 'triggered' | 'dismissed'
+  * Auto-subscribes to marketStore and checks prices on every tick
+  * Cross-price-trigger detection (only fires when price crosses target threshold, not when already past it)
+  * Browser Notification API integration (requests permission on first alert, fires notifications on trigger)
+  * Toast notifications also fire on trigger (via existing toast store)
+  * CRUD operations: add, dismiss, remove, clearTriggered, reactivate
+- Created `src/lib/components/AlertModal.svelte` (~210 lines):
+  * Modal form for creating new price alert
+  * Direction toggle (above/below) with colored indicators
+  * Target price input with current price pre-fill
+  * Real-time difference % calculation
+  * Quick preset buttons (+5%, +10%, +25%, -5%, -10%, -25%)
+  * Optional note field
+  * Symbol-aware (adapts to whatever trading pair is selected)
+- Created `src/lib/components/AlertsPanel.svelte` (~200 lines):
+  * Compact sidebar panel showing alerts for current symbol
+  * Active alerts with progress bars showing proximity to target
+  * Triggered alerts with reactivate option
+  * Empty state with CTA
+  * Live current price display next to target
+  * Compact mode (filter by symbol) for exchange sidebar
+- Created `src/routes/dashboard/alerts/+page.svelte` (~440 lines):
+  * Full alerts management page with 3-stat cards (active/triggered/notifications)
+  * Notification permission banner + enable button
+  * Filter tabs (all/active/triggered) + search by symbol/note
+  * Responsive table (desktop grid + mobile card layouts)
+  * Bulk clear-triggered action
+  * Each row: coin, direction, target price (USD + EGP), current price, status with proximity %, reactivate/delete actions
+- Integrated into exchange page:
+  * Bell icon next to favorite star in pair header → opens alert modal
+  * AlertsPanel embedded in right sidebar (below TradesFeed)
+  * AlertModal at end of page
+- Added 'التنبيهات' to sidebar nav (between سجل الصفقات and account section) with BellRing icon
+- Anti-FOUC: alert store auto-starts watching market on browser load
+- Production build: 0 errors, 0 warnings, ~10s
+- Verified: /, /dashboard/alerts, /dashboard/exchange all return HTTP 200
+
+Stage Summary:
+- 3 new files: priceAlerts.ts store (~150 lines), AlertModal.svelte (~210 lines), AlertsPanel.svelte (~200 lines)
+- 1 new page: /dashboard/alerts (~440 lines) — full management UI
+- 2 updated pages: exchange (+alert button + panel + modal), dashboard layout (+nav item)
+- Browser Notification API: requests permission on first alert, fires on trigger
+- localStorage-persisted alerts survive page reloads
+- EGP currency throughout (target price in USD, EGP equivalent displayed)
+- Mobile-responsive: table collapses to cards, modal works on touch
+- Total ~1000 lines of new code; 0 errors, 0 warnings
