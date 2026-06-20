@@ -353,3 +353,58 @@ Stage Summary:
 - All currency conversions use the reactive `usdEgpRate` store (default 48.5, persisted)
 - Production build succeeds with 0 errors
 - Build size: dashboard layout 36.4 kB / dashboard main 41.9 kB / exchange 53.3 kB
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Add PWA support, custom error page, live market preview, mobile bottom navigation, and SQLite-backed mock API for end-to-end testing
+
+Work Log:
+- Created `src/routes/+error.svelte`: custom error page (404/401/403/5xx) with branded design, RTL Arabic, pulse animation, quick links
+- Added live markets preview section to landing page (`src/routes/+page.svelte`):
+  * 6 preview coins (BTC/ETH/SOL/BNB/XRP/ADA) with live Binance WebSocket prices in EGP
+  * LiveMiniChart component with Canvas-based real-time price chart, flashing on price change
+  * EGP rate info bar showing current `1 USD = X EGP` rate
+- Added hero section mini-charts: BTC + ETH live charts directly in landing hero
+- Created `src/lib/components/BottomNav.svelte`: mobile-only bottom navigation bar
+  * 5 tabs (Home/Trade/Wallet/History/Account)
+  * Active indicator with gold glow + scale animation
+  * Auto-hides on /dashboard/exchange (page has its own mobile tab bar)
+  * Safe-area-inset support for notched phones
+- Created PWA support:
+  * `public/manifest.json`: full PWA manifest with shortcuts, RTL, Arabic name
+  * `public/sw.js`: service worker with stale-while-revalidate for static, network-first for navigation
+  * `public/offline.html`: branded offline page with retry button
+  * Generated 8 PWA icons (192/512/maskable/apple-touch) via Python script + cairosvg
+  * `og-image.png` 1200x630 social preview image
+- Updated `src/app.html`: full SEO meta (Open Graph, Twitter Card, robots, canonical, keywords), PWA meta tags, manifest link, service worker registration
+- Fixed critical SvelteKit config: `kit.files.assets: 'public'` (default is `static/`, but project uses `public/`)
+- Installed Go 1.23.4 locally (portable, user-space install at `/home/z/.local/go/`)
+- Created `mock-backend/` standalone Go backend using SQLite (no external DBs needed):
+  * Full auth flow: register, login, refresh, logout, JWT-based auth middleware
+  * Wallet: balances, deposit, withdraw, transactions
+  * Exchange: place order (auto-fills), order history, cancel
+  * KYC: submit, status
+  * Notifications: list, mark read, mark all read
+  * Admin: stats, users, KYC review, transactions
+  * Public: fees, ads
+  * Auto-seeds admin user (admin@eg-money.com / Admin@123456)
+  * Auto-creates welcome bonus of 10,000 USDT for new users
+  * CORS enabled for frontend integration
+- Verified end-to-end flow:
+  * Frontend (port 3001) ↔ Backend (port 3000) integration working
+  * Register new user → success
+  * Login → JWT token issued
+  * Get user info / balances / notifications → all working
+  * Place order → filled immediately, notification created
+  * Deposit EGP → balance updated, transaction recorded
+  * Admin login + stats → working
+- All svelte-check passes with 0 errors, 0 warnings
+- Production build succeeds in ~10s
+
+Stage Summary:
+- Frontend enhancements: error page, live market preview, mobile bottom nav, mini charts in hero
+- PWA: manifest, service worker, offline page, 8 icons, og-image, SEO meta
+- Backend: standalone Go + SQLite mock API (no PostgreSQL/Redis needed)
+- Full integration tested: register → login → place order → deposit → notifications all working
+- Build: 0 errors, all assets served correctly
