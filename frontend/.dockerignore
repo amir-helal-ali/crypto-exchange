@@ -1,0 +1,17 @@
+node_modules
+.svelte-kit
+build
+dist
+.git
+.gitignore
+.env
+.env.local
+.env.production
+.env.staging
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+README.md
+.env.example

@@ -235,11 +235,15 @@ func processLimitOrder(order *models.Order) {
 func Start(interval time.Duration) {
         log.Printf("MatchingEngine: starting with interval %v", interval)
 
-        fetchPrices()
-        processOrders()
-
-        ticker := time.NewTicker(interval)
+        // Run initial fetch + processing in a goroutine so the HTTP server
+        // can start immediately. Without this, if Binance is slow/unreachable
+        // or DB is busy during AutoMigrate, the health check fails because
+        // the HTTP server hasn't started yet.
         go func() {
+                fetchPrices()
+                processOrders()
+
+                ticker := time.NewTicker(interval)
                 for range ticker.C {
                         fetchPrices()
                         processOrders()

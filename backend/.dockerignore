@@ -1,0 +1,12 @@
+*.exe
+*.exe~
+main
+nexus-mock-backend
+tmp/
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+.env
+.env.local

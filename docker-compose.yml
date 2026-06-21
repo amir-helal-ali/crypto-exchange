@@ -63,11 +63,11 @@ services:
     volumes:
       - uploads:/root/uploads
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:3000/api/health"]
-      interval: 30s
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      start_period: 60s
     networks:
       - backend
 
@@ -76,13 +76,14 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eg-money.local}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
     container_name: crypto-exchange-web
     restart: always
     ports:
       - "3001:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eg-money.local}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      ORIGIN: ${ORIGIN:-http://localhost:3001}
     depends_on:
       backend:
         condition: service_healthy
@@ -100,13 +101,13 @@ services:
       context: ./admin
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eg-money.local}
+        NEXT_PUBLIC_API_URL: ${VITE_API_URL:-http://localhost:3000}
     container_name: crypto-exchange-admin
     restart: always
     ports:
       - "3002:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.eg-money.local}
+      NEXT_PUBLIC_API_URL: ${VITE_API_URL:-http://localhost:3000}
     depends_on:
       backend:
         condition: service_healthy
