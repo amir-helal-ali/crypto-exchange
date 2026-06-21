@@ -9,6 +9,12 @@ node_modules/
 .next/
 out/
 dist/
+build/
+
+# SvelteKit
+.svelte-kit/
+vite.config.ts.timestamp-*
+.svelte-kit/**/*
 
 # Environment
 .env
@@ -47,3 +53,12 @@ coverage/
 
 # Build artifacts
 *.tgz
+
+# SQLite databases (dev data)
+*.db
+*.db-shm
+*.db-wal
+
+# Compiled Go binaries
+mock-backend/nexus-mock-backend
+backend/main

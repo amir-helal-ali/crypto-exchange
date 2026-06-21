@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+
+    <!-- Favicons (SVG primary + PNG fallbacks) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="mask-icon" href="/favicon.svg" color="#f5b544" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Viewport + theme -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
+    <meta name="theme-color" content="#050813" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f8fc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#050813" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="application-name" content="NEXUS Exchange" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="NEXUS" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Anti-FOUC: apply saved theme BEFORE first paint -->
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem('nexus-theme');
+          if (mode !== 'dark' && mode !== 'light' && mode !== 'system') mode = 'dark';
+          var resolved = mode === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : mode;
+          var html = document.documentElement;
+          html.setAttribute('data-theme', resolved);
+          var meta = document.querySelector('meta[name="theme-color"]:not([media])');
+          if (meta) meta.setAttribute('content', resolved === 'dark' ? '#050813' : '#f6f8fc');
+        } catch (e) {
+          // Default to dark on any error
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
+
+    <!-- Primary SEO -->
+    <title>NEXUS Exchange — منصة تداول العملات الرقمية</title>
+    <meta name="description" content="منصة تداول العملات الرقمية الاحترافية. تداول Bitcoin وEthereum ومئات العملات بأمان، سرعة، وسيولة عالية. أسعار حية بالجنيه المصري." />
+    <meta name="keywords" content="تداول العملات الرقمية, بيتكوين, ايثيريوم, منصة تداول, كريبتو, NEXUS, جنيه مصري, EGP, crypto exchange Egypt" />
+    <meta name="author" content="NEXUS Exchange" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://nexus.exchange/" />
+
+    <!-- Open Graph (Facebook / WhatsApp / LinkedIn) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="NEXUS Exchange" />
+    <meta property="og:title" content="NEXUS Exchange — منصة تداول العملات الرقمية الاحترافية" />
+    <meta property="og:description" content="تداول Bitcoin وEthereum ومئات العملات بأمان وسرعة عالية. أسعار حية بالجنيه المصري." />
+    <meta property="og:url" content="https://nexus.exchange/" />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="NEXUS Exchange — منصة تداول العملات الرقمية" />
+    <meta property="og:locale" content="ar_AR" />
+    <meta property="og:locale:alternate" content="en_US" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="NEXUS Exchange — منصة تداول العملات الرقمية" />
+    <meta name="twitter:description" content="تداول Bitcoin وEthereum ومئات العملات بأمان وسرعة. أسعار حية بالجنيه المصري." />
+    <meta name="twitter:image" content="/og-image.png" />
+    <meta name="twitter:image:alt" content="NEXUS Exchange" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+    <script>
+      // Register service worker for PWA + offline support
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker
+            .register('/sw.js', { scope: '/' })
+            .catch(() => {
+              // Silent — service worker is progressive enhancement
+            });
+        });
+      }
+    </script>
+  </body>
+</html>

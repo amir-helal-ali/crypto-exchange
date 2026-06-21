@@ -1,18 +1,27 @@
+# Build stage
 FROM node:20-alpine AS builder
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 WORKDIR /app
-COPY package.json ./
-COPY public ./public
-RUN npm install
+
+COPY package*.json ./
+RUN npm ci
+
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+# Production stage
+FROM node:20-alpine AS production
+
 WORKDIR /app
+
 ENV NODE_ENV=production
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-EXPOSE 3000
-CMD ["node", "server.js"]
+ENV PORT=3001
+ENV HOST=0.0.0.0
+
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+
+EXPOSE 3001
+
+CMD ["node", "build"]

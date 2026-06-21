@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>غير متصل — NEXUS Exchange</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #050813;
+        color: #e2e8f0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        background-image:
+          radial-gradient(ellipse 80% 50% at 50% -10%, rgba(168, 85, 247, 0.1), transparent),
+          radial-gradient(circle at 1px 1px, rgba(245, 181, 68, 0.04) 1px, transparent 0);
+        background-size: auto, 24px 24px;
+      }
+      .card {
+        max-width: 460px;
+        text-align: center;
+        background: rgba(10, 14, 31, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 1.5rem;
+        padding: 3rem 2rem;
+        backdrop-filter: blur(20px);
+      }
+      .logo {
+        width: 72px;
+        height: 72px;
+        margin: 0 auto 1.5rem;
+        background: linear-gradient(135deg, #f5b544, #f43f7a);
+        border-radius: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 40px;
+        color: #050813;
+      }
+      h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 0.75rem;
+      }
+      p {
+        color: #94a3b8;
+        line-height: 1.7;
+        margin-bottom: 2rem;
+        font-size: 0.95rem;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.75rem;
+        background: rgba(244, 63, 122, 0.1);
+        border: 1px solid rgba(244, 63, 122, 0.2);
+        border-radius: 999px;
+        color: #f43f7a;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+      }
+      .badge::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        background: #f43f7a;
+        border-radius: 50%;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+      }
+      button {
+        background: linear-gradient(135deg, #f5b544, #f43f7a);
+        color: #050813;
+        font-weight: 700;
+        padding: 0.85rem 2rem;
+        border: none;
+        border-radius: 0.75rem;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: transform 0.15s ease;
+        font-family: inherit;
+      }
+      button:hover { transform: translateY(-1px); }
+      button:active { transform: translateY(0); }
+      .hint {
+        margin-top: 1.5rem;
+        font-size: 0.75rem;
+        color: #64748b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="logo">N</div>
+      <div class="badge">غير متصل</div>
+      <h1>لا يوجد اتصال بالإنترنت</h1>
+      <p>
+        يبدو أنك غير متصل بالإنترنت حالياً. تحقق من اتصالك ثم حاول مرة أخرى.
+        يمكنك تصفح الصفحات المحفوظة مسبقاً.
+      </p>
+      <button onclick="window.location.reload()">إعادة المحاولة</button>
+      <p class="hint">NEXUS Exchange — منصة تداول العملات الرقمية</p>
+    </div>
+  </body>
+</html>
