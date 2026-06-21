@@ -147,9 +147,15 @@ func main() {
         })
 
         // Health checks remain at /api/ (no version prefix - always latest)
+        // Registered for both GET and HEAD: Docker healthcheck, wget --spider,
+        // AWS ELB, and Kubernetes HTTP probes all commonly send HEAD requests,
+        // but Gin does NOT auto-route HEAD to GET handlers (unlike net/http).
         r.GET("/api/health", handlers.HealthCheck)
+        r.HEAD("/api/health", handlers.HealthCheck)
         r.GET("/api/health/ready", handlers.ReadinessCheck)
+        r.HEAD("/api/health/ready", handlers.ReadinessCheck)
         r.GET("/api/health/live", handlers.LivenessCheck)
+        r.HEAD("/api/health/live", handlers.LivenessCheck)
 
         // === v1 API routes ===
         v1 := r.Group("/api/v1")
