@@ -1,0 +1,57 @@
+feat(admin/settings): professional tabbed UX with live domain status
+
+Redesign the admin Settings page to deliver a much more polished and
+professional user experience for managing dynamic domains, SSL, and features.
+
+UI architecture
+- Tabbed layout: Overview / Domains / Security / Features / History
+- Sticky action bar appears when there are unsaved changes
+- Ctrl/Cmd+S keyboard shortcut to save quickly
+- New reusable Tabs and ConfirmDialog UI primitives
+- Tailwind safelist for dynamic color classes so runtime-built class
+  names compile correctly
+
+Overview tab
+- Status pills row: main domain / SSL / registration / maintenance
+- Quick-action preset cards: enable SSL, disable SSL, enter/exit
+  maintenance mode in one click
+- Live domain status grid with online/offline badge per service
+- Recent settings-changes timeline (last 5 audit entries)
+- System info panel
+
+Domains tab
+- Per-domain card with icon, hint, edit input prefixed with https://
+- Copy-to-clipboard button for each domain
+- Test button pings /api/v1/config on the configured domain and
+  shows online/offline badge with 5s timeout
+- Open in new tab external-link button
+- Inline diff preview when value diverges from saved state
+- Yellow ring and modified chip on changed fields
+- Auto-generated /etc/hosts snippet based on current values
+
+Security tab
+- SSL toggle with eye/eye-off toggle for certificate path fields
+- CORS extra origins textarea with explanatory note
+- Accent-colored left border per section
+
+Features tab
+- Registration open/closed toggle
+- Maintenance mode toggle plus conditional maintenance message input
+- How it works 5-step pipeline diagram
+
+History tab
+- Timeline of recent SETTINGS_UPDATE audit entries with username,
+  IP, and timestamp
+
+Confirmation flow
+- Sensitive changes (main/frontend/backend/admin domain or SSL toggle)
+  trigger a ConfirmDialog showing the exact pending diff before saving
+- Auto-reloads nginx after confirmation
+
+Visual polish
+- 100+ lines of new CSS utilities: tabs-bar, tab-btn, chips, copy-btn,
+  preset-card, live-pulse, domain-card with per-service color halo,
+  field-changed indicator, sticky action-bar, timeline-item
+
+Build verified: next build passes with zero TypeScript errors; settings
+page bundle is 14.3 kB / 107 kB First Load JS.
