@@ -1,57 +1,79 @@
-feat(admin/settings): professional tabbed UX with live domain status
+feat(ssl): one-click SSL certificate generation (local + Let's Encrypt)
 
-Redesign the admin Settings page to deliver a much more polished and
-professional user experience for managing dynamic domains, SSL, and features.
+Add a complete SSL certificate management system that lets the admin
+generate trusted certificates with one click — no paths to know, no
+technical knowledge required.
 
-UI architecture
-- Tabbed layout: Overview / Domains / Security / Features / History
-- Sticky action bar appears when there are unsaved changes
-- Ctrl/Cmd+S keyboard shortcut to save quickly
-- New reusable Tabs and ConfirmDialog UI primitives
-- Tailwind safelist for dynamic color classes so runtime-built class
-  names compile correctly
+Backend (Go)
+- New file: backend/handlers/ssl.go (~500 lines)
+- Four new endpoints (admin-only):
+  - GET  /api/v1/admin/ssl/status   — parses current cert with Go's
+    crypto/x509 and returns issuer, subject, expiry, days_remaining,
+    SANs, key algorithm, serial number, health status
+  - POST /api/v1/admin/ssl/generate — one-click generation
+    - type: "local"  → openssl self-signed RSA 2048 with proper SANs,
+      valid 365 days, written to shared certs volume
+    - type: "letsencrypt" → certbot --webroot HTTP-01 challenge via
+      shared ACME webroot, real browser-trusted cert valid 90 days,
+      staging mode supported for testing without rate limits
+  - POST /api/v1/admin/ssl/renew    — re-runs certbot for existing
+    Let's Encrypt certs and copies the renewed files
+  - POST /api/v1/admin/ssl/install  — paste PEM cert+key for ZeroSSL,
+    Cloudflare Origin CA, or any paid CA
+- Auto-detects domains from existing settings (main/frontend/backend/admin)
+- Validates input: rejects Let's Encrypt for .local/.localhost domains,
+  requires email for LE, validates PEM format on install
+- Writes 7 new settings keys: ssl_type, ssl_issuer, ssl_generated_at,
+  ssl_domains, ssl_email, ssl_expiry, ssl_staging
+- After any cert operation, triggers nginx reload via the existing
+  shared trigger-file mechanism (no restart needed)
+- All operations logged to audit_logs with action SSL_CERT_GENERATED /
+  SSL_CERT_RENEWED / SSL_CERT_INSTALLED
 
-Overview tab
-- Status pills row: main domain / SSL / registration / maintenance
-- Quick-action preset cards: enable SSL, disable SSL, enter/exit
-  maintenance mode in one click
-- Live domain status grid with online/offline badge per service
-- Recent settings-changes timeline (last 5 audit entries)
-- System info panel
+Infrastructure (Docker)
+- backend/Dockerfile: install openssl, certbot, ca-certificates
+- nginx/Dockerfile: create /var/www/certbot directory
+- docker-compose.yml:
+  - Mount ./certs to backend (rw) so backend can write certs
+  - Mount ./certs to nginx (ro) — unchanged
+  - New acme-webroot volume shared between backend (certbot writes
+    challenges) and nginx (serves /.well-known/acme-challenge/)
+  - New letsencrypt volume for /etc/letsencrypt persistence (accounts,
+    renewal configs)
+  - New env vars: SSL_CERTS_DIR, ACME_WEBROOT
 
-Domains tab
-- Per-domain card with icon, hint, edit input prefixed with https://
-- Copy-to-clipboard button for each domain
-- Test button pings /api/v1/config on the configured domain and
-  shows online/offline badge with 5s timeout
-- Open in new tab external-link button
-- Inline diff preview when value diverges from saved state
-- Yellow ring and modified chip on changed fields
-- Auto-generated /etc/hosts snippet based on current values
+Nginx
+- nginx.conf.template: add /.well-known/acme-challenge/ location to
+  BOTH the HTTP (port 80) and HTTPS (port 443) server blocks, served
+  from /var/www/certbot root. Placed BEFORE the HTTP→HTTPS redirect
+  so ACME HTTP-01 verification works even when SSL is enabled.
 
-Security tab
-- SSL toggle with eye/eye-off toggle for certificate path fields
-- CORS extra origins textarea with explanatory note
-- Accent-colored left border per section
+Admin UI (Next.js)
+- New tab "SSL والشهادات" with HTTPS/HTTP badge in the tab label
+- New component: _ssl-tab.tsx (~700 lines)
+  - Current cert status card with health badge:
+    - green (healthy, >30 days remaining)
+    - yellow (warning, 7-30 days)
+    - red (critical, <7 days or expired)
+  - Cert details grid: SANs, type, expiry date, days remaining,
+    serial number, key algorithm, issuer organization
+  - Action buttons: regenerate, renew (LE only), install custom,
+    generate new
+  - Three quick-info cards explaining each option (local / LE / custom)
+- Generate wizard modal:
+  - Auto-detects domains from settings, shows them as chips
+  - Two big visual options: "تنمية محلية" (local) and "Let's Encrypt"
+  - Each option lists pros/cons with icons
+  - LE mode: email input + staging checkbox
+  - Validates that LE cannot be used for local domains
+- Install modal: paste PEM cert + key with show/hide toggle, validates
+  PEM format before submission
+- Full-screen generating overlay with animated lock icon + progress bar
+- Confirm dialog before regenerate (warns about service interruption)
+- Security tab simplified: kept quick SSL toggle + CORS section,
+  moved full cert management to dedicated SSL tab
 
-Features tab
-- Registration open/closed toggle
-- Maintenance mode toggle plus conditional maintenance message input
-- How it works 5-step pipeline diagram
-
-History tab
-- Timeline of recent SETTINGS_UPDATE audit entries with username,
-  IP, and timestamp
-
-Confirmation flow
-- Sensitive changes (main/frontend/backend/admin domain or SSL toggle)
-  trigger a ConfirmDialog showing the exact pending diff before saving
-- Auto-reloads nginx after confirmation
-
-Visual polish
-- 100+ lines of new CSS utilities: tabs-bar, tab-btn, chips, copy-btn,
-  preset-card, live-pulse, domain-card with per-service color halo,
-  field-changed indicator, sticky action-bar, timeline-item
-
-Build verified: next build passes with zero TypeScript errors; settings
-page bundle is 14.3 kB / 107 kB First Load JS.
+Build verification
+- Backend: go build + go vet ./handlers/ both pass clean
+- Admin: next build passes with zero TypeScript errors
+- Settings page bundle: 19.6 kB / 112 kB First Load JS
