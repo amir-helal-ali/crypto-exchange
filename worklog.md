@@ -764,3 +764,110 @@ Stage Summary:
 - Competitions page is engaging: leaderboards, prize pools, status-aware action buttons
 - API Keys page is production-ready: secure key generation, IP whitelist warnings, full REST/WS docs
 - Total new code this session: ~1900 lines across 5 files
+
+---
+Task ID: 11
+Agent: Main Agent
+Task: Indicator Settings Modal + Multi-chart Layout + Alert Lines on Chart + Market Heatmap + Strategy Backtesting
+
+Work Log:
+- Modified `frontend/src/lib/components/NexusChart.svelte`:
+  * Added `IndicatorConfig` interface (exported) with all periods + colors + alertLines
+  * Added `config` prop to NexusChart Props
+  * Added `cfg` derived state with all defaults
+  * Refactored `computeIndicators()` to use cfg.* values instead of hardcoded 20/50/12/26/14/12/26/9
+  * Updated SMA/EMA line colors to read from `cfg.colors[KEY] ?? defaultColor`
+  * Updated RSI panel label to `RSI({cfg.rsiPeriod})` instead of hardcoded `RSI(14)`
+  * Updated MACD panel label to `MACD({cfg.macdFast},{cfg.macdSlow},{cfg.macdSignal})` instead of `MACD(12,26,9)`
+  * Added new `drawAlertLines()` function — draws dashed horizontal lines for each active alert
+    with rounded-rect color-coded label badge (green for "above", red for "below")
+  * Wired `drawAlertLines()` call into main render loop after overlay indicators, before markers
+
+- Created `frontend/src/lib/components/IndicatorSettingsModal.svelte` (~250 lines):
+  * Full-screen modal with two tabs: "الفترات" (Periods) + "الألوان" (Colors)
+  * 10 indicator parameters with slider + +/- buttons: SMA short/long, EMA fast/slow, Bollinger period+std, RSI period, MACD fast/slow/signal
+  * Each parameter has min/max bounds + description in Arabic
+  * Color tab: 4 indicator colors with native color picker + 10 preset colors
+  * Reset defaults button per tab + global reset in footer
+  * Save persists to localStorage via parent callback
+
+- Updated `frontend/src/routes/dashboard/exchange/+page.svelte` (~700 lines now):
+  * Imported IndicatorSettingsModal + IndicatorConfig type + priceAlerts store
+  * Added `indicatorConfig` state loaded from `localStorage['nexus-indicator-config']`
+  * Added `saveIndicatorConfig()` + `resetIndicatorConfig()` with localStorage persistence
+  * Added `chartLayout` state ('1' | '2h' | '2v' | '4') persisted to localStorage
+  * Added `chartsLinked` toggle + `symbol2/3/4` for multi-chart symbols
+  * Added `chartAlertLines` derived from active alerts for current symbol
+  * Added `chartConfig` derived combining indicatorConfig + alertLines
+  * Added layout picker UI (4 buttons: Square/Columns2/2-rows/Grid2x2) in chart header
+  * Added link/unlink button when layout is multi-chart
+  * Added "إعدادات المؤشرات" link in indicators dropdown panel
+  * Replaced single chart container with conditional rendering for 4 layouts:
+    - '1': single 540px chart
+    - '2h': 2 horizontal charts (520px each, with inline symbol input on chart 2)
+    - '2v': 2 vertical charts (265px each)
+    - '4': 2x2 grid (265px each, with inline symbol inputs on charts 2/3/4)
+  * All NexusChart instances receive `config={chartConfig}` (combined indicator + alert config)
+  * Added `<datalist id="symbol-list">` with 14 popular symbols for inline autocomplete
+  * Wired IndicatorSettingsModal at end of markup with bind:open + onsave + onreset
+
+- Created `frontend/src/routes/dashboard/heatmap/+page.svelte` (~280 lines):
+  * Binance-style treemap visualization of all coins
+  * Tile color: linear RGB interpolation between deep-red (-10%) → slate (0%) → deep-green (+10%)
+  * Tile size: proportional to volume OR market cap (toggleable)
+  * Live updates via nexusMarket.subscribeAll
+  * Fallback 15s polling refresh
+  * 4 filter buttons: all / gainers / losers / high-volume
+  * 5 sort options: volume / change-desc / change-asc / price-desc / price-asc
+  * Search input filters by symbol
+  * Aggregate stats: total coins, gainers, losers, avg change
+  * Top 5 gainers list + Top 5 losers list (linked to exchange)
+  * Selected coin detail card with all ticker fields
+  * Color legend gradient bar
+  * Each tile links to /dashboard/exchange?symbol=...
+
+- Created `frontend/src/routes/dashboard/backtest/+page.svelte` (~530 lines):
+  * Full strategy backtesting engine with 4 built-in strategies:
+    1) SMA Crossover (fast/slow period cross)
+    2) RSI Oversold/Overbought (cross back above oversold / below overbought)
+    3) MACD Crossover (MACD line crosses signal line)
+    4) Bollinger Bands Breakout (price breaks upper band → LONG, returns to mid → exit)
+  * All indicators implemented from scratch: SMA, EMA, RSI (Wilder), MACD, Bollinger Bands
+  * Inputs: symbol, timeframe (15m/1H/4H/1D), strategy, initial capital, fee %
+  * Strategy-specific parameters shown conditionally (e.g., RSI shows period + oversold/overbought)
+  * Engine simulates LONG positions: open on BUY signal, close on SELL signal
+  * Each trade incurs fee on entry + exit
+  * 4 KPI cards: total return %, win rate %, max drawdown %, profit factor
+  * Equity curve SVG chart with gradient fill (green if profit, red if loss)
+  * Price line overlaid in background (slate)
+  * Signal markers (BUY=green / SELL=red dots) on chart
+  * Performance comparison: strategy vs buy & hold
+  * Detailed metrics: # trades, Sharpe ratio (annualized), avg win $, avg loss $
+  * Full trade log table (reverse chronological) with entry/exit time, prices, qty, bars held, P&L $
+  * Disclaimer banner about historical performance limitations
+
+- Updated `frontend/src/routes/dashboard/+layout.svelte` sidebar:
+  * Added Grid2x2 + FlaskConical to icon imports
+  * Added "/dashboard/heatmap" → "خريطة السوق" with "جديد" badge
+  * Added "/dashboard/backtest" → "اختبار الاستراتيجيات" with "جديد" badge
+  * Both placed in main section, between "العقود" and "المحفظة"
+
+- Build passes: ✓ built in 11.59s, 0 errors
+- All routes verified HTTP 200 with substantial content:
+  * /dashboard/heatmap: 13.12 kB rendered (heatmap + sidebar)
+  * /dashboard/backtest: 19.44 kB rendered (full strategy engine)
+  * /dashboard/exchange: 104.78 kB rendered (multi-chart + settings + alert lines)
+- Backend healthy: 19 tickers streaming live
+- Frontend dev server healthy on port 3001
+
+Stage Summary:
+- NEXUS Exchange now has full Binance Pro-grade trading infrastructure:
+  * Customizable indicators (10 params + 4 colors) persisted to localStorage
+  * Multi-chart layouts (1 / 2h / 2v / 4) with linked symbols toggle
+  * Active price alerts visualized directly on chart as dashed lines with badges
+  * Market Heatmap page (treemap with live updates + filters)
+  * Strategy Backtesting page (4 strategies + full performance analytics)
+- 2 new sidebar entries: خريطة السوق + اختبار الاستراتيجيات
+- ~1060 lines of new code across 3 files (IndicatorSettingsModal + heatmap + backtest)
+- ~250 lines of modifications to NexusChart + exchange page
+- All Arabic UI, RTL, dark/light theme support, mobile responsive
