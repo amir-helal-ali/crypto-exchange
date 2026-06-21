@@ -871,3 +871,76 @@ Stage Summary:
 - ~1060 lines of new code across 3 files (IndicatorSettingsModal + heatmap + backtest)
 - ~250 lines of modifications to NexusChart + exchange page
 - All Arabic UI, RTL, dark/light theme support, mobile responsive
+
+---
+Task ID: 12
+Agent: Main Agent
+Task: P2P Trading Marketplace + Copy Trading + Trading Bots pages
+
+Work Log:
+- Created `frontend/src/routes/dashboard/p2p/+page.svelte` (~600 lines):
+  * Full P2P marketplace for buying/selling crypto with EGP via bank transfers
+  * 8 mock merchants with rating, # trades, completion %, online status, response time
+  * 7 Egyptian payment methods: bank transfer, Fawry, Vodafone Cash, Etisalat Cash, Orange Cash, InstaPay, Meeza
+  * Buy/Sell toggle + 5 asset selector (USDT/BTC/ETH/BNB/USDC)
+  * Ad listings table with: merchant avatar, price (EGP), min/max limits, available amount, payment methods, rating, trades count
+  * "Best price" pill highlighting cheapest buy / highest sell
+  * Filters: search, payment method, sort (price/rating/trades/recent), verified-only, online-only
+  * Stats: online merchants, total trades, avg completion
+  * Trade modal: amount input with currency toggle (EGP vs asset), quick percentage buttons (25/50/75/100%), payment method picker, fee summary (FREE for buyer), warning about off-platform transfers
+  * 3 safety info cards: Escrow protection, verified merchants, 24/7 support
+  * "Become merchant" CTA banner with Apply button
+  * EGP price computation uses usdEgpRate + merchant margin (0.5%-2.5% premium for BUY, -0.5% to -2% for SELL)
+  * Fixed `{#const}` Svelte 5 syntax error (must use `{@const}`)
+
+- Created `frontend/src/routes/dashboard/copy-trading/+page.svelte` (~530 lines):
+  * Browse top traders and copy their trades automatically
+  * 12 mock traders with: avatar, name, verified badge, ROI 30d, ROI all-time, win rate, AUM, followers, copiers, max drawdown, Sharpe ratio, # trades 30d, avg hold hours, risk score (1-5), favorite assets, bio, 30-day equity curve (sparkline), open positions
+  * Top 3 podium with crown colors (gold/silver/bronze) + larger card for #1
+  * Filters: search, risk filter (low/medium/high), sort by (roi30d/roiAll/aum/followers/winRate/sharpe)
+  * Full traders table with: rank, avatar+name, ROI%, sparkline SVG, win rate, AUM, followers, risk bar (5 segments colored by risk), copy/follow buttons
+  * Trader detail modal: 8-stat grid, large equity curve SVG (600x180), open positions list, "Start Copying" CTA
+  * Copy modal: investment amount ($), per-trade percentage slider (1-100%), trade size calc, "10% of profits only" fee, stop-loss at max drawdown, risk warning
+  * "How it works" 4-step guide section
+  * Risk color coding: green (1-2), gold (3), red (4-5)
+  * Following state toggles per trader + toast confirmation
+
+- Created `frontend/src/routes/dashboard/bots/+page.svelte` (~580 lines):
+  * Trading bots management — DCA / Grid / Signal bots
+  * 4 mock bots pre-loaded: BTC Grid Master (running, +14.25%), ETH DCA Monthly (running, +12.62%), RSI Signal Bot (paused, -7.15%), BNB Grid Pro (running, +13.07%)
+  * Each bot has: type, symbol, status (running/paused/stopped), createdAt, invested, currentValue, pnl, pnlPct, # trades, config (interval/perOrder or upperPrice/lowerPrice/gridCount or strategy/leverage), lastTradeAt, nextAction, logs (with type info/success/warn/error)
+  * Portfolio summary: total invested, current value, total P&L, # active bots
+  * Bot cards: type icon with brand color, status pill, 3-metric mini-grid (invested/current/pnl%), next-action highlight, config summary line, trades count + last trade time, action row (pause/play, view detail, stop, delete)
+  * Create modal: 3 bot type cards with descriptions, name + symbol inputs, investment amount, type-specific config:
+    - GRID: upper/lower price + grid count slider (5-50)
+    - DCA: interval hours + per-order amount
+    - SIGNAL: strategy selector (SMA/RSI/MACD) + leverage slider (1-10x)
+  * Detail modal: big P&L display, 3-stat grid, config table, scrollable activity log with color-coded entries, next action banner, action buttons
+  * Bot types explainer: 3 cards with colored borders (gold/mint/purple)
+  * Stop bot confirmation (closes all positions), delete confirmation
+
+- Updated `frontend/src/routes/dashboard/+layout.svelte`:
+  * Added Copy, Bot to lucide-svelte imports (Users was already imported by admin section)
+  * Added 3 new sidebar items in main section:
+    - "/dashboard/p2p" → "سوق P2P" with "جديد" badge (Users icon)
+    - "/dashboard/copy-trading" → "نسخ المتداولين" with "جديد" badge (Copy icon)
+    - "/dashboard/bots" → "بوتات التداول" with "جديد" badge (Bot icon)
+
+- Build passes: ✓ built in 12.46s, 0 errors
+- All routes verified HTTP 200 with substantial content:
+  * /dashboard/p2p: contains سوق P2P, تاجر نشط, تحويل بنكي, فودافون كاش, فوري, انستاباي, Escrow
+  * /dashboard/copy-trading: contains نسخ المتداولين, تابع كبار المتداولين, عائد 30 يوم, كيف يعمل نسخ
+  * /dashboard/bots: contains بوتات التداول, إنشاء بوت جديد, أنواع البوتات + bot cards render in onMount
+- Sidebar verified: all 3 new items appear in exchange page HTML
+
+Stage Summary:
+- NEXUS Exchange now has 3 brand new Pro-grade pages totaling ~1700 lines of new code:
+  1. P2P Marketplace — full EGP-based P2P with 8 merchants, 7 payment methods, escrow flow
+  2. Copy Trading — 12 traders with detailed stats, sparklines, equity curves, copy flow
+  3. Trading Bots — DCA/Grid/Signal bots with create/pause/stop/delete + activity logs
+- Sidebar expanded: 3 new items added in main section, all marked "جديد"
+- All Arabic UI, RTL, dark/light theme support
+- All 3 new pages connect to existing usdEgpRate store for live EGP conversion
+- P2P prices computed from live USD rate × merchant margin
+- Copy Trading sparklines generated from 30-point mock equity curves
+- Trading Bots logs include 4 severity levels with color coding
