@@ -149,3 +149,15 @@ type Ad struct {
         CreatedAt  time.Time `json:"created_at"`
         UpdatedAt  time.Time `json:"updated_at"`
 }
+
+// SystemSetting stores key-value pairs for runtime-configurable settings
+// (domain names, SSL paths, feature flags, etc.). Settings are managed by
+// admin users via /api/v1/admin/settings and read by various services
+// at runtime (CORS middleware, nginx config generator, frontend config endpoint).
+type SystemSetting struct {
+        Key       string    `gorm:"primaryKey;size:100" json:"key"`
+        Value     string    `gorm:"type:text" json:"value"`
+        Category  string    `gorm:"size:50;index;default:'general'" json:"category"`
+        UpdatedAt time.Time `json:"updated_at"`
+        UpdatedBy uint      `json:"updated_by"`
+}

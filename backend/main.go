@@ -17,6 +17,7 @@ import (
         "crypto-exchange-backend/models"
         exchangeredis "crypto-exchange-backend/redis"
         "crypto-exchange-backend/scheduler"
+        "crypto-exchange-backend/settings"
         "crypto-exchange-backend/websocket"
 
         "github.com/gin-gonic/gin"
@@ -102,6 +103,9 @@ func main() {
         seedAdmin()
         matching.SeedDefaultFees()
 
+        // Load system settings into in-memory cache (domains, SSL, feature flags)
+        settings.Refresh()
+
         matching.Start(10 * time.Second)
         scheduler.StartCleanupScheduler()
 
@@ -162,6 +166,10 @@ func main() {
 
         v1.GET("/market/prices", handlers.GetPrices)
         v1.GET("/market/klines", handlers.GetKlines)
+
+        // Public config endpoint — no auth required (used by frontend to
+        // discover API URL, feature flags, maintenance status at runtime).
+        v1.GET("/config", handlers.GetPublicConfig)
 
         v1.POST("/auth/register", authRL.Middleware(), handlers.Register)
         v1.POST("/auth/login", authRL.Middleware(), handlers.Login)
@@ -236,6 +244,11 @@ func main() {
                 admin.POST("/ads/suggest", handlers.SuggestAd)
                 admin.GET("/fees", handlers.GetFeeSchedules)
                 admin.PUT("/fees/:id", handlers.UpdateFeeSchedule)
+
+                // System settings — domain management, SSL, feature flags
+                admin.GET("/settings", handlers.GetSystemSettings)
+                admin.PUT("/settings", handlers.UpdateSystemSettings)
+                admin.POST("/nginx/reload", handlers.ReloadNginx)
         }
 
         // Public routes (outside versioned group)

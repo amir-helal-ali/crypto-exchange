@@ -18,6 +18,7 @@ import {
   X,
   Shield,
   User,
+  Settings,
 } from "lucide-react";
 import { authPost } from "@/lib/api";
 
@@ -29,6 +30,7 @@ const NAV = [
   { href: "/dashboard/audit-logs", icon: ScrollText, label: "سجلات التدقيق" },
   { href: "/dashboard/ads", icon: Image, label: "الإعلانات" },
   { href: "/dashboard/fees", icon: Percent, label: "رسوم التداول" },
+  { href: "/dashboard/settings", icon: Settings, label: "إعدادات النظام" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

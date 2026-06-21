@@ -9,7 +9,8 @@ import (
         "sync"
         "time"
 
-        exchangeredis "crypto-exchange-backend/redis"
+        "crypto-exchange-backend/redis"
+        "crypto-exchange-backend/settings"
 
         "github.com/gin-gonic/gin"
         "github.com/golang-jwt/jwt/v5"
@@ -28,36 +29,49 @@ type visitor struct {
         lastSeen time.Time
 }
 
+// CORSMiddleware returns a CORS middleware that dynamically reads allowed
+// origins from the system settings table. This allows admins to add new
+// domains via the /api/v1/admin/settings endpoint without restarting the
+// backend.
 func CORSMiddleware() gin.HandlerFunc {
-        // Build allowed origins from environment
+        // In development mode (GIN_MODE != release), always allow localhost
+        // variants for direct port access (bypassing nginx).
         isDev := os.Getenv("GIN_MODE") != "release"
 
-        allowedOrigins := []string{
-                "https://eg-money.local",
-                "https://admin.eg-money.local",
-                "https://api.eg-money.local",
-        }
-
-        // In development, also allow localhost variants
-        if isDev {
-                allowedOrigins = append(allowedOrigins,
-                        "http://localhost:3000",
-                        "http://localhost:3001",
-                        "http://localhost:3002",
-                        "http://127.0.0.1:3000",
-                        "http://127.0.0.1:3001",
-                        "http://127.0.0.1:3002",
-                )
-        }
-
-        // Add custom CORS origin from env (for production deployments)
-        if customOrigin := os.Getenv("CORS_ORIGIN"); customOrigin != "" {
-                allowedOrigins = append(allowedOrigins, customOrigin)
-        }
-
         return func(c *gin.Context) {
-                origin := c.GetHeader("Origin")
+                // Build allowed origins list on every request — settings may have
+                // been updated since the last request. The settings cache is
+                // in-memory so this is cheap.
+                allowedOrigins := settings.AllowedOrigins()
 
+                // Add CORS_ORIGIN env var (kept for backward compatibility)
+                if customOrigin := os.Getenv("CORS_ORIGIN"); customOrigin != "" {
+                        allowedOrigins = append(allowedOrigins, customOrigin)
+                }
+
+                // Add extra origins from settings (comma-separated)
+                if extra := settings.Get("cors_extra_origins"); extra != "" {
+                        for _, o := range strings.Split(extra, ",") {
+                                o = strings.TrimSpace(o)
+                                if o != "" {
+                                        allowedOrigins = append(allowedOrigins, o)
+                                }
+                        }
+                }
+
+                // In dev mode, also allow localhost variants
+                if isDev {
+                        allowedOrigins = append(allowedOrigins,
+                                "http://localhost:3000",
+                                "http://localhost:3001",
+                                "http://localhost:3002",
+                                "http://127.0.0.1:3000",
+                                "http://127.0.0.1:3001",
+                                "http://127.0.0.1:3002",
+                        )
+                }
+
+                origin := c.GetHeader("Origin")
                 isAllowed := false
                 for _, o := range allowedOrigins {
                         if origin == o {
@@ -86,7 +100,7 @@ func NewRateLimiter(rate int, window time.Duration) *RateLimiter {
                 visitors: make(map[string]*visitor),
                 rate:     rate,
                 window:   window,
-                useRedis: exchangeredis.IsAvailable(),
+                useRedis: redis.IsAvailable(),
         }
         if !rl.useRedis {
                 go rl.cleanup()
@@ -114,7 +128,7 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
                 // Try Redis-based rate limiting first
                 if rl.useRedis {
                         key := fmt.Sprintf("rate_limit:%s", ip)
-                        count, err := exchangeredis.IncrementRateLimit(key, rl.window)
+                        count, err := redis.IncrementRateLimit(key, rl.window)
                         if err == nil {
                                 if count > rl.rate {
                                         c.JSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded. Try again later."})

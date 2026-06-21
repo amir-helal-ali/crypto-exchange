@@ -55,6 +55,9 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-EgMoney}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@eg-money.com}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Path to the shared trigger file — when backend writes to this file,
+      # the nginx sidecar regenerates the config and reloads.
+      NGINX_RELOAD_TRIGGER: /shared/nginx/.reload-trigger
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +65,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/root/uploads
+      - nginx-shared:/shared/nginx
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "--method=GET", "http://localhost:3000/api/health/live"]
       interval: 15s
@@ -109,15 +113,27 @@ services:
       - backend
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
     container_name: crypto-exchange-nginx
     restart: always
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
+      - nginx-shared:/shared/nginx
+    environment:
+      BACKEND_URL: http://backend:3000
+      NGINX_RELOAD_TRIGGER: /shared/nginx/.reload-trigger
+      NGINX_WATCH_INTERVAL: "2"
+      # Fallback values used if backend is unreachable on startup
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-eg-money.local}
+      BACKEND_DOMAIN: ${BACKEND_DOMAIN:-api.eg-money.local}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.eg-money.local}
+      MAIN_DOMAIN: ${MAIN_DOMAIN:-eg-money.local}
+      SSL_ENABLED: ${SSL_ENABLED:-true}
     depends_on:
       backend:
         condition: service_healthy
@@ -125,6 +141,12 @@ services:
         condition: service_healthy
       admin:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     networks:
       - backend
 
@@ -135,3 +157,4 @@ networks:
 volumes:
   pgdata:
   uploads:
+  nginx-shared:

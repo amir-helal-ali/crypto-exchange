@@ -41,6 +41,7 @@ func Connect() {
                 &models.KYCRequest{}, &models.Transaction{}, &models.Ad{},
                 &models.PasswordResetToken{}, &models.EmailVerificationToken{},
                 &models.RefreshToken{}, &models.Notification{}, &models.FeeSchedule{},
+                &models.SystemSetting{},
         )
         if err != nil {
                 log.Fatalf("Failed to migrate database: %v", err)
@@ -48,6 +49,9 @@ func Connect() {
 
         // Create additional indexes for frequently queried columns
         createIndexes()
+
+        // Seed default system settings (domains, SSL, etc.)
+        seedSystemSettings()
 
         log.Println("Database connected and migrated successfully")
 }
@@ -119,4 +123,45 @@ func createIndexes() {
         }
 
         log.Println("[DB] Database indexes verified")
+}
+
+// defaultSettings defines the seed values for SystemSetting rows.
+// These are written once on first startup; admin users can edit them
+// later via the /api/v1/admin/settings endpoint. Existing rows are
+// never overwritten by seedSystemSettings.
+var defaultSettings = []models.SystemSetting{
+        // Domains (used by nginx template + CORS middleware)
+        {Key: "frontend_domain", Value: "eg-money.local", Category: "domains"},
+        {Key: "backend_domain", Value: "api.eg-money.local", Category: "domains"},
+        {Key: "admin_domain", Value: "admin.eg-money.local", Category: "domains"},
+        {Key: "main_domain", Value: "eg-money.local", Category: "domains"},
+
+        // SSL configuration
+        {Key: "ssl_enabled", Value: "true", Category: "ssl"},
+        {Key: "ssl_cert_path", Value: "/etc/nginx/certs/local.pem", Category: "ssl"},
+        {Key: "ssl_key_path", Value: "/etc/nginx/certs/local-key.pem", Category: "ssl"},
+
+        // CORS / allowed origins (comma-separated, optional override)
+        // If empty, origins are auto-derived from the domain settings above.
+        {Key: "cors_extra_origins", Value: "", Category: "security"},
+
+        // Feature flags
+        {Key: "registration_open", Value: "true", Category: "features"},
+        {Key: "maintenance_mode", Value: "false", Category: "features"},
+        {Key: "maintenance_message", Value: "The platform is temporarily under maintenance. Please check back soon.", Category: "features"},
+}
+
+// seedSystemSettings inserts default SystemSetting rows if they don't
+// already exist. Idempotent — safe to call on every startup.
+func seedSystemSettings() {
+        for _, s := range defaultSettings {
+                var existing models.SystemSetting
+                result := DB.Where("key = ?", s.Key).First(&existing)
+                if result.Error == gorm.ErrRecordNotFound {
+                        if err := DB.Create(&s).Error; err != nil {
+                                log.Printf("[DB] Warning: Failed to seed setting %s: %v", s.Key, err)
+                        }
+                }
+        }
+        log.Println("[DB] System settings verified")
 }

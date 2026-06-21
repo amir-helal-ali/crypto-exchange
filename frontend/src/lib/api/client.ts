@@ -6,10 +6,64 @@ import { authStore } from '$lib/stores/auth';
 export { ApiError };
 export type { ApiResponse };
 
-// Backend API base URL — empty string means same-origin (handled by SvelteKit proxy in dev)
-export const API_BASE =
-  (browser ? (import.meta.env.VITE_API_URL as string) : process.env.API_URL) ||
-  'http://localhost:3000';
+// Backend API base URL.
+// Priority (browser): runtime-configured value from /api/v1/config → VITE_API_URL → same-origin
+// Priority (server):  process.env.API_URL → VITE_API_URL → http://localhost:3000
+//
+// The runtime discovery happens in `loadRuntimeConfig()` below — when the
+// admin changes backend_domain via the admin panel, the frontend picks
+// up the new value on next page load without needing a rebuild.
+let runtimeApiBase: string | null = null;
+
+function getInitialApiBase(): string {
+  if (browser) {
+    // Try cached runtime config first
+    const cached = localStorage.getItem('runtime_api_base');
+    if (cached) {
+      runtimeApiBase = cached;
+      return cached;
+    }
+    return (import.meta.env.VITE_API_URL as string) || '';
+  }
+  return process.env.API_URL || (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
+}
+
+export const API_BASE = getInitialApiBase();
+
+// Load runtime config from backend on first browser load. Updates the
+// API_BASE if the admin has changed backend_domain since last visit.
+// Safe to call multiple times — only fetches once per session.
+let configLoaded = false;
+export async function loadRuntimeConfig(): Promise<void> {
+  if (!browser || configLoaded) return;
+  configLoaded = true;
+  try {
+    // Fetch from same origin (nginx) — falls back to API_BASE if direct
+    const configUrl = API_BASE ? `${API_BASE}/api/v1/config` : '/api/v1/config';
+    const res = await fetch(configUrl, { headers: { 'Cache-Control': 'no-cache' } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.backend_domain) {
+      const scheme = data.ssl_enabled ? 'https' : 'http';
+      const newBase = `${scheme}://${data.backend_domain}`;
+      if (newBase !== runtimeApiBase) {
+        runtimeApiBase = newBase;
+        localStorage.setItem('runtime_api_base', newBase);
+        // Reload to apply new API base
+        if (API_BASE !== newBase) {
+          window.location.reload();
+        }
+      }
+    }
+  } catch {
+    // Silent failure — fall back to VITE_API_URL
+  }
+}
+
+// Trigger runtime config load on module import (browser only)
+if (browser) {
+  loadRuntimeConfig();
+}
 
 // --- Token Refresh Queue ---
 let isRefreshing = false;
