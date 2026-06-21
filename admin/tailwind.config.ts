@@ -1,7 +1,41 @@
 import type { Config } from "tailwindcss";
 
+const DYNAMIC_COLORS = [
+  "emerald",
+  "yellow",
+  "red",
+  "teal",
+  "blue",
+  "purple",
+  "orange",
+  "cyan",
+  "gray",
+] as const;
+
+const safelist: string[] = [];
+for (const color of DYNAMIC_COLORS) {
+  safelist.push(
+    `bg-${color}-500/10`,
+    `bg-${color}-500/20`,
+    `bg-${color}-500`,
+    `text-${color}-400`,
+    `text-${color}-500`,
+    `border-${color}-500/20`,
+    `border-${color}-500/60`,
+    `border-${color}-500`,
+    `border-r-${color}-500/60`,
+    `from-${color}-500`,
+    `to-${color}-600`,
+    `from-${color}-500/20`,
+    `to-${color}-500/20`,
+    `shadow-${color}-500/20`,
+    `shadow-${color}-500/25`,
+  );
+}
+
 const config: Config = {
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
+  safelist,
   theme: {
     extend: {
       colors: {

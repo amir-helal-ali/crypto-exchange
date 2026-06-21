@@ -6,3 +6,6 @@ export { default as Button } from "./Button";
 export { default as StatusBadge } from "./StatusBadge";
 export { default as EmptyState } from "./EmptyState";
 export { default as Loader } from "./Loader";
+export { default as Tabs } from "./Tabs";
+export type { TabItem } from "./Tabs";
+export { default as ConfirmDialog } from "./ConfirmDialog";
