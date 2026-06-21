@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.local
+.env.production
+.env.staging
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+README.md
+next-env.d.ts
+tsconfig.tsbuildinfo
