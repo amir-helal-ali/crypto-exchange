@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { authGet, authPost, authPut } from "@/lib/api";
 import { Tabs, ConfirmDialog } from "@/components/ui";
+import SSLTab from "./_ssl-tab";
 
 interface SettingsByCategory {
   domains?: Record<string, string>;
@@ -41,7 +42,7 @@ interface SettingsByCategory {
 }
 
 type DomainStatus = "idle" | "checking" | "online" | "offline";
-type TabId = "overview" | "domains" | "security" | "features" | "history";
+type TabId = "overview" | "domains" | "ssl" | "security" | "features" | "history";
 
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<SettingsByCategory>({});
@@ -322,12 +323,19 @@ export default function AdminSettingsPage() {
     { id: "overview", label: "نظرة عامة", icon: <Activity className="h-4 w-4" /> },
     { id: "domains", label: "الدومينات", icon: <Globe className="h-4 w-4" /> },
     {
-      id: "security",
-      label: "الأمان",
-      icon: <ShieldCheck className="h-4 w-4" />,
+      id: "ssl",
+      label: "SSL والشهادات",
+      icon: sslEnabled ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />,
       badge: sslEnabled ? (
-        <span className="chip chip-success !px-1.5 !py-0 !text-[10px]">SSL</span>
-      ) : null,
+        <span className="chip chip-success !px-1.5 !py-0 !text-[10px]">HTTPS</span>
+      ) : (
+        <span className="chip chip-warning !px-1.5 !py-0 !text-[10px]">HTTP</span>
+      ),
+    },
+    {
+      id: "security",
+      label: "CORS",
+      icon: <ShieldCheck className="h-4 w-4" />,
     },
     {
       id: "features",
@@ -444,6 +452,14 @@ export default function AdminSettingsPage() {
             onCopy={handleCopy}
             onTest={testDomain}
             onTestAll={testAllDomains}
+          />
+        )}
+
+        {activeTab === "ssl" && (
+          <SSLTab
+            editValues={editValues}
+            changedKeys={changedKeys}
+            onSSLChanged={fetchSettings}
           />
         )}
 
@@ -961,8 +977,6 @@ function DomainsTab({
 function SecurityTab({
   editValues,
   changedKeys,
-  showSecrets,
-  onToggleSecrets,
   onChange,
 }: {
   editValues: Record<string, string>;
@@ -975,62 +989,28 @@ function SecurityTab({
 
   return (
     <div className="space-y-5">
-      {/* SSL Section */}
+      {/* Quick SSL toggle — full SSL management is in the SSL tab */}
       <Section
-        title="شهادات SSL"
+        title="حالة SSL"
         icon={sslEnabled ? <Lock className="h-5 w-5 text-emerald-400" /> : <Unlock className="h-5 w-5 text-yellow-400" />}
-        description="تفعيل تشفير HTTPS والمسارات إلى شهادات SSL. عند التعطيل، يعمل المشروع على HTTP فقط."
+        description="تبديل سريع لتفعيل/تعطيل HTTPS. لتوليد شهادات جديدة أو إدارتها، استخدم تبويب «SSL والشهادات»."
         accent={sslEnabled ? "emerald" : "yellow"}
       >
         <ToggleRow
           label="تفعيل SSL"
-          hint="عند التفعيل، يصغي nginx على المنفذ 443 ويُعيد توجيه HTTP → HTTPS."
+          hint="عند التفعيل، يصغي nginx على المنفذ 443 ويُعيد توجيه HTTP → HTTPS. الشهادة الحالية:"
           checked={sslEnabled}
           onChange={(v) => onChange("ssl_enabled", v ? "true" : "false")}
           changed={changedKeys.has("ssl_enabled")}
         />
         {sslEnabled && (
-          <div className="space-y-4 pt-2 border-t border-border/20 animate-fade-in">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-sm font-medium text-foreground">
-                  مسار شهادة SSL (Cert)
-                </label>
-                <button
-                  onClick={onToggleSecrets}
-                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                >
-                  {showSecrets ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                  {showSecrets ? "إخفاء" : "إظهار"}
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground mb-2">
-                المسار داخل حاوية nginx لملف الشهادة العامة.
+          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3 flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <p className="text-emerald-300 font-medium">SSL مُفعّل</p>
+              <p className="text-muted-foreground mt-0.5" dir="ltr">
+                {editValues.ssl_cert_path || "/etc/nginx/certs/local.pem"}
               </p>
-              <input
-                type={showSecrets ? "text" : "password"}
-                value={editValues.ssl_cert_path || ""}
-                onChange={(e) => onChange("ssl_cert_path", e.target.value)}
-                placeholder="/etc/nginx/certs/local.pem"
-                className={`input-field font-mono text-sm ${changedKeys.has("ssl_cert_path") ? "ring-1 ring-yellow-500/30" : ""}`}
-                dir="ltr"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                مسار مفتاح SSL (Key)
-              </label>
-              <p className="text-xs text-muted-foreground mb-2">
-                المسار داخل حاوية nginx لملف المفتاح الخاص.
-              </p>
-              <input
-                type={showSecrets ? "text" : "password"}
-                value={editValues.ssl_key_path || ""}
-                onChange={(e) => onChange("ssl_key_path", e.target.value)}
-                placeholder="/etc/nginx/certs/local-key.pem"
-                className={`input-field font-mono text-sm ${changedKeys.has("ssl_key_path") ? "ring-1 ring-yellow-500/30" : ""}`}
-                dir="ltr"
-              />
             </div>
           </div>
         )}

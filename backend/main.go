@@ -249,6 +249,14 @@ func main() {
                 admin.GET("/settings", handlers.GetSystemSettings)
                 admin.PUT("/settings", handlers.UpdateSystemSettings)
                 admin.POST("/nginx/reload", handlers.ReloadNginx)
+
+                // SSL certificate management — one-click cert generation
+                // (local self-signed OR Let's Encrypt production certs),
+                // status inspection, renewal, and custom PEM upload.
+                admin.GET("/ssl/status", handlers.GetSSLStatus)
+                admin.POST("/ssl/generate", handlers.GenerateSSLCertificate)
+                admin.POST("/ssl/renew", handlers.RenewSSLCertificate)
+                admin.POST("/ssl/install", handlers.InstallSSLCertificate)
         }
 
         // Public routes (outside versioned group)

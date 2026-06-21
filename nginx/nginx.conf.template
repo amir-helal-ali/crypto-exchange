@@ -58,6 +58,16 @@ http {
   server {
     listen 80;
     server_name ${ALL_DOMAINS};
+
+    # Let's Encrypt ACME challenge — served BEFORE the HTTPS redirect
+    # so HTTP-01 verification works even when SSL is enabled.
+    location /.well-known/acme-challenge/ {
+      root /var/www/certbot;
+      default_type "text/plain";
+      auth_basic off;
+      try_files $uri =404;
+    }
+
     # If SSL is disabled, this server block handles all traffic directly.
     ${SSL_REDIRECT_OR_FALLTHROUGH}
   }
@@ -93,6 +103,20 @@ http {
       proxy_set_header X-Forwarded-Proto $scheme;
       proxy_read_timeout 60s;
       proxy_send_timeout 60s;
+    }
+
+    # Let's Encrypt ACME HTTP-01 challenge — must be served from a
+    # webroot (NOT proxied to backend) so certbot can verify domain
+    # ownership. The /var/www/certbot directory is a shared volume
+    # between backend (certbot writes here) and nginx (serves here).
+    # This works on BOTH http and https server blocks.
+    location /.well-known/acme-challenge/ {
+      root /var/www/certbot;
+      default_type "text/plain";
+      # Disable any auth/rate-limit for this path
+      auth_basic off;
+      # Allow certbot to find the file with the correct name
+      try_files $uri =404;
     }
 
     # WebSocket routes — always go to backend

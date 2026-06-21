@@ -14,6 +14,11 @@ RUN chmod +x /etc/nginx/scripts/regen-config.sh /etc/nginx/scripts/entrypoint.sh
 # Remove the default nginx config — entrypoint will generate the real one
 RUN rm -f /etc/nginx/conf.d/default.conf
 
+# Create webroot for Let's Encrypt ACME HTTP-01 challenges.
+# Mounted as a volume from backend container — nginx serves files here
+# under /.well-known/acme-challenge/ so Let's Encrypt can verify domain ownership.
+RUN mkdir -p /var/www/certbot
+
 # Volume for trigger file (shared with backend container)
 VOLUME ["/shared/nginx"]
 

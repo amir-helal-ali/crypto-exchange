@@ -58,6 +58,10 @@ services:
       # Path to the shared trigger file — when backend writes to this file,
       # the nginx sidecar regenerates the config and reloads.
       NGINX_RELOAD_TRIGGER: /shared/nginx/.reload-trigger
+      # Directory where SSL certificates are written (shared with nginx)
+      SSL_CERTS_DIR: /etc/nginx/certs
+      # Directory for Let's Encrypt ACME challenges (shared with nginx)
+      ACME_WEBROOT: /var/www/certbot
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +70,12 @@ services:
     volumes:
       - uploads:/root/uploads
       - nginx-shared:/shared/nginx
+      # SSL certs: backend writes here, nginx reads from same host dir
+      - ./certs:/etc/nginx/certs
+      # ACME webroot for Let's Encrypt HTTP-01 challenges
+      - acme-webroot:/var/www/certbot
+      # Let's Encrypt config/accounts persistence
+      - letsencrypt:/etc/letsencrypt
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "--method=GET", "http://localhost:3000/api/health/live"]
       interval: 15s
@@ -124,6 +134,8 @@ services:
     volumes:
       - ./certs:/etc/nginx/certs:ro
       - nginx-shared:/shared/nginx
+      # ACME webroot for Let's Encrypt HTTP-01 challenges (shared with backend)
+      - acme-webroot:/var/www/certbot:ro
     environment:
       BACKEND_URL: http://backend:3000
       NGINX_RELOAD_TRIGGER: /shared/nginx/.reload-trigger
@@ -158,3 +170,5 @@ volumes:
   pgdata:
   uploads:
   nginx-shared:
+  acme-webroot:
+  letsencrypt:
