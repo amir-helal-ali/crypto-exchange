@@ -12,8 +12,11 @@ import {
   Activity,
   Zap,
   LayoutDashboard,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { authGet } from "@/lib/api";
+import { adminStream } from "@/lib/stream";
 
 // ─── Count-Up Hook ───
 function useCountUp(target: number, duration = 1200) {
@@ -82,23 +85,63 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [live, setLive] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState(0);
+  const [newTxPulse, setNewTxPulse] = useState(0);
+  const [newUserPulse, setNewUserPulse] = useState(0);
+  const [newKycPulse, setNewKycPulse] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
+    // 1) Bootstrap — initial fetch (one-shot, not polling)
     Promise.all([
       authGet("/api/v1/admin/stats").then((r) => r.json()),
       authGet("/api/v1/admin/audit-logs").then((r) => r.json()),
     ])
       .then(([statsData, logsData]) => {
-        // API returns { success: true, data: { ... } }
         setStats(statsData?.data || statsData);
         const logs = logsData?.data || logsData;
         setAuditLogs(Array.isArray(logs) ? logs : []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    // 2) Live updates via SSE — no polling
+    const unsubs: Array<() => void> = [];
+    unsubs.push(
+      adminStream.on("stats", (s) => {
+        if (s) {
+          setStats((prev: any) => ({ ...(prev || {}), ...s }));
+          setLive(true);
+        }
+      })
+    );
+    unsubs.push(
+      adminStream.on("online", (o) => {
+        if (o && typeof o.online_users === "number") {
+          setOnlineUsers(o.online_users);
+          setLive(true);
+        }
+      })
+    );
+    unsubs.push(
+      adminStream.on("tx", () => setNewTxPulse((n) => n + 1))
+    );
+    unsubs.push(
+      adminStream.on("users", () => setNewUserPulse((n) => n + 1))
+    );
+    unsubs.push(
+      adminStream.on("kyc", () => setNewKycPulse((n) => n + 1))
+    );
+    unsubs.push(
+      adminStream.on("hello", () => setLive(true))
+    );
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
   }, []);
 
   if (loading) {
@@ -187,12 +230,40 @@ export default function AdminDashboard() {
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
             <LayoutDashboard className="h-5 w-5 text-white" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl lg:text-3xl font-bold">لوحة الإدارة</h1>
             <p className="text-sm text-muted-foreground">
               نظرة عامة على منصة EgMoney والنشاط الأخير
             </p>
           </div>
+          {/* Live indicator */}
+          <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+              live
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                : "bg-muted/30 text-muted-foreground border-border/30"
+            }`}
+            title={live ? "متصل بالبث المباشر" : "غير متصل"}
+          >
+            {live ? (
+              <Wifi className="h-3.5 w-3.5" />
+            ) : (
+              <WifiOff className="h-3.5 w-3.5" />
+            )}
+            <span>{live ? "مباشر" : "غير متصل"}</span>
+            {live && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            )}
+          </div>
+          {live && onlineUsers > 0 && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <Users className="h-3.5 w-3.5" />
+              <span>{onlineUsers} متصل</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -210,6 +281,23 @@ export default function AdminDashboard() {
           />
         ))}
       </div>
+
+      {/* ─── Live activity pulses ─── */}
+      {(newTxPulse > 0 || newUserPulse > 0 || newKycPulse > 0) && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground animate-slide-in-down">
+          <Activity className="h-3.5 w-3.5 text-emerald-500 animate-pulse" />
+          <span>
+            نشاط جديد:
+            {newTxPulse > 0 && <span className="text-emerald-400 font-medium mx-1">{newTxPulse} معاملة</span>}
+            {newUserPulse > 0 && <span className="text-blue-400 font-medium mx-1">{newUserPulse} مستخدم</span>}
+            {newKycPulse > 0 && <span className="text-orange-400 font-medium mx-1">{newKycPulse} KYC</span>}
+            <button
+              onClick={() => { setNewTxPulse(0); setNewUserPulse(0); setNewKycPulse(0); }}
+              className="ml-2 text-[10px] underline hover:text-foreground"
+            >مسح</button>
+          </span>
+        </div>
+      )}
 
       {/* ─── Audit Logs Section ─── */}
       <div className="glass-panel rounded-2xl overflow-hidden animate-slide-in-up delay-500">

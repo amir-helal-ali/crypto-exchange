@@ -88,21 +88,10 @@
         volume24h: t.volume24h
       });
     }
-    // Subscribe to live ticks — cycle through watchSymbols every few seconds
-    nexusMarket.switchSymbol(watchSymbols[0]);
-    let cycleIdx = 0;
-    const cycleInterval = setInterval(() => {
-      cycleIdx = (cycleIdx + 1) % watchSymbols.length;
-      nexusMarket.switchSymbol(watchSymbols[cycleIdx]);
-    }, 3500);
-    unsubNexus = nexusMarket.subscribeAll(() => {
-      // marketStore is already updated by nexusMarket; nothing else to do
-    });
-    const origUnsub = unsubNexus;
-    unsubNexus = () => {
-      clearInterval(cycleInterval);
-      origUnsub();
-    };
+    // Single live subscription — every watch symbol updates in real time.
+    // No cycling, no setInterval. The marketStore is updated by nexusMarket
+    // internally so any UI bound to it re-renders automatically.
+    unsubNexus = nexusMarket.subscribeAll(() => {});
   }
 
   // Derived values

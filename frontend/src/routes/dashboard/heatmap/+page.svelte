@@ -19,26 +19,27 @@
   let selectedTick = $state<NexusTick | null>(null);
   let unsubAll: (() => void) | null = null;
   let unsubRate: (() => void) | null = null;
-  let refreshTimer: any = null;
 
   onMount(() => {
     (async () => {
       await loadTickers();
       loading = false;
     })();
+    // Live updates — single subscription, no polling.
     unsubAll = nexusMarket.subscribeAll((t) => {
       const idx = tickers.findIndex((x) => x.symbol === t.symbol);
       if (idx >= 0) {
         tickers[idx] = t;
         tickers = [...tickers];
+      } else {
+        // New symbol not yet in our local array — add it
+        tickers = [...tickers, t];
       }
     });
     unsubRate = usdEgpRate.subscribe((r) => (currentRate = r));
-    refreshTimer = setInterval(loadTickers, 15000);
     return () => {
       unsubAll?.();
       unsubRate?.();
-      if (refreshTimer) clearInterval(refreshTimer);
     };
   });
 

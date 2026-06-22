@@ -18,34 +18,61 @@
   }
 
   let trades = $state<Trade[]>([]);
-  let unsubNexus: (() => void) | null = null;
+  let unsubTrades: (() => void) | null = null;
+  let unsubTicker: (() => void) | null = null;
+  let lastSymbol = '';
 
-  onMount(() => {
-    unsubNexus = nexusMarket.subscribe(symbol, (tick) => {
-      if (tick.symbol !== symbol) return;
-      // Derive 1-2 realistic trades per tick
-      const t1 = deriveTrade(symbol, tick.price);
+  function attach(sym: string) {
+    if (lastSymbol === sym) return;
+    detach();
+    lastSymbol = sym;
+    trades = [];
+    // Live trade tape (real Binance trades)
+    unsubTrades = nexusMarket.subscribeTrades(sym, (t) => {
+      trades = [
+        { id: t.id, price: t.price, qty: t.qty, time: t.time, side: t.side },
+        ...trades
+      ].slice(0, 30);
+    });
+    // Fallback: if no real trades arrive, derive synthetic ones from price ticks
+    // so the panel never looks empty during cold-start
+    unsubTicker = nexusMarket.subscribe(sym, (tick) => {
+      if (trades.length > 0) return; // real trades are flowing — skip synthetic
+      const t1 = deriveTrade(sym, tick.price);
       if (t1) {
         trades = [
           { id: t1.id, price: t1.price, qty: t1.qty, time: t1.time, side: t1.side },
           ...trades
-        ].slice(0, 25);
+        ].slice(0, 30);
       }
     });
-    return () => {
-      unsubNexus?.();
-    };
+    // Bootstrap with REST snapshot of recent trades
+    (async () => {
+      const recent = await nexusMarket.getRecentTrades(sym);
+      if (recent.length > 0) {
+        trades = recent.slice(0, 30).map((t) => ({
+          id: t.id, price: t.price, qty: t.qty, time: t.time, side: t.side
+        }));
+      }
+    })();
+  }
+
+  function detach() {
+    unsubTrades?.();
+    unsubTicker?.();
+    unsubTrades = null;
+    unsubTicker = null;
+  }
+
+  onMount(() => {
+    attach(symbol);
+    return detach;
   });
 
-  onDestroy(() => {
-    unsubNexus?.();
-  });
+  onDestroy(detach);
 
   $effect(() => {
-    if (symbol) {
-      trades = [];
-      nexusMarket.switchSymbol(symbol);
-    }
+    if (symbol) attach(symbol);
   });
 </script>
 

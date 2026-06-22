@@ -117,6 +117,9 @@ func SubmitKYC(c *gin.Context) {
                 return
         }
 
+        // Live push to admin dashboard (no polling)
+        NotifyAdminKYCSubmission(&kyc)
+
         database.DB.Create(&models.AuditLog{
                 UserID:    userID,
                 Action:    "KYC_SUBMITTED",

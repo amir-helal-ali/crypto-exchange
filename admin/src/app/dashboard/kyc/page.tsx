@@ -15,9 +15,11 @@ import {
   User,
   Calendar,
   Filter,
+  Wifi,
 } from "lucide-react";
 import PromptDialog from "@/components/PromptDialog";
 import { authGet, authPut } from "@/lib/api";
+import { adminStream } from "@/lib/stream";
 
 export default function AdminKYCPage() {
   const [requests, setRequests] = useState<any[]>([]);
@@ -26,6 +28,7 @@ export default function AdminKYCPage() {
   const [rejectTarget, setRejectTarget] = useState<number | null>(null);
   const [previewDoc, setPreviewDoc] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [liveNewCount, setLiveNewCount] = useState(0);
 
   const fetchKYC = () => {
     const token = localStorage.getItem("token");
@@ -44,6 +47,26 @@ export default function AdminKYCPage() {
   useEffect(() => {
     fetchKYC();
   }, []);
+
+  // Live updates via SSE — refresh when a new KYC submission arrives
+  useEffect(() => {
+    const unsub = adminStream.on("kyc", () => {
+      setLiveNewCount((n) => n + 1);
+      // Silent refresh if no filter/search is active
+      if (statusFilter === "ALL" && !search) {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        authGet("/api/v1/admin/kyc")
+          .then((r) => r.json())
+          .then((d) => {
+            const data = d.data;
+            if (Array.isArray(data)) setRequests(data);
+          })
+          .catch(() => {});
+      }
+    });
+    return unsub;
+  }, [statusFilter, search]);
 
   const handleReview = async (
     id: number,
@@ -148,6 +171,25 @@ export default function AdminKYCPage() {
             <p className="text-sm text-muted-foreground">
               مراجعة طلبات توثيق الهوية والتحقق من المستندات
             </p>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <Wifi className="h-3.5 w-3.5" />
+              <span>مباشر</span>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            </div>
+            {liveNewCount > 0 && (
+              <button
+                onClick={() => { setLiveNewCount(0); fetchKYC(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors animate-pulse"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>{liveNewCount} جديد — تحديث</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

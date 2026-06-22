@@ -16,34 +16,63 @@
   let maxTotal = $state(1);
 
   let unsubNexus: (() => void) | null = null;
+  let unsubOB: (() => void) | null = null;
+  let lastSymbol = '';
 
-  onMount(() => {
-    // Subscribe to live ticks from NEXUS; derive the order book from each tick
+  function attach(symbol: string) {
+    if (lastSymbol === symbol) return;
+    detach();
+    lastSymbol = symbol;
+    // Live ticker (for last-traded price + flash)
     unsubNexus = nexusMarket.subscribe(symbol, (tick) => {
-      if (tick.symbol !== symbol) return; // ignore ticks for other symbols
       prevPrice = lastPrice;
       lastPrice = tick.price;
-      const book = deriveOrderBook(tick.price, 12);
-      bids = book.bids;
-      asks = book.asks;
+      // If we don't have a real orderbook yet, derive one from the price
+      if (asks.length === 0 && bids.length === 0) {
+        const book = deriveOrderBook(tick.price, 12);
+        bids = book.bids;
+        asks = book.asks;
+        const totals = [...bids, ...asks].map(([, q]) => q);
+        maxTotal = Math.max(...totals, 1);
+      }
+    });
+    // Live L2 orderbook (Binance partial depth @ 100ms)
+    unsubOB = nexusMarket.subscribeOrderbook(symbol, (ob) => {
+      if (!ob.bids.length && !ob.asks.length) return;
+      bids = ob.bids.slice(0, 20) as [number, number][];
+      asks = ob.asks.slice(0, 20) as [number, number][];
       const totals = [...bids, ...asks].map(([, q]) => q);
       maxTotal = Math.max(...totals, 1);
     });
+    // Bootstrap with REST snapshot
+    (async () => {
+      const ob = await nexusMarket.getOrderbook(symbol);
+      if (ob && (ob.bids.length || ob.asks.length)) {
+        bids = ob.bids.slice(0, 20) as [number, number][];
+        asks = ob.asks.slice(0, 20) as [number, number][];
+        const totals = [...bids, ...asks].map(([, q]) => q);
+        maxTotal = Math.max(...totals, 1);
+      }
+    })();
+  }
 
-    return () => {
-      unsubNexus?.();
-    };
-  });
-
-  onDestroy(() => {
+  function detach() {
     unsubNexus?.();
+    unsubOB?.();
+    unsubNexus = null;
+    unsubOB = null;
+  }
+
+  onMount(() => {
+    attach(symbol);
+    return detach;
   });
 
-  // Switch the WS to the new symbol whenever it changes
+  onDestroy(detach);
+
+  // Switch subscriptions whenever the symbol prop changes
   $effect(() => {
-    if (symbol) {
-      nexusMarket.switchSymbol(symbol);
-    }
+    if (symbol) attach(symbol);
   });
 
   const isUp = $derived(lastPrice >= prevPrice);

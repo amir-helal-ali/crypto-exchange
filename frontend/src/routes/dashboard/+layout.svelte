@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { authStore } from '$lib/stores/auth';
@@ -7,7 +8,7 @@
   import { favorites, marketStore, type MarketTicker } from '$lib/stores/market';
   import { nexusMarket } from '$lib/stores/nexus-market';
   import { auth } from '$lib/api/endpoints';
-  import { forceLogout } from '$lib/api/client';
+  import { API_BASE, forceLogout } from '$lib/api/client';
   import { wallet as walletApi } from '$lib/api/endpoints';
   import { parseApiResponse } from '$lib/api/client';
   import { usdToEgp, egpCompact, usdEgpRate } from '$lib/utils/currency';
@@ -96,16 +97,15 @@
     loadNotifications();
     loadPortfolio();
     connectTickerWebSocket();
-    // Refresh notifications every 30s
-    const interval = setInterval(loadNotifications, 30000);
-    const portfolioInterval = setInterval(loadPortfolio, 60000);
+    connectUserWebSocket();
+    // No setInterval polling — notifications arrive live via /ws/user,
+    // portfolio recomputes automatically when marketStore updates.
     return () => {
-      clearInterval(interval);
-      clearInterval(portfolioInterval);
       unsubNexusGlobal?.();
       unsubMarketLocal?.();
       unsubRate();
       unsubMarket?.();
+      unsubUserWS?.();
     };
   });
 
@@ -157,6 +157,49 @@
     }
   }
 
+  // Live notifications & portfolio updates via the user WebSocket.
+  let unsubUserWS: (() => void) | null = null;
+  function connectUserWebSocket() {
+    if (!browser) return;
+    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    if (!token) return;
+    const wsBase = API_BASE.replace(/^http/, 'ws');
+    let ws: WebSocket | null = null;
+    let reconnectTimer: any = null;
+    let closed = false;
+    const connect = () => {
+      if (closed) return;
+      try {
+        ws = new WebSocket(`${wsBase}/ws/user?token=${encodeURIComponent(token)}`);
+        ws.onmessage = (ev) => {
+          try {
+            const evt = JSON.parse(ev.data);
+            // Any event type → refresh notifications + portfolio (cheap)
+            if (evt && evt.type) {
+              loadNotifications();
+              if (evt.type === 'order_fill' || evt.type === 'deposit_approved' || evt.type === 'withdrawal_approved') {
+                loadPortfolio();
+              }
+            }
+          } catch {}
+        };
+        ws.onclose = () => {
+          if (closed) return;
+          reconnectTimer = setTimeout(connect, 2000);
+        };
+        ws.onerror = () => {};
+      } catch {
+        reconnectTimer = setTimeout(connect, 2000);
+      }
+    };
+    connect();
+    unsubUserWS = () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { ws?.close(); } catch {}
+    };
+  }
+
   function connectTickerWebSocket() {
     // Bootstrap with REST snapshot of all tickers
     (async () => {
@@ -175,15 +218,7 @@
       }
     })();
 
-    // Subscribe to live ticks — cycle through tickerSymbols every few seconds
-    // so the ticker tape stays live for all symbols, not just one
-    let cycleIdx = 0;
-    nexusMarket.switchSymbol(tickerSymbols[0]);
-    const cycleInterval = setInterval(() => {
-      cycleIdx = (cycleIdx + 1) % tickerSymbols.length;
-      nexusMarket.switchSymbol(tickerSymbols[cycleIdx]);
-    }, 4000);
-
+    // Single live subscription — all ticker symbols at once, no cycling.
     unsubNexusGlobal = nexusMarket.subscribeAll((tick) => {
       const ticker: MarketTicker = {
         symbol: tick.symbol,
@@ -197,13 +232,6 @@
       tickerData[tick.symbol] = ticker;
       marketStore.updateTicker(tick.symbol, ticker);
     });
-
-    // Clean up the cycle interval when the global unsub is called
-    const origUnsub = unsubNexusGlobal;
-    unsubNexusGlobal = () => {
-      clearInterval(cycleInterval);
-      origUnsub();
-    };
   }
 
   const navSections = [

@@ -121,6 +121,7 @@ func WithdrawCurrency(c *gin.Context) {
                 return
         }
 
+        var createdTx models.Transaction
         err := database.DB.Transaction(func(dbTx *gorm.DB) error {
                 // Lock wallet row with FOR UPDATE for concurrent safety
                 var lockedWallet models.Wallet
@@ -159,6 +160,8 @@ func WithdrawCurrency(c *gin.Context) {
                 if err := dbTx.Create(&tx).Error; err != nil {
                         return err
                 }
+                // Capture for live notification after commit
+                createdTx = tx
                 return nil
         })
 
@@ -166,6 +169,9 @@ func WithdrawCurrency(c *gin.Context) {
                 c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
                 return
         }
+
+        // Live push to admin dashboard (no polling)
+        NotifyAdminNewTransaction(&createdTx)
 
         c.JSON(http.StatusOK, gin.H{"success": true, "message": "تم تقديم طلب السحب بنجاح. سيتم مراجعته من قبل الإدارة."})
 }
@@ -237,6 +243,9 @@ func DepositCurrency(c *gin.Context) {
                 c.JSON(http.StatusInternalServerError, gin.H{"error": "فشل إنشاء طلب الإيداع"})
                 return
         }
+
+        // Live push to admin dashboard (no polling)
+        NotifyAdminNewTransaction(&tx)
 
         c.JSON(http.StatusOK, gin.H{
                 "success": true,

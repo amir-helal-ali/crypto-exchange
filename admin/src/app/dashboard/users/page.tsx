@@ -14,8 +14,11 @@ import {
   Calendar,
   MailCheck,
   MailX,
+  Wifi,
+  UserPlus,
 } from "lucide-react";
 import { authGet, authPut } from "@/lib/api";
+import { adminStream } from "@/lib/stream";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -23,6 +26,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [kycFilter, setKycFilter] = useState<string>("ALL");
+  const [liveNewCount, setLiveNewCount] = useState(0);
 
   const fetchUsers = () => {
     const token = localStorage.getItem("token");
@@ -42,6 +46,25 @@ export default function AdminUsersPage() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // Live updates via SSE — silent refresh when a new user registers
+  useEffect(() => {
+    const unsub = adminStream.on("users", () => {
+      setLiveNewCount((n) => n + 1);
+      if (roleFilter === "ALL" && kycFilter === "ALL" && !search) {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        authGet("/api/v1/admin/users")
+          .then((r) => r.json())
+          .then((d) => {
+            const usersList = d?.data || d;
+            if (Array.isArray(usersList)) setUsers(usersList);
+          })
+          .catch(() => {});
+      }
+    });
+    return unsub;
+  }, [roleFilter, kycFilter, search]);
 
   const handleRoleChange = async (userId: number, role: string) => {
     try {
@@ -137,6 +160,25 @@ export default function AdminUsersPage() {
             <p className="text-sm text-muted-foreground">
               إدارة مستخدمي المنصة والتحكم في صلاحياتهم
             </p>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <Wifi className="h-3.5 w-3.5" />
+              <span>مباشر</span>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            </div>
+            {liveNewCount > 0 && (
+              <button
+                onClick={() => { setLiveNewCount(0); fetchUsers(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors animate-pulse"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span>{liveNewCount} جديد — تحديث</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

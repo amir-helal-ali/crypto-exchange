@@ -30,6 +30,7 @@
   let priceMax = 1;
 
   let unsubNexus: (() => void) | null = null;
+  let unsubOB: (() => void) | null = null;
   const unsubTheme = themeStore.subscribe((t) => {
     theme = t?.resolved ?? 'dark';
     render();
@@ -60,12 +61,36 @@
     ctx = canvas.getContext('2d')!;
     setupCanvas();
 
-    unsubNexus = nexusMarket.subscribe(symbol, (tick) => {
-      if (tick.symbol !== symbol) return;
-      lastPrice = tick.price;
+    // Live L2 orderbook from Binance partial depth stream
+    unsubOB = nexusMarket.subscribeOrderbook(symbol, (ob) => {
+      if (ob.bids.length) bids = ob.bids;
+      if (ob.asks.length) asks = ob.asks;
       recompute();
       render();
     });
+    // Live ticker for last-price updates
+    unsubNexus = nexusMarket.subscribe(symbol, (tick) => {
+      if (tick.symbol !== symbol) return;
+      lastPrice = tick.price;
+      // If no real orderbook yet, derive synthetic from price
+      if (bids.length === 0 || asks.length === 0) {
+        const book = deriveOrderBook(tick.price, 18);
+        bids = book.bids;
+        asks = book.asks;
+      }
+      recompute();
+      render();
+    });
+    // Bootstrap with REST snapshot
+    (async () => {
+      const ob = await nexusMarket.getOrderbook(symbol);
+      if (ob && (ob.bids.length || ob.asks.length)) {
+        bids = ob.bids;
+        asks = ob.asks;
+        recompute();
+        render();
+      }
+    })();
 
     const ro = new ResizeObserver(() => {
       setupCanvas();
@@ -76,6 +101,7 @@
     return () => {
       cancelAnimationFrame(rafId);
       unsubNexus?.();
+      unsubOB?.();
       unsubTheme();
       ro.disconnect();
     };
@@ -85,11 +111,21 @@
     if (typeof window === 'undefined') return;
     cancelAnimationFrame(rafId);
     unsubNexus?.();
+    unsubOB?.();
     unsubTheme();
   });
 
   $effect(() => {
-    if (symbol) nexusMarket.switchSymbol(symbol);
+    if (symbol) {
+      // Re-subscribe on symbol change
+      unsubOB?.();
+      unsubOB = nexusMarket.subscribeOrderbook(symbol, (ob) => {
+        if (ob.bids.length) bids = ob.bids;
+        if (ob.asks.length) asks = ob.asks;
+        recompute();
+        render();
+      });
+    }
   });
 
   function setupCanvas() {
@@ -105,10 +141,14 @@
   }
 
   function recompute() {
-    if (!lastPrice) return;
-    const book = deriveOrderBook(lastPrice, 18);
-    bids = book.bids;
-    asks = book.asks;
+    if (!lastPrice && bids.length === 0 && asks.length === 0) return;
+    // Use real orderbook if available; otherwise derive synthetic from price
+    if (bids.length === 0 || asks.length === 0) {
+      const book = deriveOrderBook(lastPrice, 18);
+      if (bids.length === 0) bids = book.bids;
+      if (asks.length === 0) asks = book.asks;
+    }
+    if (bids.length === 0 || asks.length === 0) return;
     // Compute cumulative depth
     let cumBids = 0;
     let cumAsks = 0;

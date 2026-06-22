@@ -185,6 +185,9 @@ func Register(c *gin.Context) {
 
         createUserWallets(user.ID)
 
+        // Live push to admin dashboard (no polling)
+        NotifyAdminNewUser(&user)
+
         // Send verification email (non-blocking: log error but don't fail registration)
         if err := sendVerificationEmailToUser(user.ID, user.Email); err != nil {
                 fmt.Printf("[WARN] Failed to send verification email to %s: %v\n", user.Email, err)

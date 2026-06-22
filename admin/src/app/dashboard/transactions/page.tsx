@@ -18,8 +18,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Wifi,
 } from "lucide-react";
 import { authGet, authPut } from "@/lib/api";
+import { adminStream } from "@/lib/stream";
 
 export default function AdminTransactionsPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -31,6 +33,7 @@ export default function AdminTransactionsPage() {
   const [txInputs, setTxInputs] = useState<Record<number, string>>({});
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [liveNewCount, setLiveNewCount] = useState(0);
 
   const fetchTransactions = () => {
     const token = localStorage.getItem("token");
@@ -45,6 +48,29 @@ export default function AdminTransactionsPage() {
   };
 
   useEffect(() => { fetchTransactions(); }, [page]);
+
+  // Live updates via SSE — auto-refresh list when a new transaction arrives
+  useEffect(() => {
+    const unsub = adminStream.on("tx", () => {
+      setLiveNewCount((n) => n + 1);
+      // If user is on page 1 and no search/filter active, silently refresh
+      if (page === 1 && statusFilter === "ALL" && !search) {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        authGet(`/api/v1/admin/transactions?page=1&limit=20`)
+          .then((r) => r.json())
+          .then((d) => {
+            const data = d.data;
+            if (Array.isArray(data)) setTransactions(data);
+          })
+          .catch(() => {});
+      }
+    });
+    return unsub;
+  }, [page, statusFilter, search]);
+
+  // Dismiss the "new transactions" pill when the list is manually refreshed
+  useEffect(() => { setLiveNewCount(0); }, [page]);
 
   const handleReview = async (id: number, action: "approve" | "reject") => {
     setReviewingId(id);
@@ -123,6 +149,25 @@ export default function AdminTransactionsPage() {
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold">المعاملات</h1>
             <p className="text-sm text-muted-foreground">إدارة عمليات السحب والإيداع ومراجعة الطلبات</p>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <Wifi className="h-3.5 w-3.5" />
+              <span>مباشر</span>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            </div>
+            {liveNewCount > 0 && (
+              <button
+                onClick={() => { setLiveNewCount(0); fetchTransactions(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors animate-pulse"
+              >
+                <ArrowDownLeft className="h-3.5 w-3.5" />
+                <span>{liveNewCount} جديد — تحديث</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

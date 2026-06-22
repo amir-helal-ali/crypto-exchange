@@ -262,8 +262,23 @@ func main() {
         // Public routes (outside versioned group)
         v1.GET("/ads", handlers.GetActiveAds)
         v1.GET("/fees", handlers.GetFeeSchedules)
+
+        // Live market data — REST snapshots + multiplexed WebSocket hubs.
+        // All multi-symbol live data flows through /ws/market; dedicated
+        // single-purpose sockets (kline/trades/orderbook) are kept for
+        // backwards compatibility with simpler clients.
+        v1.GET("/market/tickers", websocket.ServeAllTickersJSON)
+        v1.GET("/market/orderbook", websocket.ServeOrderbookJSON)
+        v1.GET("/market/trades", websocket.ServeRecentTradesJSON)
         r.GET("/ws/market", websocket.HandleMarketWebSocket)
+        r.GET("/ws/kline", websocket.HandleKlineWebSocket)
+        r.GET("/ws/trades", websocket.HandleTradesWebSocket)
+        r.GET("/ws/orderbook", websocket.HandleOrderbookWebSocket)
         r.GET("/ws/user", websocket.HandleUserWebSocket)
+
+        // Admin live stream (SSE) — pushes stats / transactions / users /
+        // KYC updates to the admin dashboard in real time. No polling.
+        r.GET("/api/v1/admin/stream", handlers.HandleAdminSSE)
 
         r.Static("/uploads", "./uploads")
 

@@ -56,23 +56,11 @@
       }
     })();
 
-    // Cycle through preview symbols every 3s so all cards stay live
-    const symbols = previewSymbols.map((p) => p.symbol);
-    let cycleIdx = 0;
-    nexusMarket.switchSymbol(symbols[0]);
-    const cycleInterval = setInterval(() => {
-      cycleIdx = (cycleIdx + 1) % symbols.length;
-      nexusMarket.switchSymbol(symbols[cycleIdx]);
-    }, 3000);
-
+    // Single live subscription — all preview symbols update simultaneously.
+    // No cycling, no setInterval.
     unsubNexus = nexusMarket.subscribeAll(() => {
-      // marketStore is already updated inside nexusMarket
+      // marketStore is updated inside nexusMarket
     });
-    const origUnsub = unsubNexus;
-    unsubNexus = () => {
-      clearInterval(cycleInterval);
-      origUnsub();
-    };
   }
 
   const features = [
