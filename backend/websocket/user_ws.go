@@ -7,7 +7,8 @@ import (
         "sync"
         "time"
 
-        "crypto-exchange-backend/handlers"
+        "crypto-exchange-backend/jwtutil"
+        "crypto-exchange-backend/pubsub"
 
         "github.com/gin-gonic/gin"
         gorillaws "github.com/gorilla/websocket"
@@ -45,6 +46,61 @@ var GlobalUserHub = &UserHub{
 
 func init() {
         go GlobalUserHub.run()
+        // Subscribe to cross-instance user events from Redis Pub/Sub.
+        // When instance A approves a deposit for user 42 (whose WebSocket
+        // is on instance B), instance A publishes a user_event; this
+        // subscriber on instance B receives it and delivers it to the
+        // user's local WebSocket connection. Falls back gracefully to
+        // local-only delivery when Redis is unavailable.
+        pubsub.Init()
+        pubsub.OnUserEvent(func(userID uint, eventType string, data any) {
+                // Cross-instance delivery — only deliver locally, do NOT
+                // re-publish (would cause infinite loop).
+                deliverLocalUserEvent(userID, eventType, data)
+        })
+}
+
+// NotifyUser is the public entry point for sending a real-time event
+// to a user. It publishes to Redis Pub/Sub (so other instances can
+// deliver to the user if their WebSocket is connected there) AND
+// delivers locally in case the user is connected to this instance.
+//
+// If Redis is unavailable, only local delivery happens (single-instance
+// mode still works).
+func NotifyUser(userID uint, eventType string, data interface{}) {
+        // Deliver locally first so latency-sensitive in-process callers
+        // get immediate notification even if Redis is slow.
+        deliverLocalUserEvent(userID, eventType, data)
+        // Then broadcast to peer instances.
+        pubsub.PublishUserEvent(userID, eventType, data)
+}
+
+// deliverLocalUserEvent sends an event to all local WebSocket
+// connections of the given user. Called from NotifyUser (for local
+// events) and from the PubSub subscriber (for remote events).
+func deliverLocalUserEvent(userID uint, eventType string, data interface{}) {
+        event := UserEvent{
+                Type: eventType,
+                Data: data,
+        }
+        payload, err := json.Marshal(event)
+        if err != nil {
+                log.Printf("[UserWS] Failed to marshal event for user %d: %v", userID, err)
+                return
+        }
+
+        GlobalUserHub.mu.RLock()
+        clients := GlobalUserHub.clients[userID]
+        GlobalUserHub.mu.RUnlock()
+
+        for _, client := range clients {
+                select {
+                case client.Send <- payload:
+                default:
+                        // Buffer full, skip this client
+                        log.Printf("[UserWS] Client buffer full for user %d, skipping", userID)
+                }
+        }
 }
 
 func (h *UserHub) run() {
@@ -77,30 +133,13 @@ func (h *UserHub) run() {
 }
 
 // NotifyUser sends a real-time event to all connections of a specific user.
-func NotifyUser(userID uint, eventType string, data interface{}) {
-        event := UserEvent{
-                Type: eventType,
-                Data: data,
-        }
-        payload, err := json.Marshal(event)
-        if err != nil {
-                log.Printf("[UserWS] Failed to marshal event for user %d: %v", userID, err)
-                return
-        }
-
-        GlobalUserHub.mu.RLock()
-        clients := GlobalUserHub.clients[userID]
-        GlobalUserHub.mu.RUnlock()
-
-        for _, client := range clients {
-                select {
-                case client.Send <- payload:
-                default:
-                        // Buffer full, skip this client
-                        log.Printf("[UserWS] Client buffer full for user %d, skipping", userID)
-                }
-        }
-}
+// (Deprecated direct-implementation — kept for backward compatibility.
+// The actual logic now lives in the NotifyUser wrapper above which also
+// publishes to Redis Pub/Sub for multi-instance delivery.)
+//
+// To avoid duplicate code, this function is removed. Use the top-level
+// NotifyUser defined above which handles both local delivery and cross-
+// instance broadcast.
 
 // HandleUserWebSocket handles WebSocket connections for authenticated users.
 // The user must pass a valid JWT token as a query parameter.
@@ -112,7 +151,7 @@ func HandleUserWebSocket(c *gin.Context) {
         }
 
         // Validate JWT
-        claims, err := handlers.ValidateJWT(tokenStr)
+        claims, err := jwtutil.Validate(tokenStr)
         if err != nil {
                 c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
                 return

@@ -14,38 +14,26 @@ import (
         totpauth "crypto-exchange-backend/auth"
         "crypto-exchange-backend/database"
         "crypto-exchange-backend/email"
+        "crypto-exchange-backend/jwtutil"
         "crypto-exchange-backend/models"
 
         "github.com/gin-gonic/gin"
-        "github.com/golang-jwt/jwt/v5"
         "gorm.io/gorm"
         "golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = func() []byte {
-        s := os.Getenv("JWT_SECRET")
-        if s == "" {
-                panic("CRITICAL: JWT_SECRET environment variable is not set")
-        }
-        return []byte(s)
-}()
+// Claims is re-exported as an alias so existing call sites in the
+// handlers package keep compiling without touching every file. The
+// canonical definition now lives in jwtutil (which breaks the import
+// cycle with the websocket package).
+type Claims = jwtutil.Claims
 
-type Claims struct {
-        UserID uint   `json:"user_id"`
-        Role   string `json:"role"`
-        jwt.RegisteredClaims
-}
+// jwtSecret is retained for backward-compat with any internal helper
+// that still reads it directly.
+var jwtSecret = jwtutil.Secret()
 
 func GenerateJWT(userID uint, role string) (string, error) {
-        claims := Claims{
-                UserID: userID,
-                Role:   role,
-                RegisteredClaims: jwt.RegisteredClaims{
-                        ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
-                },
-        }
-        token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-        return token.SignedString(jwtSecret)
+        return jwtutil.Generate(userID, role)
 }
 
 // GenerateRefreshToken creates a cryptographically secure refresh token and saves it to DB
@@ -71,17 +59,7 @@ func GenerateRefreshToken(userID uint, userAgent string, ipAddress string) (stri
 }
 
 func ValidateJWT(tokenString string) (*Claims, error) {
-        token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-                return jwtSecret, nil
-        })
-        if err != nil {
-                return nil, err
-        }
-        claims, ok := token.Claims.(*Claims)
-        if !ok || !token.Valid {
-                return nil, jwt.ErrSignatureInvalid
-        }
-        return claims, nil
+        return jwtutil.Validate(tokenString)
 }
 
 var supportedCurrencies = []string{"BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "ADA", "DOGE", "DOT"}

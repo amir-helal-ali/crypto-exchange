@@ -15,6 +15,7 @@ import (
         "crypto-exchange-backend/handlers"
         "crypto-exchange-backend/matching"
         "crypto-exchange-backend/models"
+        "crypto-exchange-backend/pubsub"
         exchangeredis "crypto-exchange-backend/redis"
         "crypto-exchange-backend/scheduler"
         "crypto-exchange-backend/settings"
@@ -102,6 +103,23 @@ func main() {
         database.Connect()
         seedAdmin()
         matching.SeedDefaultFees()
+
+        // Wire the matching engine to MarketHub's live ticker stream.
+        // Two-directional injection (no import cycle):
+        //   • matching ← MarketHub prices: SetPriceProvider lets the
+        //     matching engine read live prices from MarketHub's cache
+        //     instead of polling Binance REST.
+        //   • matching → MarketHub events: SetTickerHook lets MarketHub
+        //     notify the matching engine on every live tick so orders
+        //     are evaluated with zero polling latency.
+        matching.SetPriceProvider(func(symbol string) (float64, bool) {
+                tc := websocket.GlobalMarketHub.GetTicker(symbol)
+                if tc == nil {
+                        return 0, false
+                }
+                return tc.Price, true
+        })
+        websocket.SetTickerHook(matching.OnTickerUpdate)
 
         // Load system settings into in-memory cache (domains, SSL, feature flags)
         settings.Refresh()
@@ -223,41 +241,49 @@ func main() {
                 wallet.PUT("/notifications/:id/read", handlers.MarkNotificationRead)
         }
 
-        admin := v1.Group("/admin")
-        admin.Use(handlers.AuthMiddleware(), handlers.AdminMiddleware())
-        {
-                admin.GET("/stats", handlers.GetAdminStats)
-                admin.GET("/users", handlers.GetAllUsers)
-                admin.GET("/audit-logs", handlers.GetAuditLogs)
-                admin.GET("/audit-logs/export", handlers.ExportAuditLogsCSV)
-                admin.GET("/kyc", handlers.GetAllKYCRequests)
-                admin.PUT("/kyc/:id/review", handlers.ReviewKYC)
-                admin.PUT("/user/:id/role", handlers.UpdateUserRole)
-                admin.PUT("/user/:id/verify-email", handlers.AdminVerifyEmail)
-                admin.GET("/transactions", handlers.GetAllTransactions)
-                admin.PUT("/transactions/:id/review", handlers.ReviewTransaction)
-                admin.GET("/ads", handlers.GetAllAds)
-                admin.POST("/ads", handlers.CreateAd)
-                admin.PUT("/ads/:id", handlers.UpdateAd)
-                admin.DELETE("/ads/:id", handlers.DeleteAd)
-                admin.POST("/ads/upload", handlers.UploadAdImage)
-                admin.POST("/ads/suggest", handlers.SuggestAd)
-                admin.GET("/fees", handlers.GetFeeSchedules)
-                admin.PUT("/fees/:id", handlers.UpdateFeeSchedule)
+                admin := v1.Group("/admin")
+                admin.Use(handlers.AuthMiddleware(), handlers.AdminMiddleware())
+                {
+                        admin.GET("/stats", handlers.GetAdminStats)
+                        admin.GET("/users", handlers.GetAllUsers)
+                        admin.GET("/audit-logs", handlers.GetAuditLogs)
+                        admin.GET("/audit-logs/export", handlers.ExportAuditLogsCSV)
+                        admin.GET("/kyc", handlers.GetAllKYCRequests)
+                        admin.PUT("/kyc/:id/review", handlers.ReviewKYC)
+                        admin.PUT("/user/:id/role", handlers.UpdateUserRole)
+                        admin.PUT("/user/:id/verify-email", handlers.AdminVerifyEmail)
+                        admin.GET("/transactions", handlers.GetAllTransactions)
+                        admin.PUT("/transactions/:id/review", handlers.ReviewTransaction)
+                        admin.GET("/ads", handlers.GetAllAds)
+                        admin.POST("/ads", handlers.CreateAd)
+                        admin.PUT("/ads/:id", handlers.UpdateAd)
+                        admin.DELETE("/ads/:id", handlers.DeleteAd)
+                        admin.POST("/ads/upload", handlers.UploadAdImage)
+                        admin.POST("/ads/suggest", handlers.SuggestAd)
+                        admin.GET("/fees", handlers.GetFeeSchedules)
+                        admin.PUT("/fees/:id", handlers.UpdateFeeSchedule)
 
-                // System settings — domain management, SSL, feature flags
-                admin.GET("/settings", handlers.GetSystemSettings)
-                admin.PUT("/settings", handlers.UpdateSystemSettings)
-                admin.POST("/nginx/reload", handlers.ReloadNginx)
+                        // System settings — domain management, SSL, feature flags
+                        admin.GET("/settings", handlers.GetSystemSettings)
+                        admin.PUT("/settings", handlers.UpdateSystemSettings)
+                        admin.POST("/nginx/reload", handlers.ReloadNginx)
 
-                // SSL certificate management — one-click cert generation
-                // (local self-signed OR Let's Encrypt production certs),
-                // status inspection, renewal, and custom PEM upload.
-                admin.GET("/ssl/status", handlers.GetSSLStatus)
-                admin.POST("/ssl/generate", handlers.GenerateSSLCertificate)
-                admin.POST("/ssl/renew", handlers.RenewSSLCertificate)
-                admin.POST("/ssl/install", handlers.InstallSSLCertificate)
-        }
+                        // SSL certificate management — one-click cert generation
+                        // (local self-signed OR Let's Encrypt production certs),
+                        // status inspection, renewal, and custom PEM upload.
+                        admin.GET("/ssl/status", handlers.GetSSLStatus)
+                        admin.POST("/ssl/generate", handlers.GenerateSSLCertificate)
+                        admin.POST("/ssl/renew", handlers.RenewSSLCertificate)
+                        admin.POST("/ssl/install", handlers.InstallSSLCertificate)
+
+                        // Infrastructure metrics — for Prometheus scraping / admin
+                        // observability dashboard. Returns live WebSocket / SSE /
+                        // Binance / Redis PubSub / Go runtime stats. Polling by a
+                        // monitoring agent IS appropriate here (metrics are not
+                        // user-facing data); the endpoint is admin-only so internal
+                        // stats are never leaked publicly.
+                        admin.GET("/metrics", handlers.GetMetrics)
+                }
 
         // Public routes (outside versioned group)
         v1.GET("/ads", handlers.GetActiveAds)
@@ -290,9 +316,12 @@ func main() {
         srv := &http.Server{
                 Addr:         ":" + port,
                 Handler:      r,
-                ReadTimeout:  15 * time.Second,
-                WriteTimeout: 15 * time.Second,
-                IdleTimeout:  60 * time.Second,
+                ReadTimeout:  0, // no read timeout — required for long-lived WebSocket & SSE connections
+                WriteTimeout: 0, // no write timeout — required for SSE streaming and WebSocket idle
+                IdleTimeout:  120 * time.Second,
+                // Explicit read/write header timeouts still apply — they protect
+                // against slowloris-style attacks without breaking streaming.
+                ReadHeaderTimeout: 10 * time.Second,
         }
 
         go func() {
@@ -306,6 +335,12 @@ func main() {
         signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
         <-quit
         logg.Info("Shutting down server...", nil)
+
+        // Close Redis Pub/Sub subscriber FIRST so we stop receiving cross-
+        // instance events before our local subscribers are torn down.
+        // This prevents the subscriber goroutine from trying to deliver
+        // to handlers whose packages may have already been finalized.
+        pubsub.Close()
 
         ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
         defer cancel()

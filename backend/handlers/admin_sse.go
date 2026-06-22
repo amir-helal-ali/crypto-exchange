@@ -10,6 +10,7 @@ import (
 
         "crypto-exchange-backend/database"
         "crypto-exchange-backend/models"
+        "crypto-exchange-backend/pubsub"
         "crypto-exchange-backend/websocket"
 
         "github.com/gin-gonic/gin"
@@ -48,6 +49,13 @@ type sseEvent struct {
 var (
         adminSubsMu sync.RWMutex
         adminSubs   = make(map[*adminSubscriber]bool)
+
+        // adminSSEConns tracks the number of active SSE connections for
+        // observability and to enforce a hard cap (defence-in-depth against
+        // connection-amplification DoS, even though auth is required).
+        adminSSEMx   sync.Mutex
+        adminSSECount int
+        maxAdminSSEConns = 200 // per backend instance
 )
 
 // broadcastAdminEvent pushes an event to every subscribed admin client
@@ -80,8 +88,10 @@ func broadcastAdminEvent(eventType string, payload any) {
 }
 
 // NotifyAdminNewTransaction — call when a new deposit/withdrawal is created.
+// Publishes via Redis Pub/Sub so admin clients connected to OTHER
+// backend instances also receive the event (multi-instance support).
 func NotifyAdminNewTransaction(tx *models.Transaction) {
-        broadcastAdminEvent("tx", gin.H{
+        payload := gin.H{
                 "id":         tx.ID,
                 "user_id":    tx.UserID,
                 "currency":   tx.Currency,
@@ -89,26 +99,42 @@ func NotifyAdminNewTransaction(tx *models.Transaction) {
                 "type":       tx.Type,
                 "status":     tx.Status,
                 "created_at": tx.CreatedAt,
-        })
+        }
+        // Local broadcast + remote publish (handled atomically by PublishAdminEvent)
+        pubsub.PublishAdminEvent("tx", payload)
 }
 
 // NotifyAdminNewUser — call when a new user registers.
 func NotifyAdminNewUser(u *models.User) {
-        broadcastAdminEvent("users", gin.H{
+        payload := gin.H{
                 "id":         u.ID,
                 "username":   u.Username,
                 "email":      u.Email,
                 "created_at": u.CreatedAt,
-        })
+        }
+        pubsub.PublishAdminEvent("users", payload)
 }
 
 // NotifyAdminKYCSubmission — call when a user submits KYC documents.
 func NotifyAdminKYCSubmission(kyc *models.KYCRequest) {
-        broadcastAdminEvent("kyc", gin.H{
+        payload := gin.H{
                 "id":         kyc.ID,
                 "user_id":    kyc.UserID,
                 "status":     kyc.Status,
                 "updated_at": kyc.UpdatedAt,
+        }
+        pubsub.PublishAdminEvent("kyc", payload)
+}
+
+// init wires the PubSub subscriber to forward remote admin events
+// to local SSE subscribers. This runs once at package load — but
+// because Go guarantees init order within a binary and idempotency
+// is enforced inside pubsub.Init(), we don't need a sync.Once here.
+func init() {
+        pubsub.Init()
+        pubsub.OnAdminEvent(func(eventType string, data any) {
+                // Forward to local SSE subscribers
+                broadcastAdminEvent(eventType, data)
         })
 }
 
@@ -131,6 +157,28 @@ func HandleAdminSSE(c *gin.Context) {
                 c.JSON(http.StatusForbidden, gin.H{"error": "Admin only"})
                 return
         }
+
+        // Per-instance connection cap — protects against accidental
+        // connection leaks (e.g. browser tabs left open across days)
+        // and deliberate amplification attacks from a single admin token.
+        adminSSEMx.Lock()
+        if adminSSECount >= maxAdminSSEConns {
+                adminSSEMx.Unlock()
+                c.JSON(http.StatusTooManyRequests, gin.H{
+                        "error":  "too_many_sse_connections",
+                        "hint":   "Close unused admin tabs or increase the cap in handlers/admin_sse.go",
+                        "active": adminSSECount,
+                        "limit":  maxAdminSSEConns,
+                })
+                return
+        }
+        adminSSECount++
+        adminSSEMx.Unlock()
+        defer func() {
+                adminSSEMx.Lock()
+                adminSSECount--
+                adminSSEMx.Unlock()
+        }()
 
         types := map[string]bool{"*": true}
         if t := c.Query("types"); t != "" {
