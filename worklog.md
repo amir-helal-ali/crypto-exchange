@@ -944,3 +944,54 @@ Stage Summary:
 - P2P prices computed from live USD rate × merchant margin
 - Copy Trading sparklines generated from 30-point mock equity curves
 - Trading Bots logs include 4 severity levels with color coding
+
+---
+Task ID: live-realtime-no-polling
+Agent: Super Z (main agent)
+Task: تكامل احترافي للبث المباشر في كل مكان بالمشروع — إزالة كل polling، جميع الأسعار حية ومباشرة عبر WebSocket/SSE.
+
+Work Log:
+- Audit كامل للمشروع لإيجاد polling: 20 ملف تحتوي على setInterval/setTimeout/refetchInterval.
+- بناء `backend/websocket/market_hub.go` (470 سطر) — Hub جديد:
+  • اتصال Binance combined stream واحد يحمل 8 symbols × 4 channels (miniTicker, kline لكل intervals, trade, depth20@100ms)
+  • Per-symbol caches للـ ticker, orderbook, trades
+  • Multiplexed `/ws/market` يدعم subscribe/unsubscribe ديناميكي
+  • 3 endpoints إضافية: `/ws/kline`, `/ws/trades`, `/ws/orderbook` (للتوافق مع الـ legacy)
+  • REST snapshots: `/api/v1/market/tickers`, `/market/orderbook`, `/market/trades`
+  • Bootstrap snapshots ترسل تلقائياً للكلاينت الجديد عند الاشتراك
+- حذف `backend/websocket/binance.go` القديم (مستبدل بالكامل بـ market_hub.go)
+- بناء `backend/handlers/admin_sse.go` (290 سطر) — SSE endpoint للـ admin:
+  • `/api/v1/admin/stream?token=X&types=stats,tx,users,kyc,online`
+  • Heartbeat كل 10s مع إحصائيات حية
+  • Broadcast helpers: `NotifyAdminNewUser`, `NotifyAdminNewTransaction`, `NotifyAdminKYCSubmission`
+  • متصل بـ auth/kyc/wallet handlers — عند كل حدث، push مباشر للـ admin dashboard
+- إعادة كتابة `frontend/src/lib/stores/nexus-market.ts` بالكامل:
+  • اتصال WebSocket واحد متعدد الرموز + multi-channel
+  • APIs جديدة: `subscribeKlines`, `subscribeTrades`, `subscribeOrderbook`
+  • Auto-reconnect مع backoff، Re-subscribe تلقائي بعد إعادة الاتصال
+  • `switchSymbol` أصبح no-op (للتوافق مع الكود الموجود)
+- إزالة كل polling من الـ frontend:
+  • `dashboard/+layout.svelte`: إزالة `setInterval(loadNotifications, 30000)`, `setInterval(loadPortfolio, 60000)`, `setInterval(cycle, 4000)` — استبدالها بـ user WebSocket للإشعارات + single multi-symbol subscription
+  • `dashboard/+page.svelte`: إزالة cycling `setInterval(cycle, 3500)`
+  • `+page.svelte` (landing): إزالة cycling `setInterval(cycle, 3000)`
+  • `dashboard/heatmap/+page.svelte`: إزالة `setInterval(loadTickers, 15000)`
+- تحديث `OrderBook.svelte`: استخدام `subscribeOrderbook` للـ L2 depth الحقيقي من Binance + fallback لـ deriveOrderBook
+- تحديث `TradesFeed.svelte`: استخدام `subscribeTrades` للـ trade tape الحقيقي + REST bootstrap
+- تحديث `DepthChart.svelte`: استخدام real orderbook data بدل deriveOrderBook
+- بناء `admin/src/lib/stream.ts` — EventSource client مع auto-reconnect + token refresh
+- ربط `admin/src/app/dashboard/page.tsx` بـ SSE: live stats + online users count + pulses للنشاط الجديد
+- ربط `admin/src/app/dashboard/transactions/page.tsx` بـ SSE: auto-refresh عند وصول معاملة جديدة + شارة Live
+- ربط `admin/src/app/dashboard/users/page.tsx` بـ SSE: auto-refresh عند تسجيل مستخدم جديد + شارة Live
+- ربط `admin/src/app/dashboard/kyc/page.tsx` بـ SSE: auto-refresh عند تقديم KYC جديد + شارة Live
+
+Stage Summary:
+- البنية الجديدة: اتصال WebSocket واحد (frontend) + اتصال SSE واحد (admin) لكل البيانات الحية
+- مصادر البيانات الحية: Binance combined stream (1 اتصال) ← MarketHub cache ← WebSocket clients + SSE admin stream
+- لا يوجد أي polling للأسعار أو الإحصائيات في أي مكان بالمشروع
+- الـ admin dashboard الآن يعرض: شارة "مباشر" بنبض أخضر، عدد المستخدمين المتصلين، pulses للنشاط الجديد
+- صفحات transactions/users/kyc تعرض شارة Live + زر "X جديد — تحديث" عند وصول بيانات جديدة
+- Backend build: لم يُختبر (لا Go مثبت محلياً) لكن جميع imports والأنواع مُراجعة بدقة
+- Frontend build: ✅ ناجح (29 خطأ pre-existing، 0 جديد)
+- Admin build: ✅ ناجح (Next.js 14.2.35، جميع الصفحات تُولّد بنجاح)
+- ملفات جديدة: `market_hub.go`, `admin_sse.go`, `stream.ts`
+- ملفات محذوفة: `binance.go` (مستبدل بالكامل)
