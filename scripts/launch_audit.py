@@ -316,6 +316,79 @@ else:
 
 
 # ============================================================
+section("15. Ops scripts + deployment guide")
+# ============================================================
+backup_script = ROOT / "scripts" / "backup.sh"
+restore_script = ROOT / "scripts" / "restore.sh"
+deploy_guide = ROOT / "DEPLOY.md"
+
+if backup_script.exists() and os.access(backup_script, os.X_OK):
+    ok("ops: scripts/backup.sh exists + executable")
+else:
+    fail("ops: scripts/backup.sh missing or not executable")
+
+if restore_script.exists() and os.access(restore_script, os.X_OK):
+    ok("ops: scripts/restore.sh exists + executable")
+else:
+    fail("ops: scripts/restore.sh missing or not executable")
+
+if deploy_guide.exists():
+    deploy_txt = deploy_guide.read_text()
+    if len(deploy_txt) > 5000:
+        ok(f"ops: DEPLOY.md comprehensive ({len(deploy_txt)} chars)")
+    else:
+        warn("ops: DEPLOY.md seems thin")
+    # Check for key sections
+    for section_title in ["## 1. Architecture", "## 6. SSL", "## 9. Backups", "## 13. Security Checklist"]:
+        if section_title in deploy_txt:
+            ok(f"ops: DEPLOY.md contains '{section_title}'")
+        else:
+            fail(f"ops: DEPLOY.md missing section '{section_title}'")
+else:
+    fail("ops: DEPLOY.md missing")
+
+
+# ============================================================
+section("16. 2FA + rate limiting wired")
+# ============================================================
+auth_go = ROOT / "backend" / "handlers" / "auth.go"
+if auth_go.exists():
+    auth_txt = auth_go.read_text()
+    if "Setup2FA" in auth_txt and "Enable2FA" in auth_txt and "Disable2FA" in auth_txt and "Verify2FA" in auth_txt:
+        ok("backend: 2FA endpoints implemented (Setup/Enable/Disable/Verify)")
+    else:
+        fail("backend: 2FA endpoints incomplete")
+    if "validateTOTP" in auth_txt:
+        ok("backend: TOTP validation implemented")
+    else:
+        fail("backend: TOTP validation missing")
+else:
+    fail("backend: handlers/auth.go missing")
+
+mw_go = ROOT / "backend" / "handlers" / "middleware.go"
+if mw_go.exists():
+    mw_txt = mw_go.read_text()
+    if "NewRateLimiter" in mw_txt:
+        ok("backend: RateLimiter implemented")
+    else:
+        fail("backend: RateLimiter missing")
+    if "AuthMiddleware" in mw_txt and "AdminMiddleware" in mw_txt:
+        ok("backend: Auth + Admin middleware present")
+    else:
+        fail("backend: Auth/Admin middleware missing")
+
+# Check rate limiters wired in main.go
+if "authRL" in main_go and "RateLimiter(20, time.Minute)" in main_go:
+    ok("backend: auth rate limiter wired (20 req/min per IP)")
+else:
+    warn("backend: auth rate limiter config not found in main.go")
+if "rl := handlers.NewRateLimiter(120, time.Minute)" in main_go:
+    ok("backend: global rate limiter wired (120 req/min per IP)")
+else:
+    warn("backend: global rate limiter config not found in main.go")
+
+
+# ============================================================
 # Summary
 # ============================================================
 print(f"\n{BOLD}════════════════════════════════════════════{RESET}")
