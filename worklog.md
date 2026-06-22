@@ -995,3 +995,57 @@ Stage Summary:
 - Admin build: ✅ ناجح (Next.js 14.2.35، جميع الصفحات تُولّد بنجاح)
 - ملفات جديدة: `market_hub.go`, `admin_sse.go`, `stream.ts`
 - ملفات محذوفة: `binance.go` (مستبدل بالكامل)
+
+---
+Task ID: launch-readiness-realtime-hardening
+Agent: Super Z (main agent)
+Task: كمل تطوير المشروع — تكامل احترافي شامل، جاهزية للإطلاق، كل شيء حي ومباشر بدون polling.
+
+Work Log:
+- فحص شامل للمشروع الحالي: backend (Go/Gin), frontend (SvelteKit 5), admin (Next.js 14), nginx, docker-compose.
+- اكتشاف خطأ حرج: import cycle بين `websocket` و `handlers` (handlers.ValidateJWT مستخدم في user_ws.go، و websocket.GetOnlineUserCount مستخدم في admin_sse.go). النتيجة: backend لا يبني.
+- إنشاء package مستقل `backend/jwtutil/` يحتوي على Claims + Generate + Validate — كسر الـ cycle.
+- تعديل `handlers/auth.go`: Claims أصبح alias لـ jwtutil.Claims، GenerateJWT/ValidateJWT أصبحتا wrappers لـ jwtutil.
+- تعديل `websocket/user_ws.go`: استبدال `handlers.ValidateJWT` بـ `jwtutil.Validate`.
+- اكتشاف خطأ حرج ثانٍ: HTTP Server Timeouts في main.go (ReadTimeout=15s, WriteTimeout=15s) كانت ستكسر كل اتصالات SSE و WebSocket بعد 15 ثانية.
+- إصلاح main.go: ReadTimeout=0, WriteTimeout=0, IdleTimeout=120s, ReadHeaderTimeout=10s (للحماية من slowloris).
+- إصلاح nginx.conf.template: إضافة location block منفصل لـ /api/v1/admin/stream مع proxy_buffering off + proxy_read_timeout 86400s + chunked_transfer_encoding on (كان سيموت بعد 60s).
+- استرجاع `upgrader` (gorilla WebSocket Upgrader) الذي كان في binance.go المحذوف — إنشاء websocket/upgrader.go + websocket/env.go.
+- إصلاح خطأ syntax في market_hub.go: gin.H{"bids": []} غير صالح في Go — استبدال بـ [][2]float64{}.
+- بناء Redis Pub/Sub layer كامل `backend/pubsub/pubsub.go` (~290 سطر):
+  • 3 channels: ChanUserEvent, ChanAdminEvent, ChanMarketTick
+  • Subscribe/Publish APIs + fallback إلى local-only بدون Redis
+  • Subscriber goroutine مع auto-reconnect
+  • Init() idempotent (sync.Once)
+- ربط `websocket.NotifyUser` بـ PubSub: Publish محلي + بعيد، و OnUserEvent يعيد التسليم محليًا (بدون re-publish لتفادي loop).
+- ربط `handlers.NotifyAdminNewTransaction/NewUser/KYCSubmission` بـ PubSub.PublishAdminEvent، مع init() يربط OnAdminEvent بـ broadcastAdminEvent المحلي.
+- إضافة graceful shutdown: pubsub.Close() قبل srv.Shutdown في main.go.
+- إضافة SSE connection cap (200 per instance) في admin_sse.go للـ DoS protection.
+- تحديث .env بإضافة DOMAINS section + توثيق REDIS_URL requirement للـ production.
+- تثبيت Go 1.23.4 محليًا (لم يكن مثبتًا) لإمكانية البناء والتحقق.
+- Backend build: ✅ ناجح (22.4MB binary، go build ./... بدون أخطاء).
+- Frontend build: ✅ ناجح (SvelteKit 5 + Vite، 13.00s).
+- Admin build: ✅ ناجح (Next.js 14.2، 13 static pages).
+- Backend smoke test: ✅ PubSub + MarketHub + Redis fallback كلها تبدأ بشكل صحيح (DB failure متوقع بدون Postgres).
+- فحص polling النهائي:
+  • Frontend: لا يوجد polling شبكي. setInterval المتبقي cosmetic فقط (funding countdown, rewards tick).
+  • Admin: لا يوجد polling. setTimeout المتبقي debounce/clipboard UI.
+  • Backend: time.NewTicker فقط لـ pings/heartbeats/cleanup (مشروع، ليس polling لبيانات خارجية).
+
+Stage Summary:
+- ✅ Backend يبني بنجاح بعد إصلاح import cycle (jwtutil package جديد).
+- ✅ HTTP Server Timeouts مُصلحة (0/0/120/10) — SSE و WebSocket يعملان لأي مدة.
+- ✅ Nginx لديه location منفصل لـ /api/v1/admin/stream مع buffering off + 86400s timeout.
+- ✅ Redis Pub/Sub layer جاهز للمزامنة بين instances (user events + admin events + market ticks).
+- ✅ PubSub.Close() في graceful shutdown.
+- ✅ SSE connection cap (200/instance) للـ DoS protection.
+- ✅ Frontend + Admin builds بدون أخطاء.
+- ✅ لا يوجد أي polling للأسعار أو البيانات الحية في أي مكان بالمشروع.
+- البنية الجاهزة للإطلاق:
+  • اتصال WebSocket واحد (frontend → /ws/market) لكل البيانات الحية
+  • اتصال SSE واحد (admin → /api/v1/admin/stream) لكل التحديثات الإدارية
+  • اتصال WebSocket واحد لكل مستخدم (→ /ws/user) للإشعارات الشخصية
+  • Binance combined stream واحد في الـ backend يبث لكل الكلاينتس
+  • Redis Pub/Sub يضمن وصول الأحداث عبر instances متعددة
+- الملفات الجديدة: jwtutil/jwtutil.go, pubsub/pubsub.go, websocket/upgrader.go, websocket/env.go
+- الملفات المعدلة: main.go (timeouts + graceful shutdown), admin_sse.go (PubSub + cap), user_ws.go (PubSub + jwtutil), auth.go (jwtutil alias), market_hub.go (syntax fix), nginx.conf.template (SSE location), .env (domains + redis docs)

@@ -1,0 +1,835 @@
+     1→     1→package websocket
+     2→     2→
+     3→     3→import (
+     4→     4→        "encoding/json"
+     5→     5→        "log"
+     6→     6→        "net/http"
+     7→     7→        "strconv"
+     8→     8→        "strings"
+     9→     9→        "sync"
+    10→    10→        "time"
+    11→    11→
+    12→    12→        "github.com/gin-gonic/gin"
+    13→    13→        gorillaws "github.com/gorilla/websocket"
+    14→    14→)
+    15→    15→
+    16→    16→// ──────────────────────────────────────────────────────────────────────────
+    17→    17→// MarketHub — single source of truth for all live market data.
+    18→    18→//
+    19→    19→// Maintains ONE persistent combined stream to Binance that carries every
+    20→    20→// channel we need (miniTicker, kline, trade, depth) for every supported
+    21→    21→// symbol.  Incoming messages are routed to interested client connections
+    22→    22→// based on their subscriptions.
+    23→    23→//
+    24→    24→// Clients can either:
+    25→    25→//   • Open a dedicated single-purpose socket  →  /ws/kline, /ws/trades,
+    26→    26→//     /ws/orderbook  (backwards-compatible, simple)
+    27→    27→//   • Open a single multiplexed socket        →  /ws/market
+    28→    28→//     and send {"action":"subscribe","symbols":[...],"channels":[...]}
+    29→    29→//     messages to dynamically select what they want.
+    30→    30→// ──────────────────────────────────────────────────────────────────────────
+    31→    31→
+    32→    32→// Supported Binance symbols (lowercase for stream URLs).
+    33→    33→var supportedSymbols = []string{
+    34→    34→        "btcusdt", "ethusdt", "bnbusdt", "solusdt",
+    35→    35→        "xrpusdt", "adausdt", "dogeusdt", "dotusdt",
+    36→    36→}
+    37→    37→
+    38→    38→// Supported kline intervals.
+    39→    39→var supportedIntervals = []string{"1m", "5m", "15m", "1h", "4h", "1d"}
+    40→    40→
+    41→    41→// ── Incoming Binance message shapes ───────────────────────────────────────
+    42→    42→
+    43→    43→type binanceMiniTicker struct {
+    44→    44→        Symbol       string `json:"s"`
+    45→    45→        Price        string `json:"c"`
+    46→    46→        High         string `json:"h"`
+    47→    47→        Low          string `json:"l"`
+    48→    48→        Volume       string `json:"v"`    // base volume
+    49→    49→        QuoteVolume  string `json:"q"`    // quote volume (USDT)
+    50→    50→        PriceChange  string `json:"P"`    // 24h change %
+    51→    51→}
+    52→    52→
+    53→    53→type binanceKlineEvent struct {
+    54→    54→        Symbol string `json:"s"`
+    55→    55→        Kline  struct {
+    56→    56→                StartTime       int64  `json:"t"`
+    57→    57→                EndTime         int64  `json:"T"`
+    58→    58→                Open            string `json:"o"`
+    59→    59→                High            string `json:"h"`
+    60→    60→                Low             string `json:"l"`
+    61→    61→                Close           string `json:"c"`
+    62→    62→                Volume          string `json:"v"`
+    63→    63→                QuoteVolume     string `json:"q"`
+    64→    64→                IsClosed        bool   `json:"x"`
+    65→    65→                Interval        string `json:"i"`
+    66→    66→        } `json:"k"`
+    67→    67→}
+    68→    68→
+    69→    69→type binanceTrade struct {
+    70→    70→        Symbol    string `json:"s"`
+    71→    71→        Price     string `json:"p"`
+    72→    72→        Qty       string `json:"q"`
+    73→    73→        TradeTime int64  `json:"T"`
+    74→    74→        IsBuyer   bool   `json:"m"` // true = buyer is market maker → SELL side aggressor
+    75→    75→        TradeID   int64  `json:"t"`
+    76→    76→}
+    77→    77→
+    78→    78→type binanceDepth struct {
+    79→    79→        LastUpdateID int64        `json:"lastUpdateId"`
+    80→    80→        Bids         [][2]string  `json:"bids"`
+    81→    81→        Asks         [][2]string  `json:"asks"`
+    82→    82→}
+    83→    83→
+    84→    84→type binanceCombinedMsg struct {
+    85→    85→        Stream string          `json:"stream"`
+    86→    86→        Data   json.RawMessage `json:"data"`
+    87→    87→}
+    88→    88→
+    89→    89→// ── Outgoing client message shapes (what we send to browsers) ─────────────
+    90→    90→
+    91→    91→type ClientMsg struct {
+    92→    92→        Type string      `json:"type"` // "ticker" | "kline" | "trade" | "depth" | "snapshot" | "error"
+    93→    93→        Sym  string      `json:"symbol,omitempty"`
+    94→    94→        Data interface{} `json:"data,omitempty"`
+    95→    95→        Msg  string      `json:"message,omitempty"`
+    96→    96→}
+    97→    97→
+    98→    98→// ── Per-symbol caches ─────────────────────────────────────────────────────
+    99→    99→
+   100→   100→type TickerCache struct {
+   101→   101→        Symbol     string  `json:"symbol"`
+   102→   102→        Price      float64 `json:"price"`
+   103→   103→        Change24h  float64 `json:"change_24h"`
+   104→   104→        High24h    float64 `json:"high_24h"`
+   105→   105→        Low24h     float64 `json:"low_24h"`
+   106→   106→        Volume24h  float64 `json:"volume_24h"`
+   107→   107→        QuoteVol   float64 `json:"quote_volume_24h"`
+   108→   108→        UpdatedAt  int64   `json:"ts"`
+   109→   109→}
+   110→   110→
+   111→   111→type OrderbookCache struct {
+   112→   112→        Bids       [][2]float64 `json:"bids"`
+   113→   113→        Asks       [][2]float64 `json:"asks"`
+   114→   114→        UpdatedAt  int64        `json:"ts"`
+   115→   115→}
+   116→   116→
+   117→   117→type TradeCache struct {
+   118→   118→        ID     int64   `json:"id"`
+   119→   119→        Price  float64 `json:"price"`
+   120→   120→        Qty    float64 `json:"qty"`
+   121→   121→        Side   string  `json:"side"` // "BUY" | "SELL"
+   122→   122→        Time   int64   `json:"time"`
+   123→   123→}
+   124→   124→
+   125→   125→// ── Hub state ─────────────────────────────────────────────────────────────
+   126→   126→
+   127→   127→type MarketHub struct {
+   128→   128→        mu sync.RWMutex
+   129→   129→
+   130→   130→        // Per-symbol caches (uppercase symbol keys)
+   131→   131→        tickers    map[string]*TickerCache
+   132→   132→        orderbooks map[string]*OrderbookCache
+   133→   133→        trades     map[string][]TradeCache // last N trades per symbol
+   134→   134→
+   135→   135→        // Per-symbol per-interval last kline (for snapshot bootstrapping)
+   136→   136→        klines map[string]map[string]binanceKlineEvent // sym → interval → last kline
+   137→   137→
+   138→   138→        // Client subscriptions
+   139→   139→        clients    map[*MarketClient]bool
+   140→   140→        register   chan *MarketClient
+   141→   141→        unregister chan *MarketClient
+   142→   142→
+   143→   143→        // Binance reconnect signal
+   144→   144→        binanceReconnect chan struct{}
+   145→   145→}
+   146→   146→
+   147→   147→type MarketClient struct {
+   148→   148→        conn     *gorillaws.Conn
+   149→   149→        send     chan []byte
+   150→   150→        subs     map[string]map[string]bool // symbol → set of channels ("ticker","trade","depth","kline_1m",...)
+   151→   151→        subsMu   sync.RWMutex
+   152→   152→        hub      *MarketHub
+   153→   153→        closed   bool
+   154→   154→        closeMu  sync.Mutex
+   155→   155→}
+   156→   156→
+   157→   157→const (
+   158→   158→        clientSendBufSize = 512
+   159→   159→        maxTradesPerSym   = 30
+   160→   160→)
+   161→   161→
+   162→   162→var GlobalMarketHub = &MarketHub{
+   163→   163→        tickers:          make(map[string]*TickerCache),
+   164→   164→        orderbooks:       make(map[string]*OrderbookCache),
+   165→   165→        trades:           make(map[string][]TradeCache),
+   166→   166→        klines:           make(map[string]map[string]binanceKlineEvent),
+   167→   167→        clients:          make(map[*MarketClient]bool),
+   168→   168→        register:         make(chan *MarketClient, 64),
+   169→   169→        unregister:       make(chan *MarketClient, 64),
+   170→   170→        binanceReconnect: make(chan struct{}, 1),
+   171→   171→}
+   172→   172→
+   173→   173→func init() {
+   174→   174→        go GlobalMarketHub.run()
+   175→   175→        go GlobalMarketHub.connectBinance()
+   176→   176→}
+   177→   177→
+   178→   178→// ── Hub main loop ─────────────────────────────────────────────────────────
+   179→   179→
+   180→   180→func (h *MarketHub) run() {
+   181→   181→        ticker := time.NewTicker(2 * time.Second)
+   182→   182→        defer ticker.Stop()
+   183→   183→        for {
+   184→   184→                select {
+   185→   185→                case c := <-h.register:
+   186→   186→                        h.mu.Lock()
+   187→   187→                        h.clients[c] = true
+   188→   188→                        h.mu.Unlock()
+   189→   189→                        log.Printf("[MarketHub] client connected (%d total)", len(h.clients))
+   190→   190→                        // Send bootstrap snapshots for any symbols this client is interested in
+   191→   191→                        h.sendBootstrap(c)
+   192→   192→                case c := <-h.unregister:
+   193→   193→                        h.mu.Lock()
+   194→   194→                        if _, ok := h.clients[c]; ok {
+   195→   195→                                delete(h.clients, c)
+   196→   196→                        }
+   197→   197→                        h.mu.Unlock()
+   198→   198→                        c.safeClose()
+   199→   199→                        log.Printf("[MarketHub] client disconnected (%d total)", len(h.clients))
+   200→   200→                case <-ticker.C:
+   201→   201→                        // periodic noop — placeholder for future stats
+   202→   202→                }
+   203→   203→        }
+   204→   204→}
+   205→   205→
+   206→   206→// ── Binance combined stream ───────────────────────────────────────────────
+   207→   207→
+   208→   208→func (h *MarketHub) connectBinance() {
+   209→   209→        // Build a single combined stream URL carrying every channel/symbol we need.
+   210→   210→        streams := []string{}
+   211→   211→        for _, s := range supportedSymbols {
+   212→   212→                streams = append(streams, s+"@miniTicker")
+   213→   213→                streams = append(streams, s+"@trade")
+   214→   214→                streams = append(streams, s+"@depth20@100ms")
+   215→   215→        }
+   216→   216→        for _, s := range supportedSymbols {
+   217→   217→                for _, iv := range supportedIntervals {
+   218→   218→                        streams = append(streams, s+"@kline_"+iv)
+   219→   219→                }
+   220→   220→        }
+   221→   221→        url := "wss://stream.binance.com:9443/stream?streams=" + strings.Join(streams, "/")
+   222→   222→
+   223→   223→        for {
+   224→   224→                log.Printf("[MarketHub] connecting to Binance combined stream (%d sub-streams)", len(streams))
+   225→   225→                conn, _, err := gorillaws.DefaultDialer.Dial(url, nil)
+   226→   226→                if err != nil {
+   227→   227→                        log.Printf("[MarketHub] Binance dial failed: %v — retrying in 5s", err)
+   228→   228→                        time.Sleep(5 * time.Second)
+   229→   229→                        continue
+   230→   230→                }
+   231→   231→                log.Printf("[MarketHub] Binance combined stream connected")
+   232→   232→
+   233→   233→                for {
+   234→   234→                        _, raw, err := conn.ReadMessage()
+   235→   235→                        if err != nil {
+   236→   236→                                log.Printf("[MarketHub] Binance read error: %v — reconnecting", err)
+   237→   237→                                conn.Close()
+   238→   238→                                break
+   239→   239→                        }
+   240→   240→                        h.handleBinanceMessage(raw)
+   241→   241→                }
+   242→   242→        }
+   243→   243→}
+   244→   244→
+   245→   245→func (h *MarketHub) handleBinanceMessage(raw []byte) {
+   246→   246→        var combined binanceCombinedMsg
+   247→   247→        if err := json.Unmarshal(raw, &combined); err != nil {
+   248→   248→                return
+   249→   249→        }
+   250→   250→        parts := strings.Split(combined.Stream, "@")
+   251→   251→        if len(parts) < 2 {
+   252→   252→                return
+   253→   253→        }
+   254→   254→        symLower := parts[0]
+   255→   255→        channel := parts[1]
+   256→   256→        symUpper := strings.ToUpper(symLower)
+   257→   257→
+   258→   258→        switch {
+   259→   259→        case channel == "miniticker":
+   260→   260→                var t binanceMiniTicker
+   261→   261→                if err := json.Unmarshal(combined.Data, &t); err != nil {
+   262→   262→                        return
+   263→   263→                }
+   264→   264→                h.cacheTicker(symUpper, &t)
+   265→   265→                h.broadcastTicker(symUpper)
+   266→   266→        case strings.HasPrefix(channel, "kline_"):
+   267→   267→                interval := strings.TrimPrefix(channel, "kline_")
+   268→   268→                var k binanceKlineEvent
+   269→   269→                if err := json.Unmarshal(combined.Data, &k); err != nil {
+   270→   270→                        return
+   271→   271→                }
+   272→   272→                h.cacheKline(symUpper, interval, &k)
+   273→   273→                h.broadcastKline(symUpper, interval, &k)
+   274→   274→        case channel == "trade":
+   275→   275→                var tr binanceTrade
+   276→   276→                if err := json.Unmarshal(combined.Data, &tr); err != nil {
+   277→   277→                        return
+   278→   278→                }
+   279→   279→                h.cacheTrade(symUpper, &tr)
+   280→   280→                h.broadcastTrade(symUpper, &tr)
+   281→   281→        case strings.HasPrefix(channel, "depth"):
+   282→   282→                // Binance partial book depth stream payload (top-20 levels @ 100ms)
+   283→   283→                var d binanceDepth
+   284→   284→                if err := json.Unmarshal(combined.Data, &d); err != nil {
+   285→   285→                        return
+   286→   286→                }
+   287→   287→                h.cacheOrderbook(symUpper, &d)
+   288→   288→                h.broadcastDepth(symUpper, &d)
+   289→   289→        }
+   290→   290→}
+   291→   291→
+   292→   292→// ── Cache updaters ────────────────────────────────────────────────────────
+   293→   293→
+   294→   294→func parseFloat(s string) float64 {
+   295→   295→        f, _ := strconv.ParseFloat(s, 64)
+   296→   296→        return f
+   297→   297→}
+   298→   298→
+   299→   299→func (h *MarketHub) cacheTicker(sym string, t *binanceMiniTicker) {
+   300→   300→        h.mu.Lock()
+   301→   301→        defer h.mu.Unlock()
+   302→   302→        h.tickers[sym] = &TickerCache{
+   303→   303→                Symbol:    sym,
+   304→   304→                Price:     parseFloat(t.Price),
+   305→   305→                Change24h: parseFloat(t.PriceChange),
+   306→   306→                High24h:   parseFloat(t.High),
+   307→   307→                Low24h:    parseFloat(t.Low),
+   308→   308→                Volume24h: parseFloat(t.Volume),
+   309→   309→                QuoteVol:  parseFloat(t.QuoteVolume),
+   310→   310→                UpdatedAt: time.Now().UnixMilli(),
+   311→   311→        }
+   312→   312→}
+   313→   313→
+   314→   314→func (h *MarketHub) cacheKline(sym, interval string, k *binanceKlineEvent) {
+   315→   315→        h.mu.Lock()
+   316→   316→        defer h.mu.Unlock()
+   317→   317→        if h.klines[sym] == nil {
+   318→   318→                h.klines[sym] = make(map[string]binanceKlineEvent)
+   319→   319→        }
+   320→   320→        h.klines[sym][interval] = *k
+   321→   321→}
+   322→   322→
+   323→   323→func (h *MarketHub) cacheTrade(sym string, tr *binanceTrade) {
+   324→   324→        h.mu.Lock()
+   325→   325→        defer h.mu.Unlock()
+   326→   326→        side := "BUY"
+   327→   327→        if tr.IsBuyer {
+   328→   328→                side = "SELL" // buyer is maker → aggressor is seller
+   329→   329→        }
+   330→   330→        t := TradeCache{
+   331→   331→                ID:    tr.TradeID,
+   332→   332→                Price: parseFloat(tr.Price),
+   333→   333→                Qty:   parseFloat(tr.Qty),
+   334→   334→                Side:  side,
+   335→   335→                Time:  tr.TradeTime,
+   336→   336→        }
+   337→   337→        trades := h.trades[sym]
+   338→   338→        trades = append([]TradeCache{t}, trades...)
+   339→   339→        if len(trades) > maxTradesPerSym {
+   340→   340→                trades = trades[:maxTradesPerSym]
+   341→   341→        }
+   342→   342→        h.trades[sym] = trades
+   343→   343→}
+   344→   344→
+   345→   345→func (h *MarketHub) cacheOrderbook(sym string, d *binanceDepth) {
+   346→   346→        h.mu.Lock()
+   347→   347→        defer h.mu.Unlock()
+   348→   348→        bids := make([][2]float64, 0, len(d.Bids))
+   349→   349→        for _, b := range d.Bids {
+   350→   350→                bids = append(bids, [2]float64{parseFloat(b[0]), parseFloat(b[1])})
+   351→   351→        }
+   352→   352→        asks := make([][2]float64, 0, len(d.Asks))
+   353→   353→        for _, a := range d.Asks {
+   354→   354→                asks = append(asks, [2]float64{parseFloat(a[0]), parseFloat(a[1])})
+   355→   355→        }
+   356→   356→        h.orderbooks[sym] = &OrderbookCache{
+   357→   357→                Bids:      bids,
+   358→   358→                Asks:      asks,
+   359→   359→                UpdatedAt: time.Now().UnixMilli(),
+   360→   360→        }
+   361→   361→}
+   362→   362→
+   363→   363→// ── Broadcasters ──────────────────────────────────────────────────────────
+   364→   364→
+   365→   365→func (h *MarketHub) broadcastTicker(sym string) {
+   366→   366→        h.mu.RLock()
+   367→   367→        tc, ok := h.tickers[sym]
+   368→   368→        clients := make([]*MarketClient, 0, len(h.clients))
+   369→   369→        for c := range h.clients {
+   370→   370→                clients = append(clients, c)
+   371→   371→        }
+   372→   372→        h.mu.RUnlock()
+   373→   373→        if !ok {
+   374→   374→                return
+   375→   375→        }
+   376→   376→        msg, _ := json.Marshal(ClientMsg{
+   377→   377→                Type: "ticker", Sym: sym, Data: tc,
+   378→   378→        })
+   379→   379→        for _, c := range clients {
+   380→   380→                if c.isSubscribed(sym, "ticker") {
+   381→   381→                        c.trySend(msg)
+   382→   382→                }
+   383→   383→        }
+   384→   384→}
+   385→   385→
+   386→   386→func (h *MarketHub) broadcastKline(sym, interval string, k *binanceKlineEvent) {
+   387→   387→        h.mu.RLock()
+   388→   388→        clients := make([]*MarketClient, 0, len(h.clients))
+   389→   389→        for c := range h.clients {
+   390→   390→                clients = append(clients, c)
+   391→   391→        }
+   392→   392→        h.mu.RUnlock()
+   393→   393→        out := map[string]interface{}{
+   394→   394→                "symbol":    sym,
+   395→   395→                "interval":  interval,
+   396→   396→                "time":      k.Kline.StartTime / 1000,
+   397→   397→                "open":      parseFloat(k.Kline.Open),
+   398→   398→                "high":      parseFloat(k.Kline.High),
+   399→   399→                "low":       parseFloat(k.Kline.Low),
+   400→   400→                "close":     parseFloat(k.Kline.Close),
+   401→   401→                "volume":    parseFloat(k.Kline.Volume),
+   402→   402→                "closed":    k.Kline.IsClosed,
+   403→   403→        }
+   404→   404→        msg, _ := json.Marshal(ClientMsg{
+   405→   405→                Type: "kline", Sym: sym, Data: out,
+   406→   406→        })
+   407→   407→        ch := "kline_" + interval
+   408→   408→        for _, c := range clients {
+   409→   409→                if c.isSubscribed(sym, ch) {
+   410→   410→                        c.trySend(msg)
+   411→   411→                }
+   412→   412→        }
+   413→   413→}
+   414→   414→
+   415→   415→func (h *MarketHub) broadcastTrade(sym string, tr *binanceTrade) {
+   416→   416→        h.mu.RLock()
+   417→   417→        clients := make([]*MarketClient, 0, len(h.clients))
+   418→   418→        for c := range h.clients {
+   419→   419→                clients = append(clients, c)
+   420→   420→        }
+   421→   421→        h.mu.RUnlock()
+   422→   422→        side := "BUY"
+   423→   423→        if tr.IsBuyer {
+   424→   424→                side = "SELL"
+   425→   425→        }
+   426→   426→        out := map[string]interface{}{
+   427→   427→                "symbol": sym,
+   428→   428→                "id":     tr.TradeTime,
+   429→   429→                "price":  parseFloat(tr.Price),
+   430→   430→                "qty":    parseFloat(tr.Qty),
+   431→   431→                "side":   side,
+   432→   432→                "time":   tr.TradeTime,
+   433→   433→        }
+   434→   434→        msg, _ := json.Marshal(ClientMsg{
+   435→   435→                Type: "trade", Sym: sym, Data: out,
+   436→   436→        })
+   437→   437→        for _, c := range clients {
+   438→   438→                if c.isSubscribed(sym, "trade") {
+   439→   439→                        c.trySend(msg)
+   440→   440→                }
+   441→   441→        }
+   442→   442→}
+   443→   443→
+   444→   444→func (h *MarketHub) broadcastDepth(sym string, d *binanceDepth) {
+   445→   445→        h.mu.RLock()
+   446→   446→        clients := make([]*MarketClient, 0, len(h.clients))
+   447→   447→        for c := range h.clients {
+   448→   448→                clients = append(clients, c)
+   449→   449→        }
+   450→   450→        h.mu.RUnlock()
+   451→   451→        bids := make([][2]float64, 0, len(d.Bids))
+   452→   452→        for _, b := range d.Bids {
+   453→   453→                bids = append(bids, [2]float64{parseFloat(b[0]), parseFloat(b[1])})
+   454→   454→        }
+   455→   455→        asks := make([][2]float64, 0, len(d.Asks))
+   456→   456→        for _, a := range d.Asks {
+   457→   457→                asks = append(asks, [2]float64{parseFloat(a[0]), parseFloat(a[1])})
+   458→   458→        }
+   459→   459→        out := map[string]interface{}{
+   460→   460→                "symbol": sym,
+   461→   461→                "bids":   bids,
+   462→   462→                "asks":   asks,
+   463→   463→                "ts":     time.Now().UnixMilli(),
+   464→   464→        }
+   465→   465→        msg, _ := json.Marshal(ClientMsg{
+   466→   466→                Type: "depth", Sym: sym, Data: out,
+   467→   467→        })
+   468→   468→        for _, c := range clients {
+   469→   469→                if c.isSubscribed(sym, "depth") {
+   470→   470→                        c.trySend(msg)
+   471→   471→                }
+   472→   472→        }
+   473→   473→}
+   474→   474→
+   475→   475→// ── Bootstrap snapshots (sent on client connect) ──────────────────────────
+   476→   476→
+   477→   477→func (h *MarketHub) sendBootstrap(c *MarketClient) {
+   478→   478→        c.subsMu.RLock()
+   479→   479→        symbols := make([]string, 0, len(c.subs))
+   480→   480→        for sym := range c.subs {
+   481→   481→                symbols = append(symbols, sym)
+   482→   482→        }
+   483→   483→        c.subsMu.RUnlock()
+   484→   484→
+   485→   485→        if len(symbols) == 0 {
+   486→   486→                return
+   487→   487→        }
+   488→   488→
+   489→   489→        h.mu.RLock()
+   490→   490→        defer h.mu.RUnlock()
+   491→   491→
+   492→   492→        for _, sym := range symbols {
+   493→   493→                if tc, ok := h.tickers[sym]; ok && c.isSubscribed(sym, "ticker") {
+   494→   494→                        msg, _ := json.Marshal(ClientMsg{Type: "ticker", Sym: sym, Data: tc})
+   495→   495→                        c.trySend(msg)
+   496→   496→                }
+   497→   497→                if c.isSubscribed(sym, "depth") {
+   498→   498→                        if ob, ok := h.orderbooks[sym]; ok {
+   499→   499→                                msg, _ := json.Marshal(ClientMsg{
+   500→   500→                                        Type: "depth", Sym: sym,
+   501→   501→                                        Data: map[string]interface{}{
+   502→   502→                                                "symbol": sym,
+   503→   503→                                                "bids":   ob.Bids,
+   504→   504→                                                "asks":   ob.Asks,
+   505→   505→                                                "ts":     ob.UpdatedAt,
+   506→   506→                                        },
+   507→   507→                                })
+   508→   508→                                c.trySend(msg)
+   509→   509→                        }
+   510→   510→                }
+   511→   511→                if c.isSubscribed(sym, "trade") {
+   512→   512→                        if trades, ok := h.trades[sym]; ok && len(trades) > 0 {
+   513→   513→                                msg, _ := json.Marshal(ClientMsg{
+   514→   514→                                        Type: "trades_snapshot", Sym: sym,
+   515→   515→                                        Data: trades,
+   516→   516→                                })
+   517→   517→                                c.trySend(msg)
+   518→   518→                        }
+   519→   519→                }
+   520→   520→        }
+   521→   521→}
+   522→   522→
+   523→   523→// ── Public accessors (for REST endpoints) ─────────────────────────────────
+   524→   524→
+   525→   525→func (h *MarketHub) GetAllTickers() []*TickerCache {
+   526→   526→        h.mu.RLock()
+   527→   527→        defer h.mu.RUnlock()
+   528→   528→        out := make([]*TickerCache, 0, len(h.tickers))
+   529→   529→        for _, t := range h.tickers {
+   530→   530→                cp := *t
+   531→   531→                out = append(out, &cp)
+   532→   532→        }
+   533→   533→        return out
+   534→   534→}
+   535→   535→
+   536→   536→func (h *MarketHub) GetTicker(sym string) *TickerCache {
+   537→   537→        h.mu.RLock()
+   538→   538→        defer h.mu.RUnlock()
+   539→   539→        if t, ok := h.tickers[strings.ToUpper(sym)]; ok {
+   540→   540→                cp := *t
+   541→   541→                return &cp
+   542→   542→        }
+   543→   543→        return nil
+   544→   544→}
+   545→   545→
+   546→   546→func (h *MarketHub) GetOrderbook(sym string) *OrderbookCache {
+   547→   547→        h.mu.RLock()
+   548→   548→        defer h.mu.RUnlock()
+   549→   549→        if ob, ok := h.orderbooks[strings.ToUpper(sym)]; ok {
+   550→   550→                cp := *ob
+   551→   551→                return &cp
+   552→   552→        }
+   553→   553→        return nil
+   554→   554→}
+   555→   555→
+   556→   556→func (h *MarketHub) GetRecentTrades(sym string) []TradeCache {
+   557→   557→        h.mu.RLock()
+   558→   558→        defer h.mu.RUnlock()
+   559→   559→        src := h.trades[strings.ToUpper(sym)]
+   560→   560→        out := make([]TradeCache, len(src))
+   561→   561→        copy(out, src)
+   562→   562→        return out
+   563→   563→}
+   564→   564→
+   565→   565→// ── Client helpers ────────────────────────────────────────────────────────
+   566→   566→
+   567→   567→func (c *MarketClient) isSubscribed(sym, channel string) bool {
+   568→   568→        c.subsMu.RLock()
+   569→   569→        defer c.subsMu.RUnlock()
+   570→   570→        chans, ok := c.subs[strings.ToUpper(sym)]
+   571→   571→        if !ok {
+   572→   572→                return false
+   573→   573→        }
+   574→   574→        return chans[channel]
+   575→   575→}
+   576→   576→
+   577→   577→func (c *MarketClient) trySend(msg []byte) {
+   578→   578→        defer func() {
+   579→   579→                _ = recover()
+   580→   580→        }()
+   581→   581→        select {
+   582→   582→        case c.send <- msg:
+   583→   583→        default:
+   584→   584→                // buffer full — drop, don't block the hub
+   585→   585→        }
+   586→   586→}
+   587→   587→
+   588→   588→func (c *MarketClient) safeClose() {
+   589→   589→        c.closeMu.Lock()
+   590→   590→        defer c.closeMu.Unlock()
+   591→   591→        if c.closed {
+   592→   592→                return
+   593→   593→        }
+   594→   594→        c.closed = true
+   595→   595→        close(c.send)
+   596→   596→        _ = c.conn.Close()
+   597→   597→}
+   598→   598→
+   599→   599→// ── Subscription message handling ─────────────────────────────────────────
+   600→   600→
+   601→   601→type subAction struct {
+   602→   602→        Action   string   `json:"action"`   // "subscribe" | "unsubscribe"
+   603→   603→        Symbols  []string `json:"symbols"`
+   604→   604→        Channels []string `json:"channels"` // "ticker","trade","depth","kline_1m","kline_5m",...
+   605→   605→}
+   606→   606→
+   607→   607→func (c *MarketClient) handleSubAction(payload []byte) {
+   608→   608→        var a subAction
+   609→   609→        if err := json.Unmarshal(payload, &a); err != nil {
+   610→   610→                return
+   611→   611→        }
+   612→   612→        c.subsMu.Lock()
+   613→   613→        for _, raw := range a.Symbols {
+   614→   614→                sym := strings.ToUpper(raw)
+   615→   615→                if a.Action == "subscribe" || a.Action == "sub" {
+   616→   616→                        if c.subs[sym] == nil {
+   617→   617→                                c.subs[sym] = make(map[string]bool)
+   618→   618→                        }
+   619→   619→                        for _, ch := range a.Channels {
+   620→   620→                                c.subs[sym][ch] = true
+   621→   621→                        }
+   622→   622→                } else if a.Action == "unsubscribe" || a.Action == "unsub" {
+   623→   623→                        if c.subs[sym] == nil {
+   624→   624→                                continue
+   625→   625→                        }
+   626→   626→                        if len(a.Channels) == 0 {
+   627→   627→                                delete(c.subs, sym)
+   628→   628→                        } else {
+   629→   629→                                for _, ch := range a.Channels {
+   630→   630→                                        delete(c.subs[sym], ch)
+   631→   631→                                }
+   632→   632→                                if len(c.subs[sym]) == 0 {
+   633→   633→                                        delete(c.subs, sym)
+   634→   634→                                }
+   635→   635→                        }
+   636→   636→                }
+   637→   637→        }
+   638→   638→        c.subsMu.Unlock()
+   639→   639→        // Send bootstrap for newly-subscribed symbols
+   640→   640→        if a.Action == "subscribe" || a.Action == "sub" {
+   641→   641→                c.hub.sendBootstrap(c)
+   642→   642→        }
+   643→   643→}
+   644→   644→
+   645→   645→// ── HTTP Handlers ─────────────────────────────────────────────────────────
+   646→   646→
+   647→   647→// HandleMarketWebSocket — multiplexed market data socket.
+   648→   648→// Clients may pass ?symbols=BTCUSDT,ETHUSDT&channels=ticker,trade,depth,kline_1m
+   649→   649→// for an initial subscription, then send JSON messages to dynamically update.
+   650→   650→func HandleMarketWebSocket(c *gin.Context) {
+   651→   651→        conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+   652→   652→        if err != nil {
+   653→   653→                log.Printf("[MarketHub] upgrade error: %v", err)
+   654→   654→                return
+   655→   655→        }
+   656→   656→
+   657→   657→        client := &MarketClient{
+   658→   658→                conn: conn,
+   659→   659→                send: make(chan []byte, clientSendBufSize),
+   660→   660→                subs: make(map[string]map[string]bool),
+   661→   661→                hub:  GlobalMarketHub,
+   662→   662→        }
+   663→   663→
+   664→   664→        // Parse initial subscription from query string
+   665→   665→        if syms := c.Query("symbols"); syms != "" {
+   666→   666→                channels := []string{"ticker"}
+   667→   667→                if ch := c.Query("channels"); ch != "" {
+   668→   668→                        channels = strings.Split(ch, ",")
+   669→   669→                }
+   670→   670→                client.subsMu.Lock()
+   671→   671→                for _, raw := range strings.Split(syms, ",") {
+   672→   672→                        sym := strings.ToUpper(strings.TrimSpace(raw))
+   673→   673→                        if sym == "" {
+   674→   674→                                continue
+   675→   675→                        }
+   676→   676→                        if client.subs[sym] == nil {
+   677→   677→                                client.subs[sym] = make(map[string]bool)
+   678→   678→                        }
+   679→   679→                        for _, ch := range channels {
+   680→   680→                                client.subs[sym][strings.TrimSpace(ch)] = true
+   681→   681→                        }
+   682→   682→                }
+   683→   683→                client.subsMu.Unlock()
+   684→   684→        }
+   685→   685→
+   686→   686→        GlobalMarketHub.register <- client
+   687→   687→
+   688→   688→        go client.writePump()
+   689→   689→        go client.readPump()
+   690→   690→}
+   691→   691→
+   692→   692→// HandleKlineWebSocket — backwards-compatible single-symbol kline stream.
+   693→   693→// URL: /ws/kline?symbol=BTCUSDT&interval=1m
+   694→   694→func HandleKlineWebSocket(c *gin.Context) {
+   695→   695→        sym := strings.ToUpper(c.DefaultQuery("symbol", "BTCUSDT"))
+   696→   696→        interval := c.DefaultQuery("interval", "1m")
+   697→   697→        conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+   698→   698→        if err != nil {
+   699→   699→                return
+   700→   700→        }
+   701→   701→        client := &MarketClient{
+   702→   702→                conn: conn,
+   703→   703→                send: make(chan []byte, clientSendBufSize),
+   704→   704→                subs: map[string]map[string]bool{
+   705→   705→                        sym: {"kline_" + interval: true},
+   706→   706→                },
+   707→   707→                hub: GlobalMarketHub,
+   708→   708→        }
+   709→   709→        GlobalMarketHub.register <- client
+   710→   710→        go client.writePump()
+   711→   711→        go client.readPump()
+   712→   712→}
+   713→   713→
+   714→   714→// HandleTradesWebSocket — backwards-compatible single-symbol trades stream.
+   715→   715→// URL: /ws/trades?symbol=BTCUSDT
+   716→   716→func HandleTradesWebSocket(c *gin.Context) {
+   717→   717→        sym := strings.ToUpper(c.DefaultQuery("symbol", "BTCUSDT"))
+   718→   718→        conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+   719→   719→        if err != nil {
+   720→   720→                return
+   721→   721→        }
+   722→   722→        client := &MarketClient{
+   723→   723→                conn: conn,
+   724→   724→                send: make(chan []byte, clientSendBufSize),
+   725→   725→                subs: map[string]map[string]bool{
+   726→   726→                        sym: {"trade": true, "ticker": true},
+   727→   727→                },
+   728→   728→                hub: GlobalMarketHub,
+   729→   729→        }
+   730→   730→        GlobalMarketHub.register <- client
+   731→   731→        go client.writePump()
+   732→   732→        go client.readPump()
+   733→   733→}
+   734→   734→
+   735→   735→// HandleOrderbookWebSocket — backwards-compatible single-symbol depth stream.
+   736→   736→// URL: /ws/orderbook?symbol=BTCUSDT
+   737→   737→func HandleOrderbookWebSocket(c *gin.Context) {
+   738→   738→        sym := strings.ToUpper(c.DefaultQuery("symbol", "BTCUSDT"))
+   739→   739→        conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+   740→   740→        if err != nil {
+   741→   741→                return
+   742→   742→        }
+   743→   743→        client := &MarketClient{
+   744→   744→                conn: conn,
+   745→   745→                send: make(chan []byte, clientSendBufSize),
+   746→   746→                subs: map[string]map[string]bool{
+   747→   747→                        sym: {"depth": true, "ticker": true},
+   748→   748→                },
+   749→   749→                hub: GlobalMarketHub,
+   750→   750→        }
+   751→   751→        GlobalMarketHub.register <- client
+   752→   752→        go client.writePump()
+   753→   753→        go client.readPump()
+   754→   754→}
+   755→   755→
+   756→   756→// ── Client read/write pumps ───────────────────────────────────────────────
+   757→   757→
+   758→   758→func (c *MarketClient) readPump() {
+   759→   759→        defer func() {
+   760→   760→                c.hub.unregister <- c
+   761→   761→        }()
+   762→   762→        c.conn.SetReadLimit(4096)
+   763→   763→        c.conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+   764→   764→        c.conn.SetPongHandler(func(string) error {
+   765→   765→                c.conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+   766→   766→                return nil
+   767→   767→        })
+   768→   768→        for {
+   769→   769→                _, payload, err := c.conn.ReadMessage()
+   770→   770→                if err != nil {
+   771→   771→                        return
+   772→   772→                }
+   773→   773→                // Payload may be a subscribe/unsubscribe JSON action
+   774→   774→                c.handleSubAction(payload)
+   775→   775→        }
+   776→   776→}
+   777→   777→
+   778→   778→func (c *MarketClient) writePump() {
+   779→   779→        pingTicker := time.NewTicker(30 * time.Second)
+   780→   780→        defer func() {
+   781→   781→                pingTicker.Stop()
+   782→   782→                c.safeClose()
+   783→   783→        }()
+   784→   784→        for {
+   785→   785→                select {
+   786→   786→                case msg, ok := <-c.send:
+   787→   787→                        c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+   788→   788→                        if !ok {
+   789→   789→                                _ = c.conn.WriteMessage(gorillaws.CloseMessage, []byte{})
+   790→   790→                                return
+   791→   791→                        }
+   792→   792→                        if err := c.conn.WriteMessage(gorillaws.TextMessage, msg); err != nil {
+   793→   793→                                return
+   794→   794→                        }
+   795→   795→                case <-pingTicker.C:
+   796→   796→                        c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+   797→   797→                        if err := c.conn.WriteMessage(gorillaws.PingMessage, nil); err != nil {
+   798→   798→                                return
+   799→   799→                        }
+   800→   800→                }
+   801→   801→        }
+   802→   802→}
+   803→   803→
+   804→   804→// ── HTTP helpers for fallback REST snapshot ───────────────────────────────
+   805→   805→
+   806→   806→// ServeAllTickersJSON writes a JSON array of all cached tickers (REST bootstrap).
+   807→   807→func ServeAllTickersJSON(c *gin.Context) {
+   808→   808→        c.JSON(http.StatusOK, GlobalMarketHub.GetAllTickers())
+   809→   809→}
+   810→   810→
+   811→   811→// ServeOrderbookJSON writes the cached orderbook snapshot for a symbol.
+   812→   812→func ServeOrderbookJSON(c *gin.Context) {
+   813→   813→        sym := strings.ToUpper(c.DefaultQuery("symbol", "BTCUSDT"))
+   814→   814→        ob := GlobalMarketHub.GetOrderbook(sym)
+   815→   815→        if ob == nil {
+   816→   816→                c.JSON(http.StatusOK, gin.H{"symbol": sym, "bids": [], "asks": []})
+   817→   817→                return
+   818→   818→        }
+   819→   819→        c.JSON(http.StatusOK, gin.H{
+   820→   820→                "symbol": sym,
+   821→   821→                "bids":   ob.Bids,
+   822→   822→                "asks":   ob.Asks,
+   823→   823→                "ts":     ob.UpdatedAt,
+   824→   824→        })
+   825→   825→}
+   826→   826→
+   827→   827→// ServeRecentTradesJSON writes the cached recent trades for a symbol.
+   828→   828→func ServeRecentTradesJSON(c *gin.Context) {
+   829→   829→        sym := strings.ToUpper(c.DefaultQuery("symbol", "BTCUSDT"))
+   830→   830→        c.JSON(http.StatusOK, gin.H{
+   831→   831→                "symbol": sym,
+   832→   832→                "trades": GlobalMarketHub.GetRecentTrades(sym),
+   833→   833→        })
+   834→   834→}
+   835→   835→
