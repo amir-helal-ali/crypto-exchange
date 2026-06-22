@@ -1102,3 +1102,79 @@ Stage Summary:
   • User events → Redis Pub/Sub → all backend instances → /ws/user (multi-instance)
   • Admin events → Redis Pub/Sub → all backend instances → /api/v1/admin/stream (SSE)
 - المنصة جاهزة للإطلاق: لا polling، كل شيء حي ومباشر، multi-instance ready
+
+---
+Task ID: ui-dark-only-premium-redesign
+Agent: main (super-z)
+Task: قم بتطوير واجهة المستخدم باحترافيه وتميز عالي الدقه وقم بإلغاء الوضع النهاري وابق فقط الوضع الداكن
+
+Work Log:
+- قرأت نظام الثيم الحالي بالكامل: theme.ts, app.css, app.html, +layout.svelte, settings page, وجميع المكونات والصفحات التي تحتوي على data-theme='light' blocks
+- أعدت كتابة `frontend/src/lib/stores/theme.ts` — اختزال كامل للوضع الداكن فقط (stub)، ThemeMode = 'dark' فقط، حذف toggle/setMode/init logic، إضافة initTheme() no-op للتوافق الخلفي
+- أعدت كتابة `frontend/src/app.html` — حذف meta tags الخاصة بـ prefers-color-scheme (light/dark)، color-scheme: dark فقط، inline script بسيط يضبط data-theme='dark' فقط
+- أعدت كتابة `frontend/src/app.css` بالكامل (~580 سطر → نظام تصميم فاخر):
+  • Palette داكن أكثر عمقاً (#04060f base، elevations محسّنة)
+  • 4 radial gradients للـ ambient background (violet + gold + mint + azure)
+  • Panel components: panel، panel-glow، panel-violet — متعددة الطبقات مع inner highlight + radial overlay
+  • Buttons: btn-primary مع shimmer effect على hover، btn-secondary مع gradient overlays، btn-buy/btn-sell بتدرجات ثلاثية اللون
+  • Inputs: hover/focus states مع gold glow + 3px ring
+  • Pills: pill-gold/mint/rose/azure بتدرجات + glow shadows
+  • Nav-link active: gold gradient + box-shadow gold + accent line on right
+  • Stat-card: hover lift + radial gold overlay
+  • Aurora-bg utility + gradient-border utility (mask compositing)
+  • tickerScroll/shimmer/aurora-shift/price-up/down animations
+- حذف `frontend/src/lib/components/ThemeToggle.svelte` بالكامل
+- إزالة ThemeToggle imports + floating toggles من 7 صفحات:
+  • +page.svelte (landing)
+  • login/+page.svelte
+  • register/+page.svelte
+  • forgot-password/+page.svelte
+  • reset-password/+page.svelte
+  • verify-email/+page.svelte
+  • dashboard/+layout.svelte (topbar)
+- استبدال ThemeToggle في dashboard topbar بـ "LIVE" status pill (green pulse dot + LIVE badge)
+- إزالة `[data-theme='light']` style blocks من 6 ملفات:
+  • NexusChart.svelte
+  • DepthChart.svelte
+  • NexusChartToolbar.svelte
+  • AccountSummaryBar.svelte
+  • dashboard/competitions/+page.svelte
+  • dashboard/futures/+page.svelte
+  • dashboard/api-keys/+page.svelte
+- إعادة كتابة قسم "وضع الثيم" في `dashboard/settings/+page.svelte`:
+  • حذف ThemeMode type import
+  • حذف themeMode state + setThemeMode function + theme.setMode call
+  • حذف اختيار 3 خيارات (dark/light/system)
+  • استبدالها بـ "Dark Mode" badge فاخر: gold border + radial glow + Moon icon + "نشط" mint pill
+  • تنظيف: حذف Sun/Monitor imports + إضافة FileText (كان مفقوداً pre-existing bug)
+- ترقية `+layout.svelte` (root): حذف theme.init() call (لم يعد ضرورياً)
+- ترقية الـ Topbar في dashboard layout:
+  • Bottom highlight line (gold→violet gradient)
+  • Logo: gradient 3-stop (gold→rose→violet) + blur glow + group-hover scale
+  • Ticker tape: ping dot + gradient edge fade
+  • backdrop-blur-2xl (أقوى من blur-xl)
+- ترقية الـ Sidebar:
+  • Top fade gradient (subtle gold)
+  • VIP card: radial glow + bordered icon + arrow CTA
+- ترقية صفحة الهبوط (landing):
+  • Hero: aurora wash blobs (animated, layered) + brighter badge gradient + title shadow
+  • Live mini-charts: group-hover glow + radial backgrounds
+  • Feature cards: corner radial glow + group-hover
+  • CTA: dual radial glow + bordered icon container
+- ترقية صفحة login:
+  • Brand side: animated aurora blobs (gold + violet) + grid overlay + glowing logo
+  • Form side: radial violet top glow + relative positioning + tracking-tight typography
+- ترقية dashboard hero portfolio card:
+  • 3-layer animated aurora (gold + violet + rose)
+  • Grid overlay
+  • Glow text-shadow على القيمة الإجمالية
+- ترقية dashboard header: "مباشر" live pill بجانب العنوان
+
+Stage Summary:
+- ✅ الوضع النهاري أُلغي بالكامل — لا يوجد أي reference للـ light mode في أي مكان بالمشروع
+- ✅ تم حذف ThemeToggle.svelte + 7 floating toggles + 7 [data-theme='light'] style blocks + 1 theme picker in settings
+- ✅ نظام تصميم فاخر: deep dark palette + multi-layer glass + gradient borders + shimmer buttons + glow shadows + animated aurora backgrounds + micro-interactions (hover lift, group-hover, ping dots)
+- ✅ Frontend build: ناجح (12.76s) بدون أخطاء
+- ✅ إصلاح pre-existing bug: FileText import كان مفقوداً في settings page
+- ✅ جميع الـ surfaces الرئيسية تم polishingها: topbar, sidebar, ticker tape, dashboard hero, stat cards, landing hero, auth pages, settings appearance tab
+- ✅ typography: tracking-tight on headings, tabular-nums on numbers, font-feature-settings 'cv11' for clearer digits
