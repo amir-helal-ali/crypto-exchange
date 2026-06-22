@@ -1178,3 +1178,52 @@ Stage Summary:
 - ✅ إصلاح pre-existing bug: FileText import كان مفقوداً في settings page
 - ✅ جميع الـ surfaces الرئيسية تم polishingها: topbar, sidebar, ticker tape, dashboard hero, stat cards, landing hero, auth pages, settings appearance tab
 - ✅ typography: tracking-tight on headings, tabular-nums on numbers, font-feature-settings 'cv11' for clearer digits
+
+---
+Task ID: ui-dark-only-cleanup-charts-admin-polish
+Agent: Super Z (main agent)
+Task: كمل — إزالة آخر فروع light-mode المتبقية في مكونات الرسوم + polish احترافي للوحة الادمن.
+
+Work Log:
+- اكتشفت أن الجلسة السابقة تركت فروع `theme === 'light'` و `isLight` في مكوني الرسوم (NexusChart.svelte و DepthChart.svelte) — إجمالي 48 فرع ميت.
+- كتبت سكربت Python `/home/z/my-project/scripts/cleanup_chart_themes.py` (~250 سطر) مع parser مخصص لـ ternary expressions:
+  • `theme === 'light' ? X : Y` → `Y`
+  • `theme !== 'light' ? X : Y` → `X`
+  • `isLight ? X : Y` → `Y`
+  • `if (theme OP 'light') { A } else { B }` → يُبقي الفرع الصحيح فقط
+  • nested ternaries + nested braces + string-aware (يتجاهل '?' داخل strings)
+- شغّلت السكربت: حذف 37 فرع من NexusChart.svelte + 11 فرع من DepthChart.svelte.
+- تنظيف NexusChart.svelte يدوياً:
+  • حذف `import { theme as themeStore } from '$lib/stores/theme';`
+  • حذف `let theme = 'dark';` (متغير ميت)
+  • حذف `unsubTheme` subscription + إزالته من onMount cleanup + onDestroy
+  • حذف `const isLight = theme === 'light';` داخل themeColors()
+  • إصلاح تنسيق object (closing brace على سطر مستقل بدلاً من نفس سطر آخر value)
+  • تحديث docstring: "Theme-aware (dark + light)" → "Theme-aware (dark mode only, deep-space palette)"
+- تنظيف DepthChart.svelte يدوياً بنفس الطريقة:
+  • حذف themeStore import + theme variable + unsubTheme subscription + cleanup
+  • حذف isLight + إصلاح تنسيق object
+  • تحديث docstring: "theme-aware, real-time updates" → "dark-mode real-time depth visualization"
+- فحص admin (Next.js): لا يوجد أي toggle/setTheme/useTheme/next-themes/prefers-color-scheme. الـ admin يستخدم tailwind.config.ts مع hardcoded dark HSL values (background: hsl(240 10% 3.9%), foreground: hsl(0 0% 98%)) — أي dark-mode-only بالتصميم.
+- إشارات `light` في admin كانت false positives: "highlight" (variable)، "lightweight" (comment)، "in-flight" (comment)، "setMode" (SSL generate mode).
+- Polish احترافي للوحة الادمن (dashboard/layout.tsx):
+  • إضافة ambient aurora background: 3 blobs (emerald + teal + emerald) مع blur-[140px] + animate-pulse-glow + staggered delays
+  • إضافة bottom highlight line (emerald→teal gradient) أسفل الـ header
+  • ترقية logo: gradient 3-stop (emerald→teal→emerald) + inner white overlay للمعان + shadow أقوى
+  • إضافة tracking-tight على brand text
+  • إضافة LIVE status pill (مباشر) مع ping dot أخضر — يطابق frontend premium look
+  • إضافة `relative z-10` على main content ليطفو فوق الـ aurora layer
+- التحقق النهائي:
+  • Frontend build: ✅ ناجح (SvelteKit 5 + Vite، 11.86s، 0 أخطاء)
+  • Admin build: ✅ ناجح (Next.js 14.2، 13 static pages، 0 أخطاء)
+  • Grep نهائي: لا يوجد أي `'light'` أو `isLight` أو `themeStore` في أي مكان بـ frontend (باستثناء stub no-op `initTheme` في theme.ts المحتفظ به للتوافق الخلفي)
+  • Admin: لا يوجد أي theme toggle / light mode reference
+
+Stage Summary:
+- ✅ آخر 48 فرع light-mode ميت تمت إزالته من مكونات الرسوم (NexusChart + DepthChart)
+- ✅ متغيرات `theme` و `themeStore` و `unsubTheme` و `isLight` الميتة حُذفت بالكامل
+- ✅ docstrings حُدّثت لتعكس dark-mode-only design
+- ✅ Admin panel تم polish احترافياً: ambient aurora + LIVE pill + gradient logo + tracking-tight typography
+- ✅ كلا المشروعين يبنيان بنجاح بدون أي أخطاء
+- ✅ المنصة الآن dark-mode-only 100% في كل من frontend + admin
+- ✅ نظام تصميم متكامل: frontend (gold/violet/mint deep-space) + admin (emerald/teal) — كلاهما dark-only مع ambient aurora + glass panels + micro-interactions
