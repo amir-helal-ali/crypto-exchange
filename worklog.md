@@ -1343,3 +1343,71 @@ Stage Summary:
   • SSL بضغطة زر (3 أوضاع)
   • monitoring endpoints (Prometheus-friendly)
   • multi-instance ready (Redis PubSub للمزامنة)
+
+---
+Task ID: ui-design-continue-polish
+Agent: Super Z (main agent)
+Task: كمل تطوير تصاميم واجهة المستخدم — polish احترافي لخمس صفحات رئيسية في الـ frontend.
+
+Work Log:
+- Polished Admin Overview page (`/dashboard/admin`):
+  • Added ambient aurora background (gold + violet blurred blobs, animated pulse-glow)
+  • Added live pulse counter (liveTick) updates every 3s — visual feedback that panel is alive
+  • Added SVG sparkline mini-charts in stat cards (users: azure, volume: mint) with gradient fill areas
+  • Added animated bar chart visualization in Orders card (7 bars, sine-wave animated)
+  • Added live indicator ping in Pending KYC card (when > 0)
+  • Added "حالة النظام" section: 4 metrics (API Backend / PostgreSQL / Redis / WebSocket) each with operational status pill
+  • Added "إجراءات سريعة" sidebar: 4 quick-action links with hover animations
+  • Premium gradient avatars on recent users table
+  • Live "مباشر" badge in header with ping dot
+  • Refresh button with spinning state
+  • Stat cards: group-hover glow effect, blur-2xl radial backgrounds
+- Upgraded KYC page (`/dashboard/kyc`):
+  • Added 4-step progress indicator (البيانات → المستند → المراجعة → موثّق) with animated pulse on current step
+  • Visual document type selector: 3 cards (IdCard / BookUser / CreditCard) with check badge on selected
+  • Premium status banners with ambient aurora glows (mint for approved, gold for pending, rose for rejected)
+  • Premium file upload dropzone: gradient icon container, file size display, security badges (encrypted + secure)
+  • Step-based iconography and visual hierarchy
+  • Shield-style header with gradient icon container
+- Enhanced History page (`/dashboard/history`):
+  • Added summary stats banner (4 cards): Volume / Filled / Pending / Deposits with colored radial glows
+  • Added search bar with icon + clear button (searches by symbol, side, currency, tx_id)
+  • Filter pills with counts (الكل / مكتملة / معلقة / ملغاة) — colored borders when active
+  • Premium empty states with blur-2xl icon backgrounds + CTA buttons
+  • Gradient avatars on orders table, currency badge on transactions
+  • Live "مباشر" badge in header, refresh button
+  • Top highlight line on panels (gold/mint gradient)
+- Polished Notifications page (`/dashboard/notifications`):
+  • Premium empty state: 3xl rounded icon container with blur-3xl glow, contextual message per tab
+  • Right-side gradient indicator bar on unread items (gold→rose)
+  • "جديد" badge on unread items
+  • Hover-reveal "mark as read" button (opacity-0 → group-hover:opacity-100)
+  • Footer with count + "mark all read" link
+  • Category-specific icons with colored borders
+  • Ambient aurora background (gold + violet)
+- Upgraded Security page (`/dashboard/security`):
+  • Added SVG circular security score gauge (0-100) with color-coded states (mint/gold/violet/rose)
+  • Animated stroke-dashoffset transition (1s ease-out) when score changes
+  • Added security checklist (4 items): 2FA / Email verified / Strong password / Few sessions
+  • Premium 2FA card: enabled state with ShieldCheck badge, setup wizard with 3-step indicator
+  • QR code display with blur-2xl glow background
+  • Copy-to-clipboard for 2FA secret with success feedback
+  • 6-digit code input with tracking-[0.5em] letter spacing
+  • Permission tiers visualization (3 cards: Read / Trade / Withdraw) with colored borders
+  • Sessions list: ping dot on current session, IP + last-active info, hover-reveal revoke button
+  • Ambient aurora background (mint + gold)
+- Fixed icon import error: `Passport` not exported by lucide-svelte → replaced with `BookUser`
+- Added missing imports: `Check`, `Clock`, `IdCard`, `BookUser`, `CreditCard`, `Camera`, `Sparkles`, `Lock`, `Server`, `Cpu`, `HardDrive`, `Wifi`, `UserCheck`, `Zap`, `Search`, `RefreshCw`, `Trash2`, `BellOff`, `MapPin`, `Activity`, `ShieldAlert`, `Copy`, `Loader2`
+
+Stage Summary:
+- ✅ Frontend build: ناجح (SvelteKit 5 + Vite + rolldown, 13.00s, 0 أخطاء)
+- ✅ 5 صفحات رئيسية تم polish احترافياً:
+  • Admin Overview: ambient aurora + sparklines + system health + quick actions (138→310+ lines)
+  • KYC: 4-step progress + visual doc selector + premium banners + premium dropzone (196→280+ lines)
+  • History: summary stats banner + search + filter pills + premium empty states (174→280+ lines)
+  • Notifications: animated empty state + gradient indicator + hover-reveal actions (145→210+ lines)
+  • Security: SVG score gauge + checklist + premium 2FA wizard + permission tiers (255→360+ lines)
+- ✅ نظام تصميم موحد: dark-mode-only deep-space palette (gold/violet/mint/azure/rose)
+- ✅ ambient aurora backgrounds + glass panels + micro-interactions (group-hover, ping dots, animated bars)
+- ✅ جميع الصفحات تستخدم نفس design language: topbar highlight line, blur-2xl radial glows, tabular-nums, tracking-tight
+- ✅ كل النصوص بالعربية، الأيقونات من lucide-svelte، لا emojis
