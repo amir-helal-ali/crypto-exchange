@@ -1,0 +1,716 @@
+     1→<script lang="ts">
+     2→  import { onMount, onDestroy } from 'svelte';
+     3→  import { wallet as walletApi } from '$lib/api/endpoints';
+     4→  import { parseApiResponse } from '$lib/api/client';
+     5→  import { marketStore, type MarketTicker } from '$lib/stores/market';
+     6→  import { toasts } from '$lib/stores/toast';
+     7→  import { usdToEgp, egpCompact, usdEgpRate } from '$lib/utils/currency';
+     8→  import Modal from '$lib/components/Modal.svelte';
+     9→  import {
+    10→    TrendingUp,
+    11→    Lock,
+    12→    Unlock,
+    13→    Coins,
+    14→    Calculator,
+    15→    Clock,
+    16→    Award,
+    17→    Info,
+    18→    Zap,
+    19→    Sparkles,
+    20→    ChevronLeft,
+    21→    Loader2,
+    22→    Flame,
+    23→    Gift,
+    24→    Star
+    25→  } from 'lucide-svelte';
+    26→
+    27→  // Live tickers from marketStore
+    28→  let tickers = $state<Record<string, MarketTicker>>({});
+    29→  let unsubMarket: (() => void) | null = null;
+    30→
+    31→  interface StakingPool {
+    32→    id: string;
+    33→    asset: string;
+    34→    name: string;
+    35→    logo: string;
+    36→    color: string;
+    37→    aprFlexible: number;
+    38→    apr30: number;
+    39→    apr90: number;
+    40→    apr180: number;
+    41→    minStake: number;
+    42→    tvlUsd: number;
+    43→    popular?: boolean;
+    44→    hot?: boolean;
+    45→  }
+    46→
+    47→  interface UserPosition {
+    48→    id: string;
+    49→    pool: StakingPool;
+    50→    amount: number;
+    51→    duration: 'flexible' | 30 | 90 | 180;
+    52→    apr: number;
+    53→    startDate: string;
+    54→    endDate: string | null;
+    55→    rewardsEarned: number;
+    56→    status: 'active' | 'withdrawn' | 'locked';
+    57→  }
+    58→
+    59→  let currentRate = $state(48.5);
+    60→  let balances = $state<Record<string, number>>({});
+    61→  let positions = $state<UserPosition[]>([]);
+    62→  let pools = $state<StakingPool[]>([
+    63→    { id: 'btc', asset: 'BTC', name: 'Bitcoin', logo: '₿', color: '#f7931a', aprFlexible: 2.5, apr30: 4.2, apr90: 6.8, apr180: 9.5, minStake: 0.001, tvlUsd: 78_500_000, popular: true },
+    64→    { id: 'eth', asset: 'ETH', name: 'Ethereum', logo: 'Ξ', color: '#627eea', aprFlexible: 3.2, apr30: 5.5, apr90: 8.1, apr180: 12.0, minStake: 0.01, tvlUsd: 28_900_000, hot: true },
+    65→    { id: 'sol', asset: 'SOL', name: 'Solana', logo: '◎', color: '#9945ff', aprFlexible: 5.0, apr30: 8.0, apr90: 11.5, apr180: 16.0, minStake: 0.5, tvlUsd: 22_300_000 },
+    66→    { id: 'bnb', asset: 'BNB', name: 'BNB', logo: '⬡', color: '#f0b90b', aprFlexible: 4.1, apr30: 6.8, apr90: 10.2, apr180: 14.5, minStake: 0.1, tvlUsd: 51_200_000 },
+    67→    { id: 'usdt', asset: 'USDT', name: 'Tether', logo: '$', color: '#26a17b', aprFlexible: 8.5, apr30: 12.0, apr90: 15.5, apr180: 19.0, minStake: 10, tvlUsd: 12_500_000, popular: true },
+    68→    { id: 'avax', asset: 'AVAX', name: 'Avalanche', logo: '▲', color: '#e84142', aprFlexible: 4.5, apr30: 7.2, apr90: 10.8, apr180: 15.0, minStake: 1, tvlUsd: 9_800_000 },
+    69→    { id: 'ada', asset: 'ADA', name: 'Cardano', logo: '₳', color: '#0033ad', aprFlexible: 4.0, apr30: 6.5, apr90: 9.8, apr180: 13.5, minStake: 10, tvlUsd: 2_100_000 },
+    70→    { id: 'dot', asset: 'DOT', name: 'Polkadot', logo: '●', color: '#e6007a', aprFlexible: 6.5, apr30: 9.5, apr90: 13.5, apr180: 18.0, minStake: 5, tvlUsd: 5_400_000 }
+    71→  ]);
+    72→
+    73→  let stakingModal = $state<{ open: boolean; pool: StakingPool | null }>({ open: false, pool: null });
+    74→  let stakeAmount = $state('');
+    75→  let stakeDuration = $state<'flexible' | 30 | 90 | 180>('flexible');
+    76→  let staking = $state(false);
+    77→
+    78→  let calcAsset = $state('ETH');
+    79→  let calcAmount = $state(1);
+    80→  let calcDuration = $state<'flexible' | 30 | 90 | 180>(90);
+    81→  let sortBy = $state<'popular' | 'apr' | 'tvl'>('popular');
+    82→
+    83→  const unsubRate = usdEgpRate.subscribe((r) => (currentRate = r));
+    84→
+    85→  let rewardsTick = $state(0);
+    86→  let tickInterval: any;
+    87→
+    88→  onMount(async () => {
+    89→    unsubMarket = marketStore.subscribe((t) => (tickers = t));
+    90→    await Promise.all([loadBalances(), loadPositions()]);
+    91→    tickInterval = setInterval(() => { rewardsTick += 0.0001; }, 1500);
+    92→  });
+    93→
+    94→  onDestroy(() => {
+    95→    unsubRate();
+    96→    clearInterval(tickInterval);
+    97→    unsubMarket?.();
+    98→  });
+    99→
+   100→  async function loadBalances() {
+   101→    try {
+   102→      const res = await walletApi.getBalances();
+   103→      const data = (await parseApiResponse<any[]>(res)) || [];
+   104→      const map: Record<string, number> = {};
+   105→      for (const b of data) map[b.currency] = parseFloat(b.balance);
+   106→      balances = map;
+   107→    } catch {}
+   108→  }
+   109→
+   110→  async function loadPositions() {
+   111→    positions = [
+   112→      {
+   113→        id: '1', pool: pools[1], amount: 0.5, duration: 90, apr: 8.1,
+   114→        startDate: new Date(Date.now() - 30 * 86400000).toISOString(),
+   115→        endDate: new Date(Date.now() + 60 * 86400000).toISOString(),
+   116→        rewardsEarned: 0.033, status: 'locked'
+   117→      },
+   118→      {
+   119→        id: '2', pool: pools[4], amount: 1000, duration: 'flexible' as const, apr: 8.5,
+   120→        startDate: new Date(Date.now() - 15 * 86400000).toISOString(),
+   121→        endDate: null, rewardsEarned: 3.5, status: 'active'
+   122→      }
+   123→    ];
+   124→  }
+   125→
+   126→  function getAssetPrice(asset: string): number {
+   127→    if (asset === 'USDT') return 1;
+   128→    const ticker = tickers[`${asset}USDT`];
+   129→    return ticker?.price || 0;
+   130→  }
+   131→
+   132→  function getApr(pool: StakingPool, duration: 'flexible' | 30 | 90 | 180): number {
+   133→    if (duration === 'flexible') return pool.aprFlexible;
+   134→    if (duration === 30) return pool.apr30;
+   135→    if (duration === 90) return pool.apr90;
+   136→    return pool.apr180;
+   137→  }
+   138→
+   139→  function formatNumber(n: number, decimals = 4): string {
+   140→    if (!isFinite(n)) n = 0;
+   141→    return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+   142→  }
+   143→
+   144→  function timeRemaining(endDate: string | null): string {
+   145→    if (!endDate) return 'مرن';
+   146→    const days = Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000);
+   147→    if (days <= 0) return 'انتهت المدة';
+   148→    return `${days} يوم`;
+   149→  }
+   150→
+   151→  const totalStakedUsd = $derived(
+   152→    positions.reduce((sum, p) => sum + p.amount * getAssetPrice(p.pool.asset), 0)
+   153→  );
+   154→  const totalStakedEgp = $derived(usdToEgp(totalStakedUsd, currentRate));
+   155→  const totalRewardsUsd = $derived(
+   156→    positions.reduce((sum, p) => sum + p.rewardsEarned * getAssetPrice(p.pool.asset), 0)
+   157→  );
+   158→  const totalRewardsEgp = $derived(usdToEgp(totalRewardsUsd, currentRate));
+   159→  const activePositionsCount = $derived(positions.filter((p) => p.status !== 'withdrawn').length);
+   160→  const dailyRewardsUsd = $derived(
+   161→    positions.reduce((sum, p) => {
+   162→      const yearly = (p.amount * p.apr) / 100;
+   163→      return sum + (yearly / 365) * getAssetPrice(p.pool.asset);
+   164→    }, 0)
+   165→  );
+   166→
+   167→  const calcPool = $derived(pools.find((p) => p.asset === calcAsset) || pools[0]);
+   168→  const calcApr = $derived(getApr(calcPool, calcDuration));
+   169→  const calcYearlyReward = $derived((calcAmount * calcApr) / 100);
+   170→  const calcDailyReward = $derived(calcYearlyReward / 365);
+   171→  const calcMonthlyReward = $derived(calcYearlyReward / 12);
+   172→  const calcDurationLabel = $derived(calcDuration === 'flexible' ? 'مرن' : `${calcDuration} يوم`);
+   173→
+   174→  const sortedPools = $derived.by(() => {
+   175→    const arr = [...pools];
+   176→    if (sortBy === 'apr') arr.sort((a, b) => getApr(b, 90) - getApr(a, 90));
+   177→    else if (sortBy === 'tvl') arr.sort((a, b) => b.tvlUsd - a.tvlUsd);
+   178→    else arr.sort((a, b) => (b.popular ? 1 : 0) - (a.popular ? 1 : 0) || b.tvlUsd - a.tvlUsd);
+   179→    return arr;
+   180→  });
+   181→
+   182→  function openStakeModal(pool: StakingPool) {
+   183→    stakingModal = { open: true, pool };
+   184→    stakeAmount = '';
+   185→    stakeDuration = 'flexible';
+   186→  }
+   187→
+   188→  function closeStakeModal() {
+   189→    stakingModal = { open: false, pool: null };
+   190→  }
+   191→
+   192→  function setMaxAmount() {
+   193→    if (!stakingModal.pool) return;
+   194→    stakeAmount = String(balances[stakingModal.pool.asset] || 0);
+   195→  }
+   196→
+   197→  async function confirmStake() {
+   198→    if (!stakingModal.pool) return;
+   199→    const amount = parseFloat(stakeAmount);
+   200→    if (!isFinite(amount) || amount <= 0) { toasts.error('أدخل مبلغاً صحيحاً'); return; }
+   201→    if (amount < stakingModal.pool.minStake) {
+   202→      toasts.error(`الحد الأدنى لل staking هو ${stakingModal.pool.minStake} ${stakingModal.pool.asset}`); return;
+   203→    }
+   204→    const bal = balances[stakingModal.pool.asset] || 0;
+   205→    if (amount > bal) { toasts.error(`لا يوجد رصيد كافٍ من ${stakingModal.pool.asset}`); return; }
+   206→    staking = true;
+   207→    try {
+   208→      await new Promise((r) => setTimeout(r, 1200));
+   209→      const newPosition: UserPosition = {
+   210→        id: Date.now().toString(),
+   211→        pool: stakingModal.pool,
+   212→        amount,
+   213→        duration: stakeDuration,
+   214→        apr: getApr(stakingModal.pool, stakeDuration),
+   215→        startDate: new Date().toISOString(),
+   216→        endDate: stakeDuration === 'flexible' ? null : new Date(Date.now() + stakeDuration * 86400000).toISOString(),
+   217→        rewardsEarned: 0,
+   218→        status: stakeDuration === 'flexible' ? 'active' : 'locked'
+   219→      };
+   220→      positions = [newPosition, ...positions];
+   221→      balances[stakingModal.pool.asset] -= amount;
+   222→      toasts.success(`تم staking ${amount} ${stakingModal.pool.asset} بنجاح`);
+   223→      closeStakeModal();
+   224→    } catch (e: any) {
+   225→      toasts.error(e?.message || 'فشل في عملية ال staking');
+   226→    } finally {
+   227→      staking = false;
+   228→    }
+   229→  }
+   230→
+   231→  async function unstake(position: UserPosition) {
+   232→    if (position.status === 'locked' && position.endDate) {
+   233→      const days = Math.ceil((new Date(position.endDate).getTime() - Date.now()) / 86400000);
+   234→      if (days > 0) { toasts.error(`لا يمكن السحب قبل انتهاء فترة القفل (${days} يوم متبقي)`); return; }
+   235→    }
+   236→    try {
+   237→      balances[position.pool.asset] = (balances[position.pool.asset] || 0) + position.amount + position.rewardsEarned;
+   238→      positions = positions.map((p) => (p.id === position.id ? { ...p, status: 'withdrawn' as const } : p));
+   239→      toasts.success(`تم سحب ${position.amount} ${position.pool.asset} + ${position.rewardsEarned.toFixed(4)} مكافآت`);
+   240→    } catch {
+   241→      toasts.error('فشل في السحب');
+   242→    }
+   243→  }
+   244→</script>
+   245→
+   246→<svelte:window onkeydown={(e) => e.key === 'Escape' && closeStakeModal()} />
+   247→
+   248→<div class="space-y-6">
+   249→  <!-- Header -->
+   250→  <div class="flex flex-wrap items-center justify-between gap-4">
+   251→    <div class="flex items-center gap-3">
+   252→      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold to-accent-violet flex items-center justify-center">
+   253→        <Sparkles size={22} class="text-ink-950" />
+   254→      </div>
+   255→      <div>
+   256→        <h1 class="text-2xl font-bold text-white">Earn & Staking</h1>
+   257→        <p class="text-sm text-slate-400">اجعل عملاتك تعمل من أجلك — اربح حتى 19% سنوياً</p>
+   258→      </div>
+   259→    </div>
+   260→    <div class="flex items-center gap-2 text-xs">
+   261→      <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+   262→        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+   263→        مكافآت تُحتسب كل ساعة
+   264→      </div>
+   265→    </div>
+   266→  </div>
+   267→
+   268→  <!-- Hero Stats -->
+   269→  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+   270→    <div class="panel p-5 relative overflow-hidden">
+   271→      <div class="absolute inset-0 bg-gradient-to-br from-accent-gold/5 to-transparent"></div>
+   272→      <div class="relative">
+   273→        <div class="flex items-center justify-between mb-3">
+   274→          <div class="w-9 h-9 rounded-lg bg-accent-gold/15 flex items-center justify-center">
+   275→            <Lock size={16} class="text-accent-gold" />
+   276→          </div>
+   277→          <span class="text-[10px] text-slate-500 uppercase tracking-wider">Total Staked</span>
+   278→        </div>
+   279→        <p class="text-xl font-bold text-white font-mono tabular-nums">{egpCompact(totalStakedEgp)}</p>
+   280→        <p class="text-xs text-slate-400 mt-1">${totalStakedUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD</p>
+   281→      </div>
+   282→    </div>
+   283→
+   284→    <div class="panel p-5 relative overflow-hidden">
+   285→      <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent"></div>
+   286→      <div class="relative">
+   287→        <div class="flex items-center justify-between mb-3">
+   288→          <div class="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+   289→            <Gift size={16} class="text-emerald-400" />
+   290→          </div>
+   291→          <span class="text-[10px] text-slate-500 uppercase tracking-wider">Rewards</span>
+   292→        </div>
+   293→        <p class="text-xl font-bold text-emerald-400 font-mono tabular-nums">
+   294→          {egpCompact(totalRewardsEgp + rewardsTick)}
+   295→        </p>
+   296→        <p class="text-xs text-slate-400 mt-1">${totalRewardsUsd.toFixed(2)} USD</p>
+   297→      </div>
+   298→    </div>
+   299→
+   300→    <div class="panel p-5 relative overflow-hidden">
+   301→      <div class="absolute inset-0 bg-gradient-to-br from-accent-violet/5 to-transparent"></div>
+   302→      <div class="relative">
+   303→        <div class="flex items-center justify-between mb-3">
+   304→          <div class="w-9 h-9 rounded-lg bg-accent-violet/15 flex items-center justify-center">
+   305→            <TrendingUp size={16} class="text-accent-violet" />
+   306→          </div>
+   307→          <span class="text-[10px] text-slate-500 uppercase tracking-wider">Daily Income</span>
+   308→        </div>
+   309→        <p class="text-xl font-bold text-white font-mono tabular-nums">
+   310→          {egpCompact(usdToEgp(dailyRewardsUsd, currentRate))}
+   311→        </p>
+   312→        <p class="text-xs text-emerald-400 mt-1">≈ ${dailyRewardsUsd.toFixed(4)}/يوم</p>
+   313→      </div>
+   314→    </div>
+   315→
+   316→    <div class="panel p-5 relative overflow-hidden">
+   317→      <div class="absolute inset-0 bg-gradient-to-br from-accent-rose/5 to-transparent"></div>
+   318→      <div class="relative">
+   319→        <div class="flex items-center justify-between mb-3">
+   320→          <div class="w-9 h-9 rounded-lg bg-accent-rose/15 flex items-center justify-center">
+   321→            <Zap size={16} class="text-accent-rose" />
+   322→          </div>
+   323→          <span class="text-[10px] text-slate-500 uppercase tracking-wider">Positions</span>
+   324→        </div>
+   325→        <p class="text-xl font-bold text-white font-mono tabular-nums">{activePositionsCount}</p>
+   326→        <p class="text-xs text-slate-400 mt-1">مراكز نشطة</p>
+   327→      </div>
+   328→    </div>
+   329→  </div>
+   330→
+   331→  <!-- Calculator + My Positions -->
+   332→  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   333→    <div class="panel p-6 lg:col-span-2">
+   334→      <div class="flex items-center gap-2 mb-5">
+   335→        <Calculator size={18} class="text-accent-gold" />
+   336→        <h2 class="text-base font-bold text-white">حاسبة المكافآت</h2>
+   337→      </div>
+   338→
+   339→      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+   340→        <div>
+   341→          <label class="block text-xs text-slate-400 mb-2">العملة</label>
+   342→          <select bind:value={calcAsset} class="input w-full bg-ink-900/60">
+   343→            {#each pools as p}
+   344→              <option value={p.asset}>{p.asset} — {p.name}</option>
+   345→            {/each}
+   346→          </select>
+   347→        </div>
+   348→        <div>
+   349→          <label class="block text-xs text-slate-400 mb-2">المبلغ</label>
+   350→          <input type="number" bind:value={calcAmount} min="0" step="0.01" class="input w-full bg-ink-900/60 font-mono" />
+   351→        </div>
+   352→        <div>
+   353→          <label class="block text-xs text-slate-400 mb-2">مدة القفل</label>
+   354→          <div class="flex gap-1">
+   355→            {#each [['flexible', 'مرن'], [30, '30ي'], [90, '90ي'], [180, '180ي']] as [val, label]}
+   356→              <button
+   357→                onclick={() => (calcDuration = val as any)}
+   358→                class="flex-1 py-2 px-1 text-xs rounded-lg transition-all {calcDuration === val
+   359→                  ? 'bg-accent-gold/20 text-accent-gold border border-accent-gold/40 font-bold'
+   360→                  : 'bg-ink-900/40 text-slate-400 border border-white/5 hover:border-white/10'}"
+   361→              >
+   362→                {label}
+   363→              </button>
+   364→            {/each}
+   365→          </div>
+   366→        </div>
+   367→      </div>
+   368→
+   369→      <div class="bg-gradient-to-br from-accent-gold/10 to-accent-violet/5 rounded-2xl p-5 border border-accent-gold/15">
+   370→        <div class="grid grid-cols-3 gap-4">
+   371→          <div class="text-center">
+   372→            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">العائد اليومي</p>
+   373→            <p class="text-lg font-bold text-emerald-400 font-mono tabular-nums">{calcDailyReward.toFixed(6)}</p>
+   374→            <p class="text-[10px] text-slate-500">{calcAsset}</p>
+   375→          </div>
+   376→          <div class="text-center border-x border-white/5">
+   377→            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">العائد الشهري</p>
+   378→            <p class="text-lg font-bold text-emerald-400 font-mono tabular-nums">{calcMonthlyReward.toFixed(6)}</p>
+   379→            <p class="text-[10px] text-slate-500">{calcAsset}</p>
+   380→          </div>
+   381→          <div class="text-center">
+   382→            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">العائد السنوي</p>
+   383→            <p class="text-lg font-bold text-accent-gold font-mono tabular-nums">{calcYearlyReward.toFixed(6)}</p>
+   384→            <p class="text-[10px] text-slate-500">{calcAsset}</p>
+   385→          </div>
+   386→        </div>
+   387→
+   388→        <div class="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+   389→          <div class="flex items-center gap-2 text-xs text-slate-400">
+   390→            <Info size={12} />
+   391→            <span>APR: <span class="text-accent-gold font-bold">{calcApr}%</span> • المدة: <span class="text-white">{calcDurationLabel}</span></span>
+   392→          </div>
+   393→          <p class="text-sm text-white font-mono tabular-nums">
+   394→            ≈ {egpCompact(usdToEgp(calcYearlyReward * getAssetPrice(calcAsset), currentRate))} / سنة
+   395→          </p>
+   396→        </div>
+   397→      </div>
+   398→    </div>
+   399→
+   400→    <div class="panel p-5">
+   401→      <div class="flex items-center justify-between mb-4">
+   402→        <div class="flex items-center gap-2">
+   403→          <Award size={16} class="text-accent-violet" />
+   404→          <h2 class="text-sm font-bold text-white">مراكزي</h2>
+   405→        </div>
+   406→        <span class="text-xs text-slate-400">{activePositionsCount} نشط</span>
+   407→      </div>
+   408→
+   409→      <div class="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+   410→        {#if positions.filter((p) => p.status !== 'withdrawn').length === 0}
+   411→          <div class="py-12 text-center">
+   412→            <Lock size={32} class="mx-auto mb-2 text-slate-600" />
+   413→            <p class="text-sm text-slate-400 mb-3">لا توجد مراكز staking نشطة</p>
+   414→            <p class="text-xs text-slate-500">اختر pool من الأسفل للبدء</p>
+   415→          </div>
+   416→        {:else}
+   417→          {#each positions.filter((p) => p.status !== 'withdrawn') as pos}
+   418→            <div class="bg-ink-900/40 rounded-xl p-3 border border-white/5 hover:border-white/10 transition-colors">
+   419→              <div class="flex items-center justify-between mb-2">
+   420→                <div class="flex items-center gap-2">
+   421→                  <div
+   422→                    class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+   423→                    style="background-color: {pos.pool.color}20; color: {pos.pool.color}"
+   424→                  >
+   425→                    {pos.pool.logo}
+   426→                  </div>
+   427→                  <div>
+   428→                    <p class="text-sm font-semibold text-white">{pos.pool.asset}</p>
+   429→                    <p class="text-[10px] text-slate-500">{pos.apr}% APR • {pos.duration === 'flexible' ? 'مرن' : pos.duration + 'ي'}</p>
+   430→                  </div>
+   431→                </div>
+   432→                {#if pos.status === 'locked'}
+   433→                  <Lock size={12} class="text-amber-400" />
+   434→                {:else}
+   435→                  <Unlock size={12} class="text-emerald-400" />
+   436→                {/if}
+   437→              </div>
+   438→              <div class="grid grid-cols-2 gap-2 text-xs">
+   439→                <div>
+   440→                  <p class="text-slate-500">المبلغ</p>
+   441→                  <p class="text-white font-mono">{formatNumber(pos.amount)}</p>
+   442→                </div>
+   443→                <div>
+   444→                  <p class="text-slate-500">المكافآت</p>
+   445→                  <p class="text-emerald-400 font-mono">{formatNumber(pos.rewardsEarned)}</p>
+   446→                </div>
+   447→              </div>
+   448→              <div class="mt-2 pt-2 border-t border-white/5 flex items-center justify-between">
+   449→                <span class="text-[10px] text-slate-500 flex items-center gap-1">
+   450→                  <Clock size={10} />
+   451→                  {timeRemaining(pos.endDate)}
+   452→                </span>
+   453→                <button
+   454→                  onclick={() => unstake(pos)}
+   455→                  class="text-[11px] text-accent-rose hover:underline"
+   456→                >
+   457→                  {pos.status === 'locked' ? 'عرض' : 'سحب'}
+   458→                </button>
+   459→              </div>
+   460→            </div>
+   461→          {/each}
+   462→        {/if}
+   463→      </div>
+   464→    </div>
+   465→  </div>
+   466→
+   467→  <!-- Pools -->
+   468→  <div class="panel p-6">
+   469→    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+   470→      <div>
+   471→        <h2 class="text-base font-bold text-white">Staking Pools</h2>
+   472→        <p class="text-xs text-slate-400 mt-0.5">اختر عملتك المفضلة وابدأ بكسب المكافآت</p>
+   473→      </div>
+   474→      <div class="flex items-center gap-1 bg-ink-900/50 rounded-lg p-1">
+   475→        {#each [['popular', 'الأكثر شعبية'], ['apr', 'أعلى APR'], ['tvl', 'أعلى TVL']] as [val, label]}
+   476→          <button
+   477→            onclick={() => (sortBy = val as any)}
+   478→            class="px-3 py-1.5 text-xs rounded-md transition-all {sortBy === val
+   479→              ? 'bg-accent-gold/20 text-accent-gold font-semibold'
+   480→              : 'text-slate-400 hover:text-white'}"
+   481→          >
+   482→            {label}
+   483→          </button>
+   484→        {/each}
+   485→      </div>
+   486→    </div>
+   487→
+   488→    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   489→      {#each sortedPools as pool (pool.id)}
+   490→        {@const apr90 = getApr(pool, 90)}
+   491→        {@const bal = balances[pool.asset] || 0}
+   492→        <div class="relative bg-ink-900/40 rounded-2xl p-4 border border-white/5 hover:border-accent-gold/30 transition-all group">
+   493→          {#if pool.hot}
+   494→            <div class="absolute top-3 left-3 flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-rose/15 text-accent-rose text-[9px] font-bold">
+   495→              <Flame size={9} /> HOT
+   496→            </div>
+   497→          {/if}
+   498→          {#if pool.popular}
+   499→            <div class="absolute top-3 left-3 {pool.hot ? 'top-7' : ''} flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-gold/15 text-accent-gold text-[9px] font-bold">
+   500→              <Star size={9} /> POPULAR
+   501→            </div>
+   502→          {/if}
+   503→
+   504→          <div class="flex items-center gap-2 mb-4 mt-5">
+   505→            <div
+   506→              class="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold"
+   507→              style="background-color: {pool.color}20; color: {pool.color}"
+   508→            >
+   509→              {pool.logo}
+   510→            </div>
+   511→            <div>
+   512→              <p class="text-sm font-bold text-white">{pool.asset}</p>
+   513→              <p class="text-[10px] text-slate-500">{pool.name}</p>
+   514→            </div>
+   515→          </div>
+   516→
+   517→          <div class="mb-3">
+   518→            <p class="text-[10px] text-slate-400 uppercase tracking-wider">APR (90 يوم)</p>
+   519→            <div class="flex items-baseline gap-1">
+   520→              <span class="text-2xl font-bold bg-gradient-to-r from-accent-gold to-accent-rose bg-clip-text text-transparent">
+   521→                {apr90}%
+   522→              </span>
+   523→              <span class="text-[10px] text-slate-500">/ سنوياً</span>
+   524→            </div>
+   525→          </div>
+   526→
+   527→          <div class="grid grid-cols-2 gap-1 text-[10px] mb-3">
+   528→            <div class="flex justify-between bg-white/3 rounded px-2 py-1">
+   529→              <span class="text-slate-500">مرن</span>
+   530→              <span class="text-slate-300 font-mono">{pool.aprFlexible}%</span>
+   531→            </div>
+   532→            <div class="flex justify-between bg-white/3 rounded px-2 py-1">
+   533→              <span class="text-slate-500">180ي</span>
+   534→              <span class="text-slate-300 font-mono">{pool.apr180}%</span>
+   535→            </div>
+   536→          </div>
+   537→
+   538→          <div class="space-y-1 text-[10px] text-slate-500 mb-4">
+   539→            <div class="flex justify-between">
+   540→              <span>الحد الأدنى</span>
+   541→              <span class="text-slate-300 font-mono">{pool.minStake} {pool.asset}</span>
+   542→            </div>
+   543→            <div class="flex justify-between">
+   544→              <span>TVL</span>
+   545→              <span class="text-slate-300 font-mono">${(pool.tvlUsd / 1e6).toFixed(1)}M</span>
+   546→            </div>
+   547→            <div class="flex justify-between">
+   548→              <span>رصيدك</span>
+   549→              <span class="{bal > 0 ? 'text-emerald-400' : 'text-slate-600'} font-mono">{formatNumber(bal)} {pool.asset}</span>
+   550→            </div>
+   551→          </div>
+   552→
+   553→          <button
+   554→            onclick={() => openStakeModal(pool)}
+   555→            disabled={bal <= 0}
+   556→            class="w-full py-2 rounded-lg text-sm font-semibold transition-all {bal > 0
+   557→              ? 'bg-gradient-to-r from-accent-gold to-accent-violet text-ink-950 hover:opacity-90'
+   558→              : 'bg-white/5 text-slate-500 cursor-not-allowed'}"
+   559→          >
+   560→            {bal > 0 ? 'Stake الآن' : 'لا يوجد رصيد'}
+   561→          </button>
+   562→        </div>
+   563→      {/each}
+   564→    </div>
+   565→  </div>
+   566→
+   567→  <!-- How it works -->
+   568→  <div class="panel p-6">
+   569→    <div class="flex items-center gap-2 mb-5">
+   570→      <Info size={16} class="text-accent-gold" />
+   571→      <h2 class="text-base font-bold text-white">كيف يعمل ال Staking؟</h2>
+   572→    </div>
+   573→    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+   574→      {#each [
+   575→        { num: '01', icon: Coins, title: 'اختر العملة', desc: 'تصفح ال pools واختر العملة التي تريد staking بها' },
+   576→        { num: '02', icon: Lock, title: 'حدد المدة', desc: 'اختر مدة مرنة أو مقفولة لمدة 30/90/180 يوم' },
+   577→        { num: '03', icon: TrendingUp, title: 'اربح المكافآت', desc: 'تُحسب المكافآت يومياً وتُضاف تلقائياً إلى رصيدك' },
+   578→        { num: '04', icon: Unlock, title: 'اسحب أرباحك', desc: 'في المدة المرنة اسحب في أي وقت، أو بعد انتهاء فترة القفل' }
+   579→      ] as step}
+   580→        <div class="relative bg-ink-900/30 rounded-xl p-4 border border-white/5">
+   581→          <div class="absolute top-3 left-3 text-3xl font-black text-white/5">{step.num}</div>
+   582→          <div class="relative">
+   583→            <div class="w-10 h-10 rounded-xl bg-accent-gold/10 flex items-center justify-center mb-3">
+   584→              <step.icon size={18} class="text-accent-gold" />
+   585→            </div>
+   586→            <p class="text-sm font-bold text-white mb-1">{step.title}</p>
+   587→            <p class="text-xs text-slate-400 leading-relaxed">{step.desc}</p>
+   588→          </div>
+   589→        </div>
+   590→      {/each}
+   591→    </div>
+   592→  </div>
+   593→</div>
+   594→
+   595→<!-- Staking Modal -->
+   596→{#if stakingModal.open && stakingModal.pool}
+   597→  {@const pool = stakingModal.pool}
+   598→  {@const bal = balances[pool.asset] || 0}
+   599→  {@const amount = parseFloat(stakeAmount) || 0}
+   600→  {@const apr = getApr(pool, stakeDuration)}
+   601→  {@const yearlyReward = (amount * apr) / 100}
+   602→  <Modal onClose={closeStakeModal}>
+   603→    <div class="p-6 w-[440px] max-w-full">
+   604→      <div class="flex items-center justify-between mb-5">
+   605→        <div class="flex items-center gap-3">
+   606→          <div
+   607→            class="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold"
+   608→            style="background-color: {pool.color}20; color: {pool.color}"
+   609→          >
+   610→            {pool.logo}
+   611→          </div>
+   612→          <div>
+   613→            <h3 class="text-base font-bold text-white">Stake {pool.asset}</h3>
+   614→            <p class="text-xs text-slate-400">{pool.name}</p>
+   615→          </div>
+   616→        </div>
+   617→        <button onclick={closeStakeModal} class="text-slate-400 hover:text-white p-1">
+   618→          <ChevronLeft size={20} />
+   619→        </button>
+   620→      </div>
+   621→
+   622→      <div class="mb-4">
+   623→        <div class="flex items-center justify-between mb-2">
+   624→          <label class="text-xs text-slate-400">المبلغ</label>
+   625→          <button onclick={setMaxAmount} class="text-[10px] text-accent-gold hover:underline">
+   626→            الحد الأقصى: {formatNumber(bal)} {pool.asset}
+   627→          </button>
+   628→        </div>
+   629→        <div class="relative">
+   630→          <input
+   631→            type="number"
+   632→            bind:value={stakeAmount}
+   633→            placeholder="0.00"
+   634→            min={pool.minStake}
+   635→            step="0.0001"
+   636→            class="input w-full bg-ink-900/60 text-lg font-mono pr-16"
+   637→          />
+   638→          <span class="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
+   639→            {pool.asset}
+   640→          </span>
+   641→        </div>
+   642→        <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+   643→          <span>الحد الأدنى: {pool.minStake} {pool.asset}</span>
+   644→          <span>≈ {egpCompact(usdToEgp(amount * getAssetPrice(pool.asset), currentRate))}</span>
+   645→        </div>
+   646→      </div>
+   647→
+   648→      <div class="mb-5">
+   649→        <label class="block text-xs text-slate-400 mb-2">مدة القفل</label>
+   650→        <div class="grid grid-cols-4 gap-2">
+   651→          {#each [['flexible', 'مرن'], [30, '30 يوم'], [90, '90 يوم'], [180, '180 يوم']] as [val, label]}
+   652→            {@const thisApr = getApr(pool, val as any)}
+   653→            <button
+   654→              onclick={() => (stakeDuration = val as any)}
+   655→              class="p-2 rounded-lg border transition-all {stakeDuration === val
+   656→                ? 'bg-accent-gold/15 border-accent-gold/40'
+   657→                : 'bg-ink-900/40 border-white/5 hover:border-white/10'}"
+   658→            >
+   659→              <p class="text-xs font-bold text-white mb-0.5">{label}</p>
+   660→              <p class="text-[10px] text-accent-gold font-mono">{thisApr}%</p>
+   661→            </button>
+   662→          {/each}
+   663→        </div>
+   664→      </div>
+   665→
+   666→      <div class="bg-ink-900/50 rounded-xl p-4 mb-5 space-y-2">
+   667→        <div class="flex justify-between text-sm">
+   668→          <span class="text-slate-400">APR</span>
+   669→          <span class="text-accent-gold font-bold font-mono">{apr}%</span>
+   670→        </div>
+   671→        <div class="flex justify-between text-sm">
+   672→          <span class="text-slate-400">العائد اليومي</span>
+   673→          <span class="text-emerald-400 font-mono">{(yearlyReward / 365).toFixed(6)} {pool.asset}</span>
+   674→        </div>
+   675→        <div class="flex justify-between text-sm">
+   676→          <span class="text-slate-400">العائد الشهري</span>
+   677→          <span class="text-emerald-400 font-mono">{(yearlyReward / 12).toFixed(6)} {pool.asset}</span>
+   678→        </div>
+   679→        <div class="flex justify-between text-sm pt-2 border-t border-white/5">
+   680→          <span class="text-slate-400">العائد السنوي</span>
+   681→          <span class="text-white font-bold font-mono">{yearlyReward.toFixed(6)} {pool.asset}</span>
+   682→        </div>
+   683→        <div class="flex justify-between text-xs text-slate-500">
+   684→          <span>≈ بالجنيه المصري</span>
+   685→          <span class="font-mono">{egpCompact(usdToEgp(yearlyReward * getAssetPrice(pool.asset), currentRate))}</span>
+   686→        </div>
+   687→      </div>
+   688→
+   689→      <button
+   690→        onclick={confirmStake}
+   691→        disabled={staking || amount <= 0 || amount > bal || amount < pool.minStake}
+   692→        class="w-full py-3 rounded-xl bg-gradient-to-r from-accent-gold to-accent-violet text-ink-950 font-bold hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+   693→      >
+   694→        {#if staking}
+   695→          <Loader2 size={16} class="animate-spin" />
+   696→          جاري المعالجة...
+   697→        {:else}
+   698→          <Lock size={16} />
+   699→          تأكيد Staking
+   700→        {/if}
+   701→      </button>
+   702→
+   703→      <p class="text-[10px] text-slate-500 text-center mt-3 flex items-center justify-center gap-1">
+   704→        <Info size={10} />
+   705→        {stakeDuration === 'flexible' ? 'يمكنك السحب في أي وقت بدون رسوم' : 'لا يمكن السحب قبل انتهاء فترة القفل'}
+   706→      </p>
+   707→    </div>
+   708→  </Modal>
+   709→{/if}
+   710→
+   711→<style>
+   712→  .bg-white\/3 {
+   713→    background-color: rgba(255, 255, 255, 0.03);
+   714→  }
+   715→</style>
+   716→

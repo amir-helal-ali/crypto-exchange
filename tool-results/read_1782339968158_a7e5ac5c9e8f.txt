@@ -1,0 +1,698 @@
+     1→<script lang="ts">
+     2→  import { onMount, onDestroy } from 'svelte';
+     3→  import { page } from '$app/stores';
+     4→  import NexusChart from '$lib/components/NexusChart.svelte';
+     5→  import type { IndicatorConfig } from '$lib/components/NexusChart.svelte';
+     6→  import NexusChartToolbar from '$lib/components/NexusChartToolbar.svelte';
+     7→  import IndicatorSettingsModal from '$lib/components/IndicatorSettingsModal.svelte';
+     8→  import OrderBook from '$lib/components/OrderBook.svelte';
+     9→  import DepthChart from '$lib/components/DepthChart.svelte';
+    10→  import AccountSummaryBar from '$lib/components/AccountSummaryBar.svelte';
+    11→  import MarketList from '$lib/components/MarketList.svelte';
+    12→  import TradesFeed from '$lib/components/TradesFeed.svelte';
+    13→  import TradeForm from '$lib/components/TradeForm.svelte';
+    14→  import NavTabs from '$lib/components/NavTabs.svelte';
+    15→  import { wallet, exchange } from '$lib/api/endpoints';
+    16→  import { parseApiResponse } from '$lib/api/client';
+    17→  import { formatPrice, formatSymbol, formatCompact, timeAgo } from '$lib/utils/format';
+    18→  import { usdToEgp, egpCompact, egpWithSymbol, formatEGP, usdEgpRate } from '$lib/utils/currency';
+    19→  import { marketStore, favorites, type MarketTicker } from '$lib/stores/market';
+    20→  import { nexusMarket } from '$lib/stores/nexus-market';
+    21→  import { priceAlerts, type PriceAlert } from '$lib/stores/priceAlerts';
+    22→  import PriceFlash from '$lib/components/PriceFlash.svelte';
+    23→  import ChangeBadge from '$lib/components/ChangeBadge.svelte';
+    24→  import AlertsPanel from '$lib/components/AlertsPanel.svelte';
+    25→  import AlertModal from '$lib/components/AlertModal.svelte';
+    26→  import { toasts } from '$lib/stores/toast';
+    27→  import {
+    28→    Star,
+    29→    ZoomIn,
+    30→    ZoomOut,
+    31→    Maximize2,
+    32→    Download,
+    33→    Settings2,
+    34→    Settings,
+    35→    Coins,
+    36→    Bell,
+    37→    BellRing,
+    38→    Crosshair,
+    39→    Camera,
+    40→    LayoutGrid,
+    41→    Square,
+    42→    Columns2,
+    43→    Grid2x2,
+    44→    Link2,
+    45→    Unlink,
+    46→    SlidersHorizontal
+    47→  } from 'lucide-svelte';
+    48→
+    49→  let chartComponent = $state<NexusChart>();
+    50→  let chart2Component = $state<NexusChart>();
+    51→  let chart3Component = $state<NexusChart>();
+    52→  let chart4Component = $state<NexusChart>();
+    53→  let indicatorsPanelOpen = $state(false);
+    54→  let alertModalOpen = $state(false);
+    55→  let indicatorSettingsOpen = $state(false);
+    56→
+    57→  let symbol = $state('BTCUSDT');
+    58→  let timeframe = $state('1H');
+    59→  let indicators = $state<string[]>(['SMA20', 'VWAP']);
+    60→  let subIndicators = $state<string[]>(['RSI']);
+    61→  let chartType = $state<'candles' | 'heikin-ashi' | 'line' | 'area'>('candles');
+    62→  let drawTool = $state<'cursor' | 'hline' | 'trendline' | 'rect' | 'fib' | 'eraser'>('cursor');
+    63→  let balances = $state<any[]>([]);
+    64→  let orders = $state<any[]>([]);
+    65→  let ordersTab = $state<'open' | 'history'>('open');
+    66→  let mobileTab = $state<'chart' | 'trade' | 'orders'>('chart');
+    67→  let ticker = $state<MarketTicker | null>(null);
+    68→  let currentRate = $state(48.5);
+    69→
+    70→  // Multi-chart layout: '1' | '2h' | '2v' | '4'
+    71→  type ChartLayout = '1' | '2h' | '2v' | '4';
+    72→  let chartLayout = $state<ChartLayout>('1');
+    73→  let chartsLinked = $state(true);
+    74→  let symbol2 = $state('ETHUSDT');
+    75→  let symbol3 = $state('BNBUSDT');
+    76→  let symbol4 = $state('SOLUSDT');
+    77→
+    78→  // Indicator config (customizable)
+    79→  const defaultConfig: IndicatorConfig = {
+    80→    sma20Period: 20,
+    81→    sma50Period: 50,
+    82→    ema12Period: 12,
+    83→    ema26Period: 26,
+    84→    bollPeriod: 20,
+    85→    bollStd: 2,
+    86→    rsiPeriod: 14,
+    87→    macdFast: 12,
+    88→    macdSlow: 26,
+    89→    macdSignal: 9,
+    90→    colors: {
+    91→      SMA20: '#f5b544',
+    92→      SMA50: '#a855f7',
+    93→      EMA12: '#3b82f6',
+    94→      EMA26: '#22d3a4'
+    95→    }
+    96→  };
+    97→  let indicatorConfig = $state<IndicatorConfig>(loadIndicatorConfig());
+    98→
+    99→  function loadIndicatorConfig(): IndicatorConfig {
+   100→    if (typeof localStorage === 'undefined') return { ...defaultConfig };
+   101→    try {
+   102→      const raw = localStorage.getItem('nexus-indicator-config');
+   103→      if (raw) {
+   104→        const parsed = JSON.parse(raw);
+   105→        return { ...defaultConfig, ...parsed, colors: { ...defaultConfig.colors, ...(parsed.colors || {}) } };
+   106→      }
+   107→    } catch {}
+   108→    return { ...defaultConfig };
+   109→  }
+   110→
+   111→  function saveIndicatorConfig(cfg: IndicatorConfig) {
+   112→    indicatorConfig = { ...cfg };
+   113→    try { localStorage.setItem('nexus-indicator-config', JSON.stringify(cfg)); } catch {}
+   114→    toasts.success('تم حفظ إعدادات المؤشرات');
+   115→  }
+   116→
+   117→  function resetIndicatorConfig() {
+   118→    indicatorConfig = { ...defaultConfig, colors: { ...defaultConfig.colors } };
+   119→    try { localStorage.setItem('nexus-indicator-config', JSON.stringify(indicatorConfig)); } catch {}
+   120→    toasts.info('تمت استعادة الإعدادات الافتراضية');
+   121→  }
+   122→
+   123→  // Active price alerts for current symbol → render as dashed lines on chart
+   124→  let allAlerts = $state<PriceAlert[]>([]);
+   125→  let unsubAlerts: (() => void) | null = null;
+   126→
+   127→  const chartAlertLines = $derived(
+   128→    allAlerts
+   129→      .filter((a) => a.symbol === symbol && a.status === 'active')
+   130→      .map((a) => ({
+   131→        id: a.id,
+   132→        price: a.targetPrice,
+   133→        side: a.direction as 'above' | 'below',
+   134→        label: `${a.direction === 'above' ? '↑' : '↓'} ${formatPrice(a.targetPrice)}`
+   135→      }))
+   136→  );
+   137→
+   138→  // Combined config for chart (indicator config + alert lines)
+   139→  const chartConfig = $derived({
+   140→    ...indicatorConfig,
+   141→    alertLines: chartAlertLines
+   142→  });
+   143→
+   144→  // Persist chart layout preference
+   145→  $effect(() => {
+   146→    if (typeof localStorage === 'undefined') return;
+   147→    localStorage.setItem('nexus-chart-layout', chartLayout);
+   148→  });
+   149→
+   150→  if (typeof localStorage !== 'undefined') {
+   151→    const savedLayout = localStorage.getItem('nexus-chart-layout') as ChartLayout | null;
+   152→    if (savedLayout && ['1', '2h', '2v', '4'].includes(savedLayout)) chartLayout = savedLayout;
+   153→  }
+   154→
+   155→  const unsubRate = usdEgpRate.subscribe((r) => (currentRate = r));
+   156→
+   157→  const unsubscribe = marketStore.subscribe((tickers) => {
+   158→    ticker = tickers[symbol] || null;
+   159→  });
+   160→
+   161→  const favList = $favorites;
+   162→
+   163→  let unsubNexus: (() => void) | null = null;
+   164→
+   165→  onMount(() => {
+   166→  (async () => {
+   167→    const urlSym = new URLSearchParams(window.location.search).get('symbol');
+   168→    if (urlSym) symbol = urlSym;
+   169→    await Promise.all([loadBalances(), loadOrders(), connectTickerWS()])
+   170→  })();
+   171→  unsubAlerts = priceAlerts.subscribe((a) => (allAlerts = a));
+   172→  return () => {
+   173→      unsubscribe();
+   174→      unsubRate();
+   175→      unsubNexus?.();
+   176→      unsubAlerts?.();
+   177→    };
+   178→});
+   179→
+   180→  // Listen for ticker updates from NexusChart's WebSocket
+   181→  function connectTickerWS() {
+   182→    // Bootstrap with REST snapshot
+   183→    (async () => {
+   184→      const all = await nexusMarket.getAllTickers();
+   185→      for (const t of all) {
+   186→        marketStore.updateTicker(t.symbol, {
+   187→          symbol: t.symbol,
+   188→          price: t.price,
+   189→          change24h: t.change24h,
+   190→          high24h: t.high24h,
+   191→          low24h: t.low24h,
+   192→          volume24h: t.volume24h
+   193→        });
+   194→      }
+   195→    })();
+   196→    // Subscribe to live ticks — NexusChart already streams the current symbol's
+   197→    // kline data via its own /ws/kline connection. We just subscribe to /ws/market
+   198→    // here for the ticker price updates that the header needs.
+   199→    unsubNexus = nexusMarket.subscribe(symbol, () => {});
+   200→    nexusMarket.switchSymbol(symbol);
+   201→  }
+   202→
+   203→  // Track symbol changes — update URL + reload orders + switch Nexus feed
+   204→  $effect.pre(() => {
+   205→    const sym = symbol;
+   206→    loadOrders();
+   207→    nexusMarket.switchSymbol(sym);
+   208→    if (typeof window !== 'undefined') {
+   209→      const url = new URL(window.location.href);
+   210→      url.searchParams.set('symbol', sym);
+   211→      window.history.replaceState({}, '', url.toString());
+   212→    }
+   213→  });
+   214→
+   215→  async function loadBalances() {
+   216→    try {
+   217→      const res = await wallet.getBalances();
+   218→      balances = (await parseApiResponse<any[]>(res)) || [];
+   219→    } catch {}
+   220→  }
+   221→
+   222→  async function loadOrders() {
+   223→    try {
+   224→      const status = ordersTab === 'open' ? 'PENDING' : undefined;
+   225→      const res = await exchange.getOrders({ symbol, status, limit: 20 });
+   226→      orders = (await parseApiResponse<any[]>(res)) || [];
+   227→    } catch {}
+   228→  }
+   229→
+   230→  async function cancelOrder(id: number) {
+   231→    try {
+   232→      await exchange.cancelOrder(id);
+   233→      toasts.success('تم إلغاء الأمر');
+   234→      loadOrders();
+   235→    } catch {
+   236→      toasts.error('فشل إلغاء الأمر');
+   237→    }
+   238→  }
+   239→
+   240→  const timeframes = ['1m', '5m', '15m', '1H', '4H', '1D', '1W'];
+   241→  const availableIndicators = [
+   242→    { k: 'SMA20', l: 'SMA 20', color: '#f5b544' },
+   243→    { k: 'SMA50', l: 'SMA 50', color: '#a855f7' },
+   244→    { k: 'EMA12', l: 'EMA 12', color: '#3b82f6' },
+   245→    { k: 'EMA26', l: 'EMA 26', color: '#22d3a4' },
+   246→    { k: 'BOLL', l: 'Bollinger', color: '#f5b544' },
+   247→    { k: 'VWAP', l: 'VWAP', color: '#a855f7' }
+   248→  ];
+   249→
+   250→  function toggleIndicator(k: string) {
+   251→    if (indicators.includes(k)) {
+   252→      indicators = indicators.filter((i) => i !== k);
+   253→    } else {
+   254→      indicators = [...indicators, k];
+   255→    }
+   256→  }
+   257→
+   258→  function clearDrawings() {
+   259→    (chartComponent as any)?.clearDrawings?.();
+   260→    toasts.info('تم مسح جميع الرسومات على الشارت');
+   261→  }
+   262→
+   263→  // Build chart markers from filled orders (visual trade history on chart)
+   264→  let chartMarkers = $derived(
+   265→    orders
+   266→      .filter((o) => o.status === 'FILLED' && o.symbol === symbol)
+   267→      .slice(-20)
+   268→      .map((o) => ({
+   269→        side: o.side as 'BUY' | 'SELL',
+   270→        price: Number(o.price) || 0,
+   271→        time: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
+   272→        qty: Number(o.quantity) || 0
+   273→      }))
+   274→  );
+   275→
+   276→  const { base, quote } = $derived(formatSymbol(symbol));
+   277→</script>
+   278→
+   279→<svelte:head><title>التداول — {symbol} — NEXUS</title></svelte:head>
+   280→
+   281→<div class="space-y-3 pb-20 lg:pb-0">
+   282→  <!-- Pair header -->
+   283→  <div class="panel p-4 flex flex-wrap items-center justify-between gap-4">
+   284→    <div class="flex items-center gap-2">
+   285→      <button
+   286→        onclick={() => favorites.toggle(symbol)}
+   287→        class="p-1 hover:scale-110 transition-transform"
+   288→        aria-label="إضافة للمفضلة"
+   289→        title="إضافة للمفضلة"
+   290→      >
+   291→        <Star size={20} class={favList.includes(symbol) ? 'text-accent-gold fill-accent-gold' : 'text-slate-500'} />
+   292→      </button>
+   293→      <button
+   294→        onclick={() => (alertModalOpen = true)}
+   295→        class="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-accent-gold transition-colors relative"
+   296→        aria-label="إنشاء تنبيه سعر"
+   297→        title="إنشاء تنبيه سعر"
+   298→      >
+   299→        <BellRing size={18} />
+   300→      </button>
+   301→    </div>
+   302→      <div>
+   303→        <div class="flex items-center gap-2">
+   304→          <h1 class="text-xl font-bold text-white">{base}<span class="text-slate-500">/{quote}</span></h1>
+   305→          <span class="pill-gold">SPOT</span>
+   306→        </div>
+   307→        <div class="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+   308→          <Coins size={10} class="text-accent-gold" />
+   309→          <span>العملة الأساسية: ج.م</span>
+   310→        </div>
+   311→      </div>
+   312→
+   313→    <div class="flex items-center gap-4 sm:gap-6 flex-wrap">
+   314→      <div>
+   315→        <div class="text-[10px] text-slate-500 mb-0.5">آخر سعر</div>
+   316→        <PriceFlash value={ticker?.price || 0} prevValue={ticker?.prevPrice} className="text-lg font-bold font-mono text-white" />
+   317→        <div class="text-[11px] text-accent-gold font-mono tabular-nums mt-0.5">
+   318→          ≈ {egpCompact(usdToEgp(ticker?.price || 0, currentRate))}
+   319→        </div>
+   320→      </div>
+   321→      <div>
+   322→        <div class="text-[10px] text-slate-500 mb-0.5">24h</div>
+   323→        {#if ticker}<ChangeBadge change={ticker.change24h} className="text-sm" />{:else}<span class="text-sm text-slate-500">--</span>{/if}
+   324→      </div>
+   325→      <div class="hidden sm:block">
+   326→        <div class="text-[10px] text-slate-500 mb-0.5">أعلى 24h</div>
+   327→        <span class="text-sm font-mono text-slate-300 tabular-nums">{ticker ? formatPrice(ticker.high24h) : '--'}</span>
+   328→      </div>
+   329→      <div class="hidden sm:block">
+   330→        <div class="text-[10px] text-slate-500 mb-0.5">أقل 24h</div>
+   331→        <span class="text-sm font-mono text-slate-300 tabular-nums">{ticker ? formatPrice(ticker.low24h) : '--'}</span>
+   332→      </div>
+   333→      <div class="hidden md:block">
+   334→        <div class="text-[10px] text-slate-500 mb-0.5">حجم 24h</div>
+   335→        <span class="text-sm font-mono text-slate-300 tabular-nums">{ticker ? formatCompact(ticker.volume24h) : '--'} {base}</span>
+   336→      </div>
+   337→    </div>
+   338→  </div>
+   339→
+   340→  <!-- Main grid -->
+   341→  <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr_300px] gap-3">
+   342→    <!-- Left: Market list -->
+   343→    <div class="panel hidden lg:flex flex-col overflow-hidden" style="height: 600px;">
+   344→      <MarketList selectedSymbol={symbol} onSelect={(s) => (symbol = s)} />
+   345→    </div>
+   346→
+   347→    <!-- Center -->
+   348→    <div class="flex flex-col gap-3">
+   349→      <!-- Chart panel -->
+   350→      <div class="panel overflow-hidden">
+   351→        <div class="flex items-center justify-between border-b border-white/5 px-3 py-2">
+   352→          <div class="flex items-center gap-1 overflow-x-auto scrollbar-none">
+   353→            {#each timeframes as tf}
+   354→              <button
+   355→                onclick={() => (timeframe = tf)}
+   356→                class="px-2.5 py-1 text-xs rounded-md font-medium transition-colors whitespace-nowrap {timeframe === tf ? 'bg-accent-gold/15 text-accent-gold' : 'text-slate-400 hover:bg-white/5 hover:text-white'}"
+   357→              >
+   358→                {tf}
+   359→              </button>
+   360→            {/each}
+   361→          </div>
+   362→
+   363→          <div class="flex items-center gap-1">
+   364→            <div class="relative">
+   365→              <button onclick={() => (indicatorsPanelOpen = !indicatorsPanelOpen)} class="p-1.5 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" aria-label="المؤشرات">
+   366→                <Settings2 size={14} />
+   367→              </button>
+   368→              {#if indicatorsPanelOpen}
+   369→                <div class="absolute left-0 mt-1 z-20 w-44 panel-glow p-2 text-xs">
+   370→                  <p class="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500 font-bold">المؤشرات</p>
+   371→                  {#each availableIndicators as ind}
+   372→                    <button onclick={() => toggleIndicator(ind.k)} class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5">
+   373→                      <span class="w-2 h-2 rounded-full" style="background: {ind.color};"></span>
+   374→                      <span class="text-slate-200">{ind.l}</span>
+   375→                      {#if indicators.includes(ind.k)}
+   376→                        <svg class="w-3 h-3 mr-auto text-accent-mint" viewBox="0 0 12 12" fill="none">
+   377→                          <path d="M2 6l3 3 5-6" stroke="currentColor" stroke-width="2" fill="none" />
+   378→                        </svg>
+   379→                      {/if}
+   380→                    </button>
+   381→                  {/each}
+   382→                  <div class="border-t border-white/5 mt-2 pt-2">
+   383→                    <button onclick={() => { indicatorsPanelOpen = false; indicatorSettingsOpen = true; }} class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 text-accent-gold">
+   384→                      <SlidersHorizontal size={12} />
+   385→                      <span>إعدادات المؤشرات</span>
+   386→                    </button>
+   387→                  </div>
+   388→                </div>
+   389→              {/if}
+   390→            </div>
+   391→            <!-- Layout picker: 1 / 2h / 2v / 4 -->
+   392→            <div class="flex items-center gap-0.5 bg-white/[0.03] rounded-md p-0.5">
+   393→              <button onclick={() => (chartLayout = '1')} class="p-1 rounded {chartLayout === '1' ? 'bg-accent-gold/20 text-accent-gold' : 'text-slate-400 hover:text-white'}" aria-label="شارت واحد" title="شارت واحد">
+   394→                <Square size={12} />
+   395→              </button>
+   396→              <button onclick={() => (chartLayout = '2h')} class="p-1 rounded {chartLayout === '2h' ? 'bg-accent-gold/20 text-accent-gold' : 'text-slate-400 hover:text-white'}" aria-label="شارتين أفقي" title="شارتين أفقي">
+   397→                <Columns2 size={12} />
+   398→              </button>
+   399→              <button onclick={() => (chartLayout = '2v')} class="p-1 rounded {chartLayout === '2v' ? 'bg-accent-gold/20 text-accent-gold' : 'text-slate-400 hover:text-white'}" aria-label="شارتين رأسي" title="شارتين رأسي">
+   400→                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="8" rx="1" /><rect x="3" y="13" width="18" height="8" rx="1" /></svg>
+   401→              </button>
+   402→              <button onclick={() => (chartLayout = '4')} class="p-1 rounded {chartLayout === '4' ? 'bg-accent-gold/20 text-accent-gold' : 'text-slate-400 hover:text-white'}" aria-label="4 شارتات" title="4 شارتات">
+   403→                <Grid2x2 size={12} />
+   404→              </button>
+   405→            </div>
+   406→            {#if chartLayout !== '1'}
+   407→              <button onclick={() => (chartsLinked = !chartsLinked)} class="p-1.5 rounded-md {chartsLinked ? 'text-accent-mint bg-accent-mint/10' : 'text-slate-400 hover:bg-white/5 hover:text-white'}" aria-label="ربط الشارتات" title="{chartsLinked ? 'مرتبطة' : 'غير مرتبطة'}">
+   408→                {#if chartsLinked}<Link2 size={14} />{:else}<Unlink size={14} />{/if}
+   409→              </button>
+   410→            {/if}
+   411→            <button onclick={() => chartComponent?.zoomIn()} class="p-1.5 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" aria-label="تكبير"><ZoomIn size={14} /></button>
+   412→            <button onclick={() => chartComponent?.zoomOut()} class="p-1.5 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" aria-label="تصغير"><ZoomOut size={14} /></button>
+   413→            <button onclick={() => chartComponent?.resetView()} class="p-1.5 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" aria-label="إعادة الضبط"><Maximize2 size={14} /></button>
+   414→            <button onclick={() => chartComponent?.goLive()} class="p-1.5 rounded-md text-accent-mint hover:bg-accent-mint/10" aria-label="الذهاب للمباشر" title="الذهاب لأحدث سعر">
+   415→              <Crosshair size={14} />
+   416→            </button>
+   417→            <button onclick={() => chartComponent?.exportPng()} class="p-1.5 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" aria-label="تصدير PNG"><Camera size={14} /></button>
+   418→          </div>
+   419→        </div>
+   420→
+   421→        <!-- Pro toolbar: chart type + drawing tools + overlay/sub indicators -->
+   422→        <NexusChartToolbar bind:chartType bind:tool={drawTool} bind:indicators bind:subIndicators onClearDrawings={clearDrawings} />
+   423→
+   424→        <!-- Single chart -->
+   425→        {#if chartLayout === '1'}
+   426→          <div class="relative" style="height: 540px;">
+   427→            <NexusChart bind:this={chartComponent} {symbol} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={540} markers={chartMarkers} config={chartConfig} />
+   428→          </div>
+   429→        {:else if chartLayout === '2h'}
+   430→          <!-- 2 charts horizontal -->
+   431→          <div class="grid grid-cols-2 gap-1 p-1 bg-ink-950/50">
+   432→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   433→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">{symbol}</div>
+   434→              <NexusChart bind:this={chartComponent} {symbol} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={520} markers={chartMarkers} config={chartConfig} />
+   435→            </div>
+   436→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   437→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">
+   438→                <input type="text" list="symbol-list" bind:value={symbol2} class="bg-transparent w-20 outline-none focus:bg-ink-900 px-1" />
+   439→              </div>
+   440→              <NexusChart bind:this={chart2Component} symbol={chartsLinked ? symbol : symbol2} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={520} config={chartConfig} />
+   441→            </div>
+   442→          </div>
+   443→        {:else if chartLayout === '2v'}
+   444→          <!-- 2 charts vertical -->
+   445→          <div class="grid grid-rows-2 gap-1 p-1 bg-ink-950/50" style="height: 540px;">
+   446→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   447→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">{symbol}</div>
+   448→              <NexusChart bind:this={chartComponent} {symbol} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={265} markers={chartMarkers} config={chartConfig} />
+   449→            </div>
+   450→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   451→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">
+   452→                <input type="text" list="symbol-list" bind:value={symbol2} class="bg-transparent w-20 outline-none focus:bg-ink-900 px-1" />
+   453→              </div>
+   454→              <NexusChart bind:this={chart2Component} symbol={chartsLinked ? symbol : symbol2} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={265} config={chartConfig} />
+   455→            </div>
+   456→          </div>
+   457→        {:else if chartLayout === '4'}
+   458→          <!-- 4 charts (2x2) -->
+   459→          <div class="grid grid-cols-2 grid-rows-2 gap-1 p-1 bg-ink-950/50" style="height: 540px;">
+   460→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   461→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">{symbol}</div>
+   462→              <NexusChart bind:this={chartComponent} {symbol} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={265} markers={chartMarkers} config={chartConfig} />
+   463→            </div>
+   464→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   465→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">
+   466→                <input type="text" list="symbol-list" bind:value={symbol2} class="bg-transparent w-20 outline-none focus:bg-ink-900 px-1" />
+   467→              </div>
+   468→              <NexusChart bind:this={chart2Component} symbol={chartsLinked ? symbol : symbol2} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={265} config={chartConfig} />
+   469→            </div>
+   470→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   471→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">
+   472→                <input type="text" list="symbol-list" bind:value={symbol3} class="bg-transparent w-20 outline-none focus:bg-ink-900 px-1" />
+   473→              </div>
+   474→              <NexusChart bind:this={chart3Component} symbol={chartsLinked ? symbol : symbol3} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={265} config={chartConfig} />
+   475→            </div>
+   476→            <div class="relative border border-white/5 rounded-md overflow-hidden">
+   477→              <div class="absolute top-1 right-1 z-10 px-1.5 py-0.5 bg-black/60 rounded text-[10px] font-mono text-accent-gold">
+   478→                <input type="text" list="symbol-list" bind:value={symbol4} class="bg-transparent w-20 outline-none focus:bg-ink-900 px-1" />
+   479→              </div>
+   480→              <NexusChart bind:this={chart4Component} symbol={chartsLinked ? symbol : symbol4} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={265} config={chartConfig} />
+   481→            </div>
+   482→          </div>
+   483→        {/if}
+   484→
+   485→        <!-- Symbol datalist for multi-chart symbol inputs -->
+   486→        <datalist id="symbol-list">
+   487→          <option value="BTCUSDT"></option>
+   488→          <option value="ETHUSDT"></option>
+   489→          <option value="BNBUSDT"></option>
+   490→          <option value="SOLUSDT"></option>
+   491→          <option value="XRPUSDT"></option>
+   492→          <option value="ADAUSDT"></option>
+   493→          <option value="DOGEUSDT"></option>
+   494→          <option value="AVAXUSDT"></option>
+   495→          <option value="DOTUSDT"></option>
+   496→          <option value="LINKUSDT"></option>
+   497→          <option value="MATICUSDT"></option>
+   498→          <option value="TRXUSDT"></option>
+   499→          <option value="LTCUSDT"></option>
+   500→          <option value="ATOMUSDT"></option>
+   501→        </datalist>
+   502→      </div>
+   503→
+   504→      <!-- Orders panel -->
+   505→      <div class="panel overflow-hidden">
+   506→        <div class="px-4 pt-3 pb-0 border-b border-white/5">
+   507→          <NavTabs
+   508→            value={ordersTab}
+   509→            onchange={(key) => { ordersTab = key as any; loadOrders(); }}
+   510→            variant="underline"
+   511→            size="sm"
+   512→            items={[
+   513→              { key: 'open', label: 'الأوامر المفتوحة' },
+   514→              { key: 'history', label: 'السجل' }
+   515→            ]}
+   516→          />
+   517→        </div>
+   518→
+   519→        <div class="overflow-x-auto max-h-72">
+   520→          {#if orders.length === 0}
+   521→            <div class="py-8 text-center text-slate-500 text-sm">لا توجد أوامر {ordersTab === 'open' ? 'مفتوحة' : 'في السجل'}</div>
+   522→          {:else}
+   523→            <table class="w-full text-xs">
+   524→              <thead>
+   525→                <tr class="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">
+   526→                  <th class="text-right font-medium px-4 py-2">الوقت</th>
+   527→                  <th class="text-right font-medium px-4 py-2">الزوج</th>
+   528→                  <th class="text-right font-medium px-4 py-2">النوع</th>
+   529→                  <th class="text-right font-medium px-4 py-2">السعر (ج.م)</th>
+   530→                  <th class="text-right font-medium px-4 py-2">الكمية</th>
+   531→                  <th class="text-right font-medium px-4 py-2">الحالة</th>
+   532→                  {#if ordersTab === 'open'}<th class="text-left font-medium px-4 py-2">إجراء</th>{/if}
+   533→                </tr>
+   534→              </thead>
+   535→              <tbody>
+   536→                {#each orders.slice(0, 20) as o}
+   537→                  <tr class="border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+   538→                    <td class="px-4 py-2 text-slate-400">{timeAgo(o.created_at)}</td>
+   539→                    <td class="px-4 py-2 font-semibold text-white">{o.symbol}</td>
+   540→                    <td class="px-4 py-2">
+   541→                      <span class="pill {o.side === 'BUY' ? 'pill-mint' : 'pill-rose'}">
+   542→                        {o.side === 'BUY' ? 'شراء' : 'بيع'} {o.type === 'MARKET' ? 'سوقي' : o.type === 'LIMIT' ? 'محدد' : o.type}
+   543→                      </span>
+   544→                    </td>
+   545→                    <td class="px-4 py-2 font-mono text-slate-300 tabular-nums">{formatEGP(usdToEgp(o.price, currentRate))}</td>
+   546→                    <td class="px-4 py-2 font-mono text-slate-300 tabular-nums">{formatPrice(o.quantity, 6)}</td>
+   547→                    <td class="px-4 py-2">
+   548→                      <span class="pill {o.status === 'FILLED' ? 'pill-mint' : o.status === 'PENDING' ? 'pill-gold' : 'pill-rose'}">
+   549→                        {o.status === 'FILLED' ? 'مكتمل' : o.status === 'PENDING' ? 'معلق' : o.status === 'CANCELLED' ? 'ملغى' : o.status}
+   550→                      </span>
+   551→                    </td>
+   552→                    {#if ordersTab === 'open'}
+   553→                      <td class="px-4 py-2 text-left">
+   554→                        <button onclick={() => cancelOrder(o.id)} class="text-accent-rose hover:underline text-[11px]">إلغاء</button>
+   555→                      </td>
+   556→                    {/if}
+   557→                  </tr>
+   558→                {/each}
+   559→              </tbody>
+   560→            </table>
+   561→          {/if}
+   562→        </div>
+   563→      </div>
+   564→    </div>
+   565→
+   566→    <!-- Right -->
+   567→    <div class="flex flex-col gap-3">
+   568→      <div class="panel hidden lg:flex flex-col overflow-hidden" style="height: 380px;">
+   569→        <OrderBook {symbol} />
+   570→      </div>
+   571→
+   572→      <!-- Depth chart -->
+   573→      <div class="panel hidden lg:flex flex-col overflow-hidden p-2" style="height: 160px;">
+   574→        <div class="flex items-center justify-between px-1 pb-1">
+   575→          <span class="text-[10px] text-slate-500 uppercase tracking-wider">العمق</span>
+   576→          <span class="text-[10px] text-slate-500">20 مستوى</span>
+   577→        </div>
+   578→        <DepthChart {symbol} height={120} />
+   579→      </div>
+   580→
+   581→      <div class="panel p-4">
+   582→        <TradeForm {symbol} {balances} />
+   583→      </div>
+   584→
+   585→      <div class="panel hidden lg:flex flex-col overflow-hidden" style="height: 240px;">
+   586→        <TradesFeed {symbol} />
+   587→      </div>
+   588→
+   589→      <!-- Price alerts panel -->
+   590→      <div class="hidden lg:block">
+   591→        <AlertsPanel {symbol} compact={true} />
+   592→      </div>
+   593→    </div>
+   594→  </div>
+   595→
+   596→  <!-- Account summary bar (bottom) -->
+   597→  <div class="sticky bottom-0 lg:bottom-0 z-20 -mx-3 lg:mx-0">
+   598→    <AccountSummaryBar {symbol} />
+   599→  </div>
+   600→
+   601→  <!-- Mobile tab bar -->
+   602→  <div class="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-ink-900/95 backdrop-blur-xl border-t border-white/5">
+   603→    <div class="grid grid-cols-3 h-14">
+   604→      <button onclick={() => (mobileTab = 'chart')} class="flex flex-col items-center justify-center gap-0.5 text-[10px] {mobileTab === 'chart' ? 'text-accent-gold' : 'text-slate-400'}">
+   605→        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l4-4 4 4 4-6 4 4 2-2" /></svg>
+   606→        <span>الشارت</span>
+   607→      </button>
+   608→      <button onclick={() => (mobileTab = 'trade')} class="flex flex-col items-center justify-center gap-0.5 text-[10px] {mobileTab === 'trade' ? 'text-accent-gold' : 'text-slate-400'}">
+   609→        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8h14M5 16h14" /></svg>
+   610→        <span>تداول</span>
+   611→      </button>
+   612→      <button onclick={() => (mobileTab = 'orders')} class="flex flex-col items-center justify-center gap-0.5 text-[10px] {mobileTab === 'orders' ? 'text-accent-gold' : 'text-slate-400'}">
+   613→        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 8h8M8 12h8M8 16h4" /></svg>
+   614→        <span>أوامري</span>
+   615→      </button>
+   616→    </div>
+   617→  </div>
+   618→
+   619→  <!-- Mobile content -->
+   620→  {#if mobileTab === 'trade'}
+   621→    <div class="panel p-4 lg:hidden">
+   622→      <TradeForm {symbol} {balances} />
+   623→    </div>
+   624→  {:else if mobileTab === 'orders'}
+   625→    <div class="panel overflow-hidden lg:hidden">
+   626→      <div class="px-4 pt-3 pb-0 border-b border-white/5">
+   627→        <NavTabs
+   628→          value={ordersTab}
+   629→          onchange={(key) => { ordersTab = key as any; loadOrders(); }}
+   630→          variant="underline"
+   631→          size="sm"
+   632→          items={[
+   633→            { key: 'open', label: 'المفتوحة' },
+   634→            { key: 'history', label: 'السجل' }
+   635→          ]}
+   636→        />
+   637→      </div>
+   638→      <div class="overflow-x-auto">
+   639→        {#if orders.length === 0}
+   640→          <div class="py-8 text-center text-slate-500 text-sm">لا توجد أوامر</div>
+   641→        {:else}
+   642→          <table class="w-full text-xs">
+   643→            <thead>
+   644→              <tr class="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">
+   645→                <th class="text-right font-medium px-3 py-2">الزوج</th>
+   646→                <th class="text-right font-medium px-3 py-2">النوع</th>
+   647→                <th class="text-right font-medium px-3 py-2">السعر (ج.م)</th>
+   648→                <th class="text-left font-medium px-3 py-2">الحالة</th>
+   649→              </tr>
+   650→            </thead>
+   651→            <tbody>
+   652→              {#each orders.slice(0, 15) as o}
+   653→                <tr class="border-b border-white/5 last:border-0">
+   654→                  <td class="px-3 py-2 font-semibold text-white">{o.symbol}</td>
+   655→                  <td class="px-3 py-2">
+   656→                    <span class="pill {o.side === 'BUY' ? 'pill-mint' : 'pill-rose'}">{o.side === 'BUY' ? 'شراء' : 'بيع'}</span>
+   657→                  </td>
+   658→                  <td class="px-3 py-2 font-mono text-slate-300">{formatEGP(usdToEgp(o.price, currentRate))}</td>
+   659→                  <td class="px-3 py-2 text-left">
+   660→                    <span class="pill {o.status === 'FILLED' ? 'pill-mint' : o.status === 'PENDING' ? 'pill-gold' : 'pill-rose'}">
+   661→                      {o.status === 'FILLED' ? 'مكتمل' : o.status === 'PENDING' ? 'معلق' : o.status}
+   662→                    </span>
+   663→                  </td>
+   664→                </tr>
+   665→              {/each}
+   666→            </tbody>
+   667→          </table>
+   668→        {/if}
+   669→      </div>
+   670→    </div>
+   671→  {:else if mobileTab === 'chart'}
+   672→    <div class="panel overflow-hidden mb-3 lg:hidden" style="height: 280px;">
+   673→      <MarketList selectedSymbol={symbol} onSelect={(s) => (symbol = s)} />
+   674→    </div>
+   675→    <div class="panel overflow-hidden lg:hidden">
+   676→      <div class="flex items-center gap-1 border-b border-white/5 px-3 py-2 overflow-x-auto scrollbar-none">
+   677→        {#each timeframes as tf}
+   678→          <button onclick={() => (timeframe = tf)} class="px-2 py-1 text-xs rounded-md font-medium whitespace-nowrap {timeframe === tf ? 'bg-accent-gold/15 text-accent-gold' : 'text-slate-400'}">{tf}</button>
+   679→        {/each}
+   680→      </div>
+   681→      <div class="relative" style="height: 380px;">
+   682→        <NexusChart bind:this={chartComponent} {symbol} {timeframe} {indicators} {subIndicators} {chartType} tool={drawTool} height={380} />
+   683→      </div>
+   684→    </div>
+   685→  {/if}
+   686→</div>
+   687→
+   688→<!-- Alert creation modal -->
+   689→<AlertModal bind:open={alertModalOpen} {symbol} />
+   690→
+   691→<!-- Indicator settings modal -->
+   692→<IndicatorSettingsModal
+   693→  bind:open={indicatorSettingsOpen}
+   694→  config={indicatorConfig}
+   695→  onsave={saveIndicatorConfig}
+   696→  onreset={resetIndicatorConfig}
+   697→/>
+   698→

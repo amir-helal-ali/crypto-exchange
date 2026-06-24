@@ -1,0 +1,657 @@
+     1→<script lang="ts">
+     2→  import { onMount, onDestroy } from 'svelte';
+     3→  import { toasts } from '$lib/stores/toast';
+     4→  import { usdEgpRate } from '$lib/utils/currency';
+     5→  import {
+     6→    Settings as SettingsIcon,
+     7→    Moon,
+     8→    Bell,
+     9→    Globe,
+    10→    DollarSign,
+    11→    Languages,
+    12→    Shield,
+    13→    Palette,
+    14→    Check,
+    15→    Mail,
+    16→    Smartphone,
+    17→    Loader2,
+    18→    Volume2,
+    19→    Vibrate,
+    20→    Eye,
+    21→    Lock,
+    22→    ChevronLeft,
+    23→    Info,
+    24→    FileText
+    25→  } from 'lucide-svelte';
+    26→
+    27→  let saving = $state(false);
+    28→  let activeTab = $state<'appearance' | 'notifications' | 'trading' | 'security' | 'currency'>('appearance');
+    29→
+    30→  // Appearance settings — dark-only mode (no theme picker)
+    31→  let accentColor = $state('gold');
+    32→  let density = $state<'comfortable' | 'compact'>('comfortable');
+    33→  let chartType = $state<'candles' | 'line' | 'area'>('candles');
+    34→  let animationsEnabled = $state(true);
+    35→
+    36→  // Notifications
+    37→  let emailNotifs = $state({ price: true, security: true, trades: true, newsletter: false });
+    38→  let pushNotifs = $state({ price: true, security: true, trades: true });
+    39→  let smsNotifs = $state({ security: true, trades: false });
+    40→  let soundEnabled = $state(true);
+    41→  let vibrateEnabled = $state(true);
+    42→
+    43→  // Trading
+    44→  let defaultOrderType = $state<'market' | 'limit'>('limit');
+    45→  let confirmOrders = $state(true);
+    46→  let showOrderBook = $state(true);
+    47→  let slippageTolerance = $state(0.5);
+    48→  let defaultLeverage = $state(1);
+    49→
+    50→  // Currency
+    51→  let displayCurrency = $state('EGP');
+    52→  let rate = $state(48.5);
+    53→  let autoUpdateRate = $state(true);
+    54→
+    55→  const unsubRate = usdEgpRate.subscribe((r) => (rate = r));
+    56→
+    57→  const accentColors = [
+    58→    { id: 'gold', name: 'ذهبي', value: '#f5b800' },
+    59→    { id: 'violet', name: 'بنفسجي', value: '#8b5cf6' },
+    60→    { id: 'rose', name: 'وردي', value: '#f43f5e' },
+    61→    { id: 'emerald', name: 'زمردي', value: '#10b981' },
+    62→    { id: 'cyan', name: 'سماوي', value: '#06b6d4' },
+    63→    { id: 'amber', name: 'كهرماني', value: '#f59e0b' }
+    64→  ];
+    65→
+    66→  onMount(() => {
+    67→    loadSettings();
+    68→  });
+    69→
+    70→  onDestroy(() => unsubRate());
+    71→
+    72→  function loadSettings() {
+    73→    try {
+    74→      const raw = localStorage.getItem('nexus-settings');
+    75→      if (raw) {
+    76→        const s = JSON.parse(raw);
+    77→        if (s.accentColor) accentColor = s.accentColor;
+    78→        if (s.density) density = s.density;
+    79→        if (s.chartType) chartType = s.chartType;
+    80→        if (s.animationsEnabled !== undefined) animationsEnabled = s.animationsEnabled;
+    81→        if (s.emailNotifs) emailNotifs = s.emailNotifs;
+    82→        if (s.pushNotifs) pushNotifs = s.pushNotifs;
+    83→        if (s.smsNotifs) smsNotifs = s.smsNotifs;
+    84→        if (s.soundEnabled !== undefined) soundEnabled = s.soundEnabled;
+    85→        if (s.vibrateEnabled !== undefined) vibrateEnabled = s.vibrateEnabled;
+    86→        if (s.defaultOrderType) defaultOrderType = s.defaultOrderType;
+    87→        if (s.confirmOrders !== undefined) confirmOrders = s.confirmOrders;
+    88→        if (s.showOrderBook !== undefined) showOrderBook = s.showOrderBook;
+    89→        if (s.slippageTolerance) slippageTolerance = s.slippageTolerance;
+    90→        if (s.defaultLeverage) defaultLeverage = s.defaultLeverage;
+    91→        if (s.displayCurrency) displayCurrency = s.displayCurrency;
+    92→        if (s.autoUpdateRate !== undefined) autoUpdateRate = s.autoUpdateRate;
+    93→      }
+    94→    } catch {}
+    95→  }
+    96→
+    97→  async function saveSettings() {
+    98→    saving = true;
+    99→    try {
+   100→      const settings = {
+   101→        accentColor, density, chartType, animationsEnabled,
+   102→        emailNotifs, pushNotifs, smsNotifs, soundEnabled, vibrateEnabled,
+   103→        defaultOrderType, confirmOrders, showOrderBook, slippageTolerance, defaultLeverage,
+   104→        displayCurrency, autoUpdateRate
+   105→      };
+   106→      localStorage.setItem('nexus-settings', JSON.stringify(settings));
+   107→      await new Promise((r) => setTimeout(r, 800));
+   108→      toasts.success('تم حفظ الإعدادات بنجاح');
+   109→    } catch {
+   110→      toasts.error('فشل في حفظ الإعدادات');
+   111→    } finally {
+   112→      saving = false;
+   113→    }
+   114→  }
+   115→
+   116→  function resetSettings() {
+   117→    if (!confirm('هل أنت متأكد من إعادة ضبط جميع الإعدادات؟')) return;
+   118→    localStorage.removeItem('nexus-settings');
+   119→    loadSettings();
+   120→    toasts.info('تمت إعادة ضبط الإعدادات');
+   121→  }
+   122→
+   123→  const tabs = [
+   124→    { id: 'appearance', label: 'المظهر', icon: Palette },
+   125→    { id: 'notifications', label: 'الإشعارات', icon: Bell },
+   126→    { id: 'trading', label: 'التداول', icon: DollarSign },
+   127→    { id: 'currency', label: 'العملة', icon: Globe },
+   128→    { id: 'security', label: 'الأمان', icon: Shield }
+   129→  ] as const;
+   130→</script>
+   131→
+   132→<div class="space-y-6">
+   133→  <!-- Header -->
+   134→  <div class="flex flex-wrap items-center justify-between gap-4">
+   135→    <div class="flex items-center gap-3">
+   136→      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold to-accent-violet flex items-center justify-center">
+   137→        <SettingsIcon size={22} class="text-ink-950" />
+   138→      </div>
+   139→      <div>
+   140→        <h1 class="text-2xl font-bold text-white">الإعدادات</h1>
+   141→        <p class="text-sm text-slate-400">خصص تجربتك على NEXUS Exchange</p>
+   142→      </div>
+   143→    </div>
+   144→    <div class="flex items-center gap-2">
+   145→      <button
+   146→        onclick={resetSettings}
+   147→        class="px-4 py-2 rounded-xl text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+   148→      >
+   149→        إعادة ضبط
+   150→      </button>
+   151→      <button
+   152→        onclick={saveSettings}
+   153→        disabled={saving}
+   154→        class="px-5 py-2 rounded-xl bg-gradient-to-r from-accent-gold to-accent-violet text-ink-950 font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2"
+   155→      >
+   156→        {#if saving}
+   157→          <Loader2 size={14} class="animate-spin" />
+   158→          جاري الحفظ...
+   159→        {:else}
+   160→          <Check size={14} />
+   161→          حفظ التغييرات
+   162→        {/if}
+   163→      </button>
+   164→    </div>
+   165→  </div>
+   166→
+   167→  <!-- Tabs -->
+   168→  <div class="panel p-2">
+   169→    <div class="flex gap-1 overflow-x-auto scrollbar-none">
+   170→      {#each tabs as tab}
+   171→        <button
+   172→          onclick={() => (activeTab = tab.id)}
+   173→          class="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap {activeTab === tab.id
+   174→            ? 'bg-accent-gold/15 text-accent-gold'
+   175→            : 'text-slate-400 hover:text-white hover:bg-white/5'}"
+   176→        >
+   177→          <tab.icon size={16} />
+   178→          {tab.label}
+   179→        </button>
+   180→      {/each}
+   181→    </div>
+   182→  </div>
+   183→
+   184→  <!-- Tab Content -->
+   185→  <div class="panel p-6">
+   186→    <!-- APPEARANCE -->
+   187→    {#if activeTab === 'appearance'}
+   188→      <div class="space-y-8">
+   189→        <div>
+   190→          <div class="flex items-center gap-2 mb-1">
+   191→            <Palette size={18} class="text-accent-gold" />
+   192→            <h2 class="text-base font-bold text-white">المظهر</h2>
+   193→          </div>
+   194→          <p class="text-xs text-slate-400 mb-5">خصص شكل وألوان المنصة</p>
+   195→        </div>
+   196→
+   197→        <!-- Theme Mode — Dark-only badge -->
+   198→        <div>
+   199→          <label class="block text-sm font-semibold text-white mb-3">وضع العرض</label>
+   200→          <div class="relative p-4 rounded-xl border-2 border-accent-gold bg-accent-gold/5 overflow-hidden">
+   201→            <div class="absolute -top-8 -left-8 w-32 h-32 rounded-full bg-accent-gold/15 blur-2xl pointer-events-none"></div>
+   202→            <div class="relative flex items-center gap-3">
+   203→              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-violet/20 to-accent-gold/20 border border-accent-gold/30 flex items-center justify-center">
+   204→                <Moon size={20} class="text-accent-gold" />
+   205→              </div>
+   206→              <div class="flex-1">
+   207→                <p class="text-sm font-semibold text-white">الوضع الداكن</p>
+   208→                <p class="text-xs text-slate-400 mt-0.5">الوضع الافتراضي والوحيد — مصمم لتقليل إجهاد العين أثناء جلسات التداول الطويلة</p>
+   209→              </div>
+   210→              <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent-mint/10 border border-accent-mint/25">
+   211→                <span class="w-1.5 h-1.5 rounded-full bg-accent-mint animate-pulse"></span>
+   212→                <span class="text-[10px] font-bold text-accent-mint">نشط</span>
+   213→              </div>
+   214→            </div>
+   215→          </div>
+   216→        </div>
+   217→
+   218→        <!-- Accent Color -->
+   219→        <div>
+   220→          <label class="block text-sm font-semibold text-white mb-3">اللون المميز</label>
+   221→          <div class="flex flex-wrap gap-3">
+   222→            {#each accentColors as c}
+   223→              <button
+   224→                onclick={() => (accentColor = c.id)}
+   225→                class="relative w-12 h-12 rounded-full transition-all {accentColor === c.id ? 'ring-2 ring-offset-2 ring-offset-ink-950 ring-white scale-110' : 'hover:scale-105'}"
+   226→                style="background-color: {c.value}"
+   227→                title={c.name}
+   228→              >
+   229→                {#if accentColor === c.id}
+   230→                  <Check size={18} class="text-ink-950 absolute inset-0 m-auto" />
+   231→                {/if}
+   232→              </button>
+   233→            {/each}
+   234→          </div>
+   235→        </div>
+   236→
+   237→        <!-- Density -->
+   238→        <div>
+   239→          <label class="block text-sm font-semibold text-white mb-3">كثافة العرض</label>
+   240→          <div class="grid grid-cols-2 gap-3">
+   241→            {#each [['comfortable', 'مريح', 'مسافات أكبر، أسهل للقراءة'], ['compact', 'مضغوط', 'عناصر أكثر في نفس المساحة']] as [val, label, desc]}
+   242→              <button
+   243→                onclick={() => (density = val as any)}
+   244→                class="p-4 rounded-xl border-2 transition-all text-right {density === val
+   245→                  ? 'border-accent-gold bg-accent-gold/5'
+   246→                  : 'border-white/5 bg-ink-900/40 hover:border-white/10'}"
+   247→              >
+   248→                <p class="text-sm font-bold {density === val ? 'text-accent-gold' : 'text-white'}">{label}</p>
+   249→                <p class="text-[10px] text-slate-400 mt-0.5">{desc}</p>
+   250→              </button>
+   251→            {/each}
+   252→          </div>
+   253→        </div>
+   254→
+   255→        <!-- Chart Type -->
+   256→        <div>
+   257→          <label class="block text-sm font-semibold text-white mb-3">نوع الرسم البياني الافتراضي</label>
+   258→          <div class="grid grid-cols-3 gap-3">
+   259→            {#each [['candles', 'شموع يابانية'], ['line', 'خطي'], ['area', 'مساحي']] as [val, label]}
+   260→              <button
+   261→                onclick={() => (chartType = val as any)}
+   262→                class="p-3 rounded-xl border-2 transition-all {chartType === val
+   263→                  ? 'border-accent-gold bg-accent-gold/5 text-accent-gold'
+   264→                  : 'border-white/5 bg-ink-900/40 text-slate-300 hover:border-white/10'}"
+   265→              >
+   266→                <p class="text-sm font-medium">{label}</p>
+   267→              </button>
+   268→            {/each}
+   269→          </div>
+   270→        </div>
+   271→
+   272→        <!-- Animations -->
+   273→        <div class="flex items-center justify-between p-4 bg-ink-900/40 rounded-xl border border-white/5">
+   274→          <div class="flex items-center gap-3">
+   275→            <div class="w-9 h-9 rounded-lg bg-accent-violet/15 flex items-center justify-center">
+   276→              <Eye size={16} class="text-accent-violet" />
+   277→            </div>
+   278→            <div>
+   279→              <p class="text-sm font-medium text-white">تفعيل الرسوم المتحركة</p>
+   280→              <p class="text-[11px] text-slate-400">انتقالات سلسة وتأثيرات بصرية</p>
+   281→            </div>
+   282→          </div>
+   283→          <button
+   284→            onclick={() => (animationsEnabled = !animationsEnabled)}
+   285→            class="relative w-12 h-6 rounded-full transition-colors {animationsEnabled ? 'bg-accent-gold' : 'bg-white/10'}"
+   286→          >
+   287→            <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform {animationsEnabled ? 'translate-x-0.5' : 'translate-x-6'}"></span>
+   288→          </button>
+   289→        </div>
+   290→      </div>
+   291→    {:else if activeTab === 'notifications'}
+   292→      <div class="space-y-6">
+   293→        <div>
+   294→          <div class="flex items-center gap-2 mb-1">
+   295→            <Bell size={18} class="text-accent-gold" />
+   296→            <h2 class="text-base font-bold text-white">الإشعارات</h2>
+   297→          </div>
+   298→          <p class="text-xs text-slate-400 mb-5">تحكم في كيفية تلقي الإشعارات</p>
+   299→        </div>
+   300→
+   301→        <!-- Channels matrix -->
+   302→        <div class="space-y-3">
+   303→          <!-- Email -->
+   304→          <div class="bg-ink-900/40 rounded-xl border border-white/5 overflow-hidden">
+   305→            <div class="flex items-center gap-3 px-4 py-3 border-b border-white/5">
+   306→              <Mail size={16} class="text-accent-gold" />
+   307→              <p class="text-sm font-bold text-white">البريد الإلكتروني</p>
+   308→            </div>
+   309→            <div class="divide-y divide-white/5">
+   310→              {#each [['price', 'تنبيهات الأسعار', emailNotifs.price], ['security', 'تنبيهات الأمان', emailNotifs.security], ['trades', 'تأكيد الصفقات', emailNotifs.trades], ['newsletter', 'النشرة البريدية', emailNotifs.newsletter]] as [key, label, val]}
+   311→                <div class="flex items-center justify-between px-4 py-2.5">
+   312→                  <span class="text-sm text-slate-300">{label}</span>
+   313→                  <button
+   314→                    onclick={() => { emailNotifs[key as keyof typeof emailNotifs] = !val; }}
+   315→                    class="relative w-11 h-5 rounded-full transition-colors {val ? 'bg-accent-gold' : 'bg-white/10'}"
+   316→                  >
+   317→                    <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform {val ? 'translate-x-0.5' : 'translate-x-6'}"></span>
+   318→                  </button>
+   319→                </div>
+   320→              {/each}
+   321→            </div>
+   322→          </div>
+   323→
+   324→          <!-- Push -->
+   325→          <div class="bg-ink-900/40 rounded-xl border border-white/5 overflow-hidden">
+   326→            <div class="flex items-center gap-3 px-4 py-3 border-b border-white/5">
+   327→              <Smartphone size={16} class="text-accent-violet" />
+   328→              <p class="text-sm font-bold text-white">إشعارات المتصفح / التطبيق</p>
+   329→            </div>
+   330→            <div class="divide-y divide-white/5">
+   331→              {#each [['price', 'تنبيهات الأسعار', pushNotifs.price], ['security', 'تنبيهات الأمان', pushNotifs.security], ['trades', 'تنفيذ الصفقات', pushNotifs.trades]] as [key, label, val]}
+   332→                <div class="flex items-center justify-between px-4 py-2.5">
+   333→                  <span class="text-sm text-slate-300">{label}</span>
+   334→                  <button
+   335→                    onclick={() => { pushNotifs[key as keyof typeof pushNotifs] = !val; }}
+   336→                    class="relative w-11 h-5 rounded-full transition-colors {val ? 'bg-accent-gold' : 'bg-white/10'}"
+   337→                  >
+   338→                    <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform {val ? 'translate-x-0.5' : 'translate-x-6'}"></span>
+   339→                  </button>
+   340→                </div>
+   341→              {/each}
+   342→            </div>
+   343→          </div>
+   344→
+   345→          <!-- SMS -->
+   346→          <div class="bg-ink-900/40 rounded-xl border border-white/5 overflow-hidden">
+   347→            <div class="flex items-center gap-3 px-4 py-3 border-b border-white/5">
+   348→              <Smartphone size={16} class="text-accent-rose" />
+   349→              <p class="text-sm font-bold text-white">رسائل SMS</p>
+   350→              <span class="text-[10px] px-1.5 py-0.5 rounded bg-accent-rose/10 text-accent-rose">قد يتم تطبيق رسوم</span>
+   351→            </div>
+   352→            <div class="divide-y divide-white/5">
+   353→              {#each [['security', 'تنبيهات الأمان الحرجة', smsNotifs.security], ['trades', 'تأكيد الصفقات الكبيرة', smsNotifs.trades]] as [key, label, val]}
+   354→                <div class="flex items-center justify-between px-4 py-2.5">
+   355→                  <span class="text-sm text-slate-300">{label}</span>
+   356→                  <button
+   357→                    onclick={() => { smsNotifs[key as keyof typeof smsNotifs] = !val; }}
+   358→                    class="relative w-11 h-5 rounded-full transition-colors {val ? 'bg-accent-gold' : 'bg-white/10'}"
+   359→                  >
+   360→                    <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform {val ? 'translate-x-0.5' : 'translate-x-6'}"></span>
+   361→                  </button>
+   362→                </div>
+   363→              {/each}
+   364→            </div>
+   365→          </div>
+   366→        </div>
+   367→
+   368→        <!-- Sound & Vibration -->
+   369→        <div class="grid grid-cols-2 gap-3">
+   370→          <div class="flex items-center justify-between p-3 bg-ink-900/40 rounded-xl border border-white/5">
+   371→            <div class="flex items-center gap-2">
+   372→              <Volume2 size={14} class="text-slate-400" />
+   373→              <span class="text-xs text-slate-300">أصوات الإشعارات</span>
+   374→            </div>
+   375→            <button
+   376→              onclick={() => (soundEnabled = !soundEnabled)}
+   377→              class="relative w-10 h-5 rounded-full transition-colors {soundEnabled ? 'bg-accent-gold' : 'bg-white/10'}"
+   378→            >
+   379→              <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform {soundEnabled ? 'translate-x-0.5' : 'translate-x-5'}"></span>
+   380→            </button>
+   381→          </div>
+   382→          <div class="flex items-center justify-between p-3 bg-ink-900/40 rounded-xl border border-white/5">
+   383→            <div class="flex items-center gap-2">
+   384→              <Vibrate size={14} class="text-slate-400" />
+   385→              <span class="text-xs text-slate-300">الاهتزاز</span>
+   386→            </div>
+   387→            <button
+   388→              onclick={() => (vibrateEnabled = !vibrateEnabled)}
+   389→              class="relative w-10 h-5 rounded-full transition-colors {vibrateEnabled ? 'bg-accent-gold' : 'bg-white/10'}"
+   390→            >
+   391→              <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform {vibrateEnabled ? 'translate-x-0.5' : 'translate-x-5'}"></span>
+   392→            </button>
+   393→          </div>
+   394→        </div>
+   395→      </div>
+   396→    {:else if activeTab === 'trading'}
+   397→      <div class="space-y-6">
+   398→        <div>
+   399→          <div class="flex items-center gap-2 mb-1">
+   400→            <DollarSign size={18} class="text-accent-gold" />
+   401→            <h2 class="text-base font-bold text-white">إعدادات التداول</h2>
+   402→          </div>
+   403→          <p class="text-xs text-slate-400 mb-5">تخصيص سلوك واجهة التداول</p>
+   404→        </div>
+   405→
+   406→        <!-- Default order type -->
+   407→        <div>
+   408→          <label class="block text-sm font-semibold text-white mb-3">نوع الأمر الافتراضي</label>
+   409→          <div class="grid grid-cols-2 gap-3">
+   410→            {#each [['market', 'أمر سوقي', 'ينفذ فوراً بأفضل سعر متاح'], ['limit', 'أمر محدد', 'ينتظر حتى يصل السعر المحدد']] as [val, label, desc]}
+   411→              <button
+   412→                onclick={() => (defaultOrderType = val as any)}
+   413→                class="p-4 rounded-xl border-2 transition-all text-right {defaultOrderType === val
+   414→                  ? 'border-accent-gold bg-accent-gold/5'
+   415→                  : 'border-white/5 bg-ink-900/40 hover:border-white/10'}"
+   416→              >
+   417→                <p class="text-sm font-bold {defaultOrderType === val ? 'text-accent-gold' : 'text-white'}">{label}</p>
+   418→                <p class="text-[10px] text-slate-400 mt-0.5">{desc}</p>
+   419→              </button>
+   420→            {/each}
+   421→          </div>
+   422→        </div>
+   423→
+   424→        <!-- Slippage -->
+   425→        <div>
+   426→          <label class="block text-sm font-semibold text-white mb-3">تفاوت السعر المسموح (Slippage)</label>
+   427→          <div class="flex items-center gap-2 mb-2">
+   428→            <input
+   429→              type="range"
+   430→              min="0.1"
+   431→              max="3"
+   432→              step="0.1"
+   433→              bind:value={slippageTolerance}
+   434→              class="flex-1 accent-accent-gold"
+   435→            />
+   436→            <span class="text-sm font-mono text-white font-bold w-16 text-left">{slippageTolerance.toFixed(1)}%</span>
+   437→          </div>
+   438→          <div class="flex gap-2">
+   439→            {#each [0.1, 0.5, 1.0, 2.0] as v}
+   440→              <button
+   441→                onclick={() => (slippageTolerance = v)}
+   442→                class="px-3 py-1 text-xs rounded-md transition-all {slippageTolerance === v
+   443→                  ? 'bg-accent-gold/20 text-accent-gold font-bold'
+   444→                  : 'bg-ink-900/50 text-slate-400 hover:text-white'}"
+   445→              >
+   446→                {v}%
+   447→              </button>
+   448→            {/each}
+   449→          </div>
+   450→        </div>
+   451→
+   452→        <!-- Default leverage -->
+   453→        <div>
+   454→          <label class="block text-sm font-semibold text-white mb-3">الرافعة المالية الافتراضية</label>
+   455→          <div class="flex flex-wrap gap-2">
+   456→            {#each [1, 2, 5, 10, 20, 50] as lev}
+   457→              <button
+   458→                onclick={() => (defaultLeverage = lev)}
+   459→                class="px-4 py-2 rounded-lg text-sm transition-all {defaultLeverage === lev
+   460→                  ? 'bg-accent-gold/20 text-accent-gold font-bold border border-accent-gold/40'
+   461→                  : 'bg-ink-900/50 text-slate-400 hover:text-white border border-white/5'}"
+   462→              >
+   463→                {lev}x
+   464→              </button>
+   465→            {/each}
+   466→          </div>
+   467→        </div>
+   468→
+   469→        <!-- Toggles -->
+   470→        <div class="space-y-3">
+   471→          <div class="flex items-center justify-between p-4 bg-ink-900/40 rounded-xl border border-white/5">
+   472→            <div>
+   473→              <p class="text-sm font-medium text-white">تأكيد الأوامر قبل التنفيذ</p>
+   474→              <p class="text-[11px] text-slate-400">اطلب تأكيداً قبل وضع كل صفقة</p>
+   475→            </div>
+   476→            <button
+   477→              onclick={() => (confirmOrders = !confirmOrders)}
+   478→              class="relative w-12 h-6 rounded-full transition-colors {confirmOrders ? 'bg-accent-gold' : 'bg-white/10'}"
+   479→            >
+   480→              <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform {confirmOrders ? 'translate-x-0.5' : 'translate-x-6'}"></span>
+   481→            </button>
+   482→          </div>
+   483→
+   484→          <div class="flex items-center justify-between p-4 bg-ink-900/40 rounded-xl border border-white/5">
+   485→            <div>
+   486→              <p class="text-sm font-medium text-white">إظهار دفتر الأوامر</p>
+   487→              <p class="text-[11px] text-slate-400">عرض أوامر الشراء والبيع النشطة</p>
+   488→            </div>
+   489→            <button
+   490→              onclick={() => (showOrderBook = !showOrderBook)}
+   491→              class="relative w-12 h-6 rounded-full transition-colors {showOrderBook ? 'bg-accent-gold' : 'bg-white/10'}"
+   492→            >
+   493→              <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform {showOrderBook ? 'translate-x-0.5' : 'translate-x-6'}"></span>
+   494→            </button>
+   495→          </div>
+   496→        </div>
+   497→      </div>
+   498→    {:else if activeTab === 'currency'}
+   499→      <div class="space-y-6">
+   500→        <div>
+   501→          <div class="flex items-center gap-2 mb-1">
+   502→            <Globe size={18} class="text-accent-gold" />
+   503→            <h2 class="text-base font-bold text-white">العملة والمنطقة</h2>
+   504→          </div>
+   505→          <p class="text-xs text-slate-400 mb-5">إعدادات العرض العملة والأسعار</p>
+   506→        </div>
+   507→
+   508→        <!-- Display Currency -->
+   509→        <div>
+   510→          <label class="block text-sm font-semibold text-white mb-3">عملة العرض الأساسية</label>
+   511→          <div class="grid grid-cols-2 gap-3">
+   512→            {#each [['EGP', 'الجنيه المصري', 'ج.م'], ['USD', 'الدولار الأمريكي', '$']] as [val, label, sym]}
+   513→              <button
+   514→                onclick={() => (displayCurrency = val as any)}
+   515→                class="p-4 rounded-xl border-2 transition-all text-right {displayCurrency === val
+   516→                  ? 'border-accent-gold bg-accent-gold/5'
+   517→                  : 'border-white/5 bg-ink-900/40 hover:border-white/10'}"
+   518→              >
+   519→                <div class="flex items-center justify-between">
+   520→                  <div>
+   521→                    <p class="text-sm font-bold {displayCurrency === val ? 'text-accent-gold' : 'text-white'}">{label}</p>
+   522→                    <p class="text-[10px] text-slate-400 mt-0.5">{val}</p>
+   523→                  </div>
+   524→                  <span class="text-2xl font-bold text-slate-500">{sym}</span>
+   525→                </div>
+   526→              </button>
+   527→            {/each}
+   528→          </div>
+   529→        </div>
+   530→
+   531→        <!-- Exchange Rate -->
+   532→        <div class="p-4 bg-ink-900/40 rounded-xl border border-white/5">
+   533→          <div class="flex items-center justify-between mb-3">
+   534→            <p class="text-sm font-medium text-white">سعر صرف USD → EGP</p>
+   535→            <button
+   536→              onclick={() => (autoUpdateRate = !autoUpdateRate)}
+   537→              class="relative w-11 h-5 rounded-full transition-colors {autoUpdateRate ? 'bg-accent-gold' : 'bg-white/10'}"
+   538→            >
+   539→              <span class="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform {autoUpdateRate ? 'translate-x-0.5' : 'translate-x-6'}"></span>
+   540→            </button>
+   541→          </div>
+   542→          <div class="flex items-center gap-2">
+   543→            <input
+   544→              type="number"
+   545→              bind:value={rate}
+   546→              step="0.01"
+   547→              min="0"
+   548→              disabled={autoUpdateRate}
+   549→              class="input flex-1 bg-ink-950/60 font-mono disabled:opacity-50"
+   550→            />
+   551→            <button
+   552→              onclick={() => usdEgpRate.setRate(rate)}
+   553→              disabled={autoUpdateRate}
+   554→              class="px-4 py-2 rounded-lg bg-accent-gold/15 text-accent-gold text-xs font-bold disabled:opacity-40"
+   555→            >
+   556→              تحديث
+   557→            </button>
+   558→          </div>
+   559→          <p class="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
+   560→            <Info size={10} />
+   561→            {autoUpdateRate ? 'يتم التحديث تلقائياً' : 'أدخل السعر يدوياً'}
+   562→          </p>
+   563→        </div>
+   564→
+   565→        <!-- Language (placeholder) -->
+   566→        <div>
+   567→          <label class="block text-sm font-semibold text-white mb-3">اللغة</label>
+   568→          <div class="flex items-center gap-3 p-4 bg-ink-900/40 rounded-xl border border-white/5">
+   569→            <Languages size={18} class="text-accent-gold" />
+   570→            <div class="flex-1">
+   571→              <p class="text-sm font-medium text-white">العربية</p>
+   572→              <p class="text-[10px] text-slate-400">اللغة الحالية</p>
+   573→            </div>
+   574→            <span class="text-[10px] px-2 py-1 rounded bg-amber-500/10 text-amber-400">قريباً: English</span>
+   575→          </div>
+   576→        </div>
+   577→      </div>
+   578→    {:else if activeTab === 'security'}
+   579→      <div class="space-y-6">
+   580→        <div>
+   581→          <div class="flex items-center gap-2 mb-1">
+   582→            <Shield size={18} class="text-accent-gold" />
+   583→            <h2 class="text-base font-bold text-white">الأمان والخصوصية</h2>
+   584→          </div>
+   585→          <p class="text-xs text-slate-400 mb-5">إعدادات حماية الحساب</p>
+   586→        </div>
+   587→
+   588→        <a href="/dashboard/security" class="block p-4 bg-ink-900/40 rounded-xl border border-white/5 hover:border-accent-gold/30 transition-colors">
+   589→          <div class="flex items-center justify-between">
+   590→            <div class="flex items-center gap-3">
+   591→              <div class="w-10 h-10 rounded-lg bg-accent-gold/10 flex items-center justify-center">
+   592→                <Lock size={18} class="text-accent-gold" />
+   593→              </div>
+   594→              <div>
+   595→                <p class="text-sm font-bold text-white">المصادقة الثنائية (2FA)</p>
+   596→                <p class="text-[11px] text-slate-400">إدارة إعدادات الحماية الثنائية وأجهزتك الموثوقة</p>
+   597→              </div>
+   598→            </div>
+   599→            <ChevronLeft size={18} class="text-slate-400" />
+   600→          </div>
+   601→        </a>
+   602→
+   603→        <a href="/dashboard/kyc" class="block p-4 bg-ink-900/40 rounded-xl border border-white/5 hover:border-accent-gold/30 transition-colors">
+   604→          <div class="flex items-center justify-between">
+   605→            <div class="flex items-center gap-3">
+   606→              <div class="w-10 h-10 rounded-lg bg-accent-violet/10 flex items-center justify-center">
+   607→                <FileText size={18} class="text-accent-violet" />
+   608→              </div>
+   609→              <div>
+   610→                <p class="text-sm font-bold text-white">التحقق من الهوية (KYC)</p>
+   611→                <p class="text-[11px] text-slate-400">رفع المستندات وإدارة حالة التحقق</p>
+   612→              </div>
+   613→            </div>
+   614→            <ChevronLeft size={18} class="text-slate-400" />
+   615→          </div>
+   616→        </a>
+   617→
+   618→        <!-- Session timeout -->
+   619→        <div>
+   620→          <label class="block text-sm font-semibold text-white mb-3">انتهاء الجلسة التلقائي</label>
+   621→          <select class="input w-full bg-ink-900/60">
+   622→            <option value="15">15 دقيقة</option>
+   623→            <option value="30" selected>30 دقيقة</option>
+   624→            <option value="60">ساعة واحدة</option>
+   625→            <option value="240">4 ساعات</option>
+   626→            <option value="never">أبداً</option>
+   627→          </select>
+   628→          <p class="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
+   629→            <Info size={10} />
+   630→            يتم تسجيل الخروج تلقائياً بعد هذه المدة من عدم النشاط
+   631→          </p>
+   632→        </div>
+   633→
+   634→        <!-- Login alerts -->
+   635→        <div class="flex items-center justify-between p-4 bg-ink-900/40 rounded-xl border border-white/5">
+   636→          <div>
+   637→            <p class="text-sm font-medium text-white">تنبيهات تسجيل الدخول</p>
+   638→            <p class="text-[11px] text-slate-400">إرسال إشعار عند تسجيل الدخول من جهاز جديد</p>
+   639→          </div>
+   640→          <button class="relative w-12 h-6 rounded-full bg-accent-gold">
+   641→            <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white translate-x-0.5"></span>
+   642→          </button>
+   643→        </div>
+   644→
+   645→        <!-- IP whitelist (info) -->
+   646→        <div class="flex items-center justify-between p-4 bg-ink-900/40 rounded-xl border border-white/5">
+   647→          <div>
+   648→            <p class="text-sm font-medium text-white">قائمة IP المسموح بها</p>
+   649→            <p class="text-[11px] text-slate-400">تقييد الدخول على عناوين IP معينة فقط</p>
+   650→          </div>
+   651→          <span class="text-[10px] px-2 py-1 rounded bg-amber-500/10 text-amber-400">يتطلب KYC</span>
+   652→        </div>
+   653→      </div>
+   654→    {/if}
+   655→  </div>
+   656→</div>
+   657→
