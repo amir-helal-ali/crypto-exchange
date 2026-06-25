@@ -1534,3 +1534,25 @@ Stage Summary:
 - ✅ جميع النصوص بالعربية، الأيقونات من lucide-svelte، لا emojis
 - ✅ إجمالي 16 صفحة polish احترافياً عبر 3 جلسات (5+5+6): Admin Overview + KYC + History + Notifications + Security + Wallet + Profile + Fees + Alerts + API Keys + Exchange + Earn + P2P + Futures + Settings + Referral
 - ✅ المنصة الآن تقدم تجربة بصرية متسقة وفاخرة عبر جميع الصفحات الرئيسية للتداول والإدارة
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Polish 5 admin sub-pages with dark-mode premium design language (ambient aurora + glass panels + topbar gradient + premium stat cards + sparklines + micro-interactions)
+
+Work Log:
+- Rewrote /dashboard/admin/users/+page.svelte (~280 lines): ambient aurora, hero overview panel with gold-gradient number + sparkline growth chart, 4 premium stat cards (total/verified/unverified/admins) with group-hover blur orbs, filter tabs with icons + counts, polished table with gradient avatars (admin crown badge), role pills with icons, verified/unverified pills with icons, topbar gradient highlight on table, animated ping dot for live status
+- Rewrote /dashboard/admin/kyc/+page.svelte (~270 lines): ambient aurora (gold/mint), 4 stat cards (pending/approved/rejected/total) with blur orbs, conditional pending queue hero banner with sparkline (only when pending > 0), filter tabs with icons + status colors, request cards with topbar gradient (status-colored), avatar with initials, document type pill, document_url card with hover effects, rejection reason alert panel, approve/reject CTA buttons
+- Rewrote /dashboard/admin/transactions/+page.svelte (~310 lines): ambient aurora (mint/rose), hero volume panel with egpCompact + sparkline (mint), 4 stat cards (pending/approved/rejected/total), filter tabs, polished table with gradient avatars + currency icons + type pills (deposit=mint/withdrawal=rose) + status pills, pending-only approve/reject action buttons
+- Rewrote /dashboard/admin/ads/+page.svelte (~370 lines): ambient aurora (rose/violet), 4 stat cards (total/active/inactive/banners), inline form panel with topbar gradient + close button, position selector grid (4 position types with icons), active toggle switch (custom button with mint/rose states), ad cards with topbar gradient + position pills (color-coded) + edit/delete actions with hover colors
+- Rewrote /dashboard/admin/fees/+page.svelte (~290 lines): ambient aurora (violet/gold), 4 stat cards (levels/lowest maker/highest maker/total limits), tier cards with topbar gradient (tier-colored: VIP=violet, Gold=gold, Silver=azure, Basic=slate), tier icon avatar with gradient background, form grid (4 inputs: tier name/maker fee/taker fee/daily limit), save button with loading state
+- Added pill-violet class to app.css (4 new lines) for violet pill variant
+- Fixed all dynamic Tailwind class names (bg-{meta.color}/10 etc.) by switching to static class strings via lookup objects (positionConfig, tierMeta) - this prevents JIT stripping
+- Build verified: npm run build passes in 17.27s, all 5 pages compile cleanly, no missing imports, no type errors
+
+Stage Summary:
+- All 5 admin sub-pages (users, kyc, transactions, ads, fees) now match the polished design language of the main dashboard
+- Each page has: ambient aurora background, premium header with gradient icon tile, hero/overview panel with sparkline (where applicable), 4 stat cards with blur orbs + group-hover, topbar gradient on tables/cards, premium pills with icons, micro-interactions, dark-mode-only palette
+- All Arabic text, lucide-svelte icons only (no emojis)
+- pill-violet added to global CSS for violet variant
+- Build passes cleanly, ready for production
