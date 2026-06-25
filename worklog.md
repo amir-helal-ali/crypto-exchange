@@ -1556,3 +1556,23 @@ Stage Summary:
 - All Arabic text, lucide-svelte icons only (no emojis)
 - pill-violet added to global CSS for violet variant
 - Build passes cleanly, ready for production
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Polish login, register, and landing pages with premium dark-mode design language (topbar gradients + premium feature lists + dividers + footer + fix dynamic Tailwind classes)
+
+Work Log:
+- Rewrote /login/+page.svelte (~320 lines): added fixed top gradient strip, inner topbar gradient highlight on panel, premium badge with animated ping dot, premium feature list (3 items with icon tiles + label/sublabel + chevron), topbar on hero side with logo, footer with activity status indicator, mobile logo refinements, divider "أو" between form and signup link, refined Fingerprint icon for 2FA mode, fixed color classes via lookup object (colorClasses)
+- Rewrote /register/+page.svelte (~340 lines): added fixed top gradient strip (violet-gold), inner topbar gradient highlight (violet), Sparkles icon for register header, password requirements checklist (4 items with Check/X icons + color states), refined password strength meter with 6 levels (ضعيفة جداً → قوية جداً), confirm password with live match indicator (Check mint / X rose), premium benefits list on right side (3 items with icon tiles), stats grid (3 cards with gold-gradient numbers + tabular-nums), divider "أو" between form and login link, footer with status indicator
+- Rewrote /+page.svelte landing (~420 lines): FIXED critical bug — dynamic Tailwind class names (bg-{feat.color}/10, text-{feat.color}, border-{feat.color}/20) were being stripped by JIT, causing broken styling on Features section. Replaced with static colorClasses lookup object. Other improvements: fixed top gradient strip, section topbar gradients on each section (mint for markets, violet for features, gold for CTA), premium stats cards with blur orbs + group-hover + icons, animated ping dot in market badge, market cards with topbar gradient highlight, premium feature cards with stat in top-right corner + topbar gradient colored by feature, premium CTA section with grid-bg + animated pulse-glow orbs + dual CTA (primary + secondary "لدي حساب"), full footer with 4-column layout (brand + 3 link groups), social icons (AtSign/Send/Link2 — replaced unavailable Twitter/Github), bottom footer bar with SSL status + system status indicator
+- Fixed icon import errors: Twitter and Github are not exported by lucide-svelte (brand icons removed) — replaced with AtSign, Send, Link2
+- Build verified: npm run build passes in 12.81s, all 3 pages compile cleanly, no missing imports, no type errors
+
+Stage Summary:
+- All 3 entry pages (login, register, landing) now match the polished dark-mode premium design language
+- Critical bug fix: dynamic Tailwind class names on landing page Features section are now JIT-safe via static lookup
+- Login/register: dual-panel layout with premium feature lists, dividers, refined password UX (strength meter + requirements checklist for register)
+- Landing: 5-section layout (hero, markets, features, CTA, footer) with section topbar gradients, premium stat cards, market cards with topbar gradient, feature cards with stats, full footer with social links
+- All Arabic text, lucide-svelte icons only (no emojis), dark-mode-only palette maintained
+- Build passes cleanly
