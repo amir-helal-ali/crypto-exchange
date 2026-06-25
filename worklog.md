@@ -1576,3 +1576,37 @@ Stage Summary:
 - Landing: 5-section layout (hero, markets, features, CTA, footer) with section topbar gradients, premium stat cards, market cards with topbar gradient, feature cards with stats, full footer with social links
 - All Arabic text, lucide-svelte icons only (no emojis), dark-mode-only palette maintained
 - Build passes cleanly
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Continue polishing dashboard UI pages with premium dark design (competitions, heatmap, profile fix)
+
+Work Log:
+- Inspected remaining dashboard pages to identify which needed polish
+- Found competitions/+page.svelte used outdated styles (bg-ink-900/50, no aurora, no premium stat cards, invalid pill-blue, text-yellow-400/text-orange-400 outside palette)
+- Found heatmap/+page.svelte lacked ambient aurora, premium stat cards, topbar gradients, group-hover interactions
+- Found profile/+page.svelte had dynamic class `border-{tier.color}/30` (Tailwind JIT-unsafe)
+- Rewrote competitions/+page.svelte (~370 lines) with:
+  - Ambient aurora blobs (gold + rose) + panel-glow hero with layered aurora + grid-bg
+  - Premium 4-card stat grid (جوائز / نشطة / مشاركون / ترتيبك) with hover glow + tabular-nums
+  - NavTabs with counts (active/upcoming/ended) using Flame/Calendar/Trophy icons
+  - Competition cards with: topbar gradient per type, typeMeta lookup (spot=mint, futures=gold, trading_volume=azure, pnl=rose), prize pool card with gold glow, progress bar for active competitions, my-stats row (gold tinted), leaderboard with rankMeta lookup (rank 1=gold/Crown, 2=slate, 3=rose, others=slate), rules list with bullet dots, action button (btn-buy/btn-ghost)
+  - Rank colors replaced text-yellow-400/text-orange-400 with accent-gold/accent-rose/slate palette
+  - Replaced invalid `pill-blue` with `pill-azure`
+- Rewrote heatmap/+page.svelte (~360 lines) with:
+  - Ambient aurora (gold + mint)
+  - Premium 4-card stat grid (إجمالي العملات / صاعدة / هابطة / متوسط التغير) with tabular-nums and percentage sub-labels
+  - Filter panel with topbar gradient + search input + filter pills (with active border highlight) + size metric buttons + sort select
+  - Treemap with rounded-xl tiles, hover scale + z-index, drop-shadow text
+  - Right sidebar: selected coin details panel (topbar gradient + close button + key-value list + btn-buy), empty state with grid icon, top gainers/losers panels (topbar gradients + numbered rank badges + group-hover color change), color legend panel (gradient bar + min/max labels + size metric explanation)
+- Fixed profile/+page.svelte: added tierClasses lookup object with static border/text/bg classes for violet/gold/azure/slate tiers; updated avatar badge to use `tierClasses[tier.color].border` and `tierClasses[tier.color].text` instead of dynamic `border-{tier.color}/30` and hardcoded `text-accent-gold`
+- Build successful in 12.74s (rolldown, SvelteKit 5)
+
+Stage Summary:
+- competitions/+page.svelte fully redesigned with premium design language
+- heatmap/+page.svelte fully redesigned with premium design language
+- profile/+page.svelte tier badge JIT-unsafe dynamic class fixed
+- All pages: ambient aurora + glass panels + topbar gradient + group-hover micro-interactions + ping dots + tabular-nums + dark-mode-only palette (gold/violet/mint/azure/rose)
+- All Arabic text, lucide-svelte icons only
+- Build passes cleanly
