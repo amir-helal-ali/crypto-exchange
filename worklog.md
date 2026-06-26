@@ -1610,3 +1610,67 @@ Stage Summary:
 - All pages: ambient aurora + glass panels + topbar gradient + group-hover micro-interactions + ping dots + tabular-nums + dark-mode-only palette (gold/violet/mint/azure/rose)
 - All Arabic text, lucide-svelte icons only
 - Build passes cleanly
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Enforce strict palette compliance across remaining dashboard pages (referral, earn, bots, p2p, copy-trading, settings, backtest)
+
+Work Log:
+- Audited all remaining dashboard pages for off-palette colors (emerald-400, amber-400/500/700, yellow-500, orange-500) and external hex colors
+- referral/+page.svelte:
+  - Replaced tiers array `color: '#cd7f32'/'#c0c0c0'/'#ffd700'/'#e5e4e2'` with `accent: 'rose'/'slate'/'gold'/'azure'`
+  - Added tierAccent static class lookup (text/bg/border/pill/glow per accent)
+  - Replaced all `text-emerald-400` / `bg-emerald-500/10` with `text-accent-mint` / `bg-accent-mint/10`
+  - Replaced `text-amber-400` / `bg-amber-500/10` with `text-accent-gold` / `bg-accent-gold/10`
+  - Updated current tier badge to use tierAccent.pill class
+  - Updated individual tier cards: icon/text/avatar use accent palette, current tier has glow blob
+  - Updated invitees table status badges (active=mint, pending=gold, inactive=slate) and earned amounts (mint)
+  - Removed emoji from share text ("🚀" removed)
+- earn/+page.svelte:
+  - Header pill: emerald-500/400 → accent-mint with ping dot animation
+  - Rewards stat card: emerald-500/400 → accent-mint
+  - Daily income sub-label: text-emerald-400 → text-accent-mint
+  - Calculator daily/monthly reward values: text-emerald-400 → text-accent-mint
+  - Position card Lock/Unlock icons: amber-400/emerald-400 → accent-gold/accent-mint
+  - Position card rewards earned: emerald-400 → accent-mint with tabular-nums
+  - Pool card "رصيدك" balance: text-emerald-400 → text-accent-mint
+  - Staking modal daily/monthly reward values: emerald-400 → accent-mint with tabular-nums
+  - Asset brand colors (pool.color hex values like #f7931a BTC, #627eea ETH) left intact as legitimate crypto brand identifiers
+- bots/+page.svelte:
+  - logColor('warn'): text-amber-400 → text-accent-gold
+  - botTypes array: `color: '#f5b544'/'#22d3a4'/'#a855f7'` → `accent: 'gold'/'mint'/'violet'`
+  - Added botAccent static class lookup (text/bg/border/glow per accent)
+  - Educational botTypes section: inline style → ac.text/ac.border static classes
+  - Create bot modal type selector: inline style → ac.text/ac.border static classes
+  - Selected bot detail modal: inline style → botAccent lookup
+  - Paused counter: text-amber-400 → text-accent-gold with tabular-nums
+  - Bot status badge: bg-amber-500/20 text-amber-400 → bg-accent-gold/20 text-accent-gold
+  - Pause/Resume buttons (×2): bg-amber-500/15 text-amber-400 → bg-accent-gold/15 text-accent-gold
+  - Risk warning: bg-amber-500/5 border-amber-500/20 text-amber-500 text-amber-200/80 → bg-accent-gold/5 border-accent-gold/20 text-accent-gold text-accent-gold/80
+  - Selected bot pause/resume button: amber → accent-gold
+  - Close buttons (✕): replaced text glyph with lucide X icon for consistency
+- p2p/+page.svelte:
+  - Warning box: bg-amber-500/5 border-amber-500/20 text-amber-500 text-amber-200/80 → bg-accent-gold/5 border-accent-gold/20 text-accent-gold text-accent-gold/80
+- copy-trading/+page.svelte:
+  - Top-3 podium rank #3 badge: bg-amber-700 → bg-accent-rose
+  - Risk warning: amber-500 → accent-gold
+- settings/+page.svelte:
+  - "قريباً: English" badge: bg-amber-500/10 text-amber-400 → bg-accent-violet/10 text-accent-violet
+  - "يتطلب KYC" badge: bg-amber-500/10 text-amber-400 → bg-accent-gold/10 text-accent-gold
+- backtest/+page.svelte:
+  - Disclaimer box: border-amber-500/20 bg-amber-500/5 → border-accent-gold/20 bg-accent-gold/5
+  - AlertTriangle icon: text-amber-500 → text-accent-gold
+  - Disclaimer text: text-amber-200/80 → text-accent-gold/80, strong text-amber-300 → text-accent-gold
+- Fixed Svelte 5 {@const} placement errors (must be child of {#if}/{#each} not plain div) in referral and bots
+- Build passes cleanly (12.77s)
+
+Stage Summary:
+- Strict palette compliance achieved across 7 additional pages: referral, earn, bots, p2p, copy-trading, settings, backtest
+- Eliminated all emerald-400/500, amber-400/500/700, yellow-500, orange-500 classes
+- Eliminated external hex colors from tiers (referral) and botTypes (bots) — replaced with accent string + static class lookup
+- Kept legitimate crypto brand color hex values on earn pools (BTC orange #f7931a, ETH blue #627eea, etc.) as these are recognized asset identifiers
+- Removed emoji from referral share text
+- Replaced ✕ glyph close buttons in bots with lucide X icons
+- All pages now use only: accent-gold, accent-violet, accent-mint, accent-azure, accent-rose, slate (for neutral)
+- Build passes cleanly
