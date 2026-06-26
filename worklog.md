@@ -1674,3 +1674,56 @@ Stage Summary:
 - Replaced ✕ glyph close buttons in bots with lucide X icons
 - All pages now use only: accent-gold, accent-violet, accent-mint, accent-azure, accent-rose, slate (for neutral)
 - Build passes cleanly
+
+---
+Task ID: 8
+Agent: Super Z (main agent)
+Task: واصل — استكمال polish تصميمي للصفحات المتبقية (copy-trading, backtest, bots)
+
+Work Log:
+- Polished copy-trading/+page.svelte:
+  • Added ambient aurora background (gold + violet + mint blobs with staggered animation delays)
+  • Premium hero header: topbar gradient highlight (gold), layered blur orbs (gold + violet), premium gradient icon tile with blur glow, tracking-tight title
+  • Premium stat boxes in hero: per-accent blur orbs (gold/mint/violet) + group-hover radial glow + tabular-nums + hover border color change
+  • Filters panel: topbar gradient (violet) + active filter pills with border highlight
+  • Top-3 podium cards: per-rank topbar gradient (gold/slate/rose), per-rank blur orbs, Crown icon for #1, panel-glow on rank #1, premium avatar with border, .btn-primary for copy button, .btn-secondary for detail button
+  • Full traders table: topbar gradient (gold) + premium header icon container + tracking-tight title
+  • "How it works" section: topbar gradient (mint) + premium header icon (mint) + step cards with per-card blur orbs + group-hover border + gradient number badges + tracking-tight
+  • Trader detail modal: panel-glow instead of plain bg-ink-900, sticky header with backdrop-blur + topbar gradient, premium stat cards with blur orbs (mint for positive, rose for negative), premium equity curve container with border, premium positions list with hover, .btn-primary for action button, replaced ✕ glyph with lucide X icon, tracking-tight titles
+  • Copy modal: panel-glow + topbar gradient + replaced ✕ with lucide X + .btn-primary + tabular-nums for amounts
+  • Added X icon import from lucide-svelte
+- Polished backtest/+page.svelte:
+  • Added ambient aurora (gold + violet)
+  • Premium header: topbar gradient (gold) + blur orb + premium gradient icon tile with blur glow + tracking-tight title
+  • Config panel: topbar gradient (violet) + premium header icon container (violet) + tracking-tight title
+  • Timeframe buttons: active state now has border highlight (border-accent-gold/30)
+  • Run button: replaced raw bg-accent-gold with .btn-primary
+  • KPI cards: per-card blur orbs (mint/gold/rose/violet) + group-hover + tracking-wider labels + tabular-nums
+  • Equity curve panel: topbar gradient (gold) + premium header icon container + tracking-tight
+  • Comparison panel: topbar gradient (mint) + premium header icon (mint) + bordered rows + highlighted "الفارق" row with gold tint
+  • Statistics panel: topbar gradient (violet) + premium header icon (violet) + bordered mini-cards
+  • Trades table: topbar gradient (gold) + premium header icon container + tracking-tight
+  • Running state: blur orb background + relative positioning
+  • Disclaimer: topbar gradient (gold) + relative positioning
+- Polished bots/+page.svelte:
+  • Added ambient aurora (gold + violet + mint, 3 staggered blobs)
+  • Premium hero header: topbar gradient (gold) + layered blur orbs (gold + violet) + premium gradient icon tile with blur glow + tracking-tight title
+  • Hero stat boxes: per-accent blur orbs (mint/gold/violet) + group-hover radial glow + hover border color change + tabular-nums
+  • Portfolio summary stat cards: per-accent blur orbs (gold/azure/dynamic mint-orose/violet) + group-hover + tracking-wider labels + tabular-nums
+  • "بوتاتي" header: premium icon container (gold) + tracking-tight
+  • Create button: replaced raw bg-accent-gold with .btn-primary
+  • Bot cards: topbar gradient per status (mint/gold/rose) + per-accent blur orbs (using botAccent.glow) + premium icon container using botAccent (bg/border/text) — fixed broken inline style that referenced non-existent .color property after Task 7 palette migration
+  • Create bot modal: panel-glow + topbar gradient + tracking-tight title
+  • Bot detail modal: panel-glow + sticky header with backdrop-blur + topbar gradient + tracking-tight title, used {@const sBt/sAc} lookup for cleaner code
+
+Stage Summary:
+- ✅ Frontend build: ناجح (SvelteKit 5 + Vite + rolldown, 12.70s, 0 أخطاء)
+- ✅ 3 صفحات تم polish احترافياً في هذه الجولة:
+  • Copy-trading: ambient aurora + premium hero/podium/modals + topbar gradients + Crown icon for #1 + panel-glow on winner + .btn-primary/.btn-secondary + lucide X icons
+  • Backtest: ambient aurora + premium header/config/KPIs/charts/tables + topbar gradients per section (gold/violet/mint) + .btn-primary + bordered rows
+  • Bots: ambient aurora + premium hero/portfolio stats/bot cards + topbar gradients per status + fixed broken .color references after palette migration + panel-glow modals + .btn-primary
+- ✅ Bug fix: bots page had broken inline `style="background: {botTypes.find(...)?.color}30;"` references after Task 7 changed botTypes from `color` to `accent` — replaced with `botAccent[bt.accent]` static class lookup (bg/border/text/glow)
+- ✅ نظام تصميم موحد مع كل الصفحات السابقة: ambient aurora + glass panels + gradient top highlights + group-hover effects + tabular-nums + tracking-tight + pill badges + ping dots + panel-glow modals + .btn-primary/.btn-secondary
+- ✅ جميع النصوص بالعربية، الأيقونات من lucide-svelte، لا emojis
+- ✅ إجمالي 19 صفحة polish احترافياً عبر 4 جلسات (5+5+6+3): Admin Overview + KYC + History + Notifications + Security + Wallet + Profile + Fees + Alerts + API Keys + Exchange + Earn + P2P + Futures + Settings + Referral + Copy-trading + Backtest + Bots
+- ✅ المنصة الآن تقدم تجربة بصرية متسقة وفاخرة عبر جميع الصفحات الرئيسية للتداول والإدارة والأتمتة
