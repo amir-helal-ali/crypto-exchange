@@ -1,0 +1,1369 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState, useCallback, useRef } from "react";
+     4→import toast from "react-hot-toast";
+     5→import {
+     6→  Globe,
+     7→  Save,
+     8→  RefreshCw,
+     9→  Server,
+    10→  ShieldCheck,
+    11→  Lock,
+    12→  Unlock,
+    13→  AlertTriangle,
+    14→  CheckCircle2,
+    15→  Power,
+    16→  PowerOff,
+    17→  Rocket,
+    18→  Wrench,
+    19→  Copy,
+    20→  Check,
+    21→  ExternalLink,
+    22→  Wifi,
+    23→  Loader2,
+    24→  Activity,
+    25→  Settings as SettingsIcon,
+    26→  Database,
+    27→  Zap,
+    28→  History,
+    29→  Eye,
+    30→  EyeOff,
+    31→  Cpu,
+    32→} from "lucide-react";
+    33→import { authGet, authPost, authPut } from "@/lib/api";
+    34→import { Tabs, ConfirmDialog } from "@/components/ui";
+    35→import SSLTab from "./_ssl-tab";
+    36→
+    37→interface SettingsByCategory {
+    38→  domains?: Record<string, string>;
+    39→  ssl?: Record<string, string>;
+    40→  security?: Record<string, string>;
+    41→  features?: Record<string, string>;
+    42→}
+    43→
+    44→type DomainStatus = "idle" | "checking" | "online" | "offline";
+    45→type TabId = "overview" | "domains" | "ssl" | "security" | "features" | "history";
+    46→
+    47→export default function AdminSettingsPage() {
+    48→  const [settings, setSettings] = useState<SettingsByCategory>({});
+    49→  const [loading, setLoading] = useState(true);
+    50→  const [saving, setSaving] = useState(false);
+    51→  const [reloadingNginx, setReloadingNginx] = useState(false);
+    52→  const [changedKeys, setChangedKeys] = useState<Set<string>>(new Set());
+    53→  const [editValues, setEditValues] = useState<Record<string, string>>({});
+    54→  const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
+    55→  const [activeTab, setActiveTab] = useState<TabId>("overview");
+    56→  const [domainStatuses, setDomainStatuses] = useState<Record<string, DomainStatus>>({});
+    57→  const [confirmAction, setConfirmAction] = useState<null | {
+    58→    title: string;
+    59→    description: React.ReactNode;
+    60→    confirmLabel: string;
+    61→    destructive?: boolean;
+    62→    onConfirm: () => void;
+    63→  }>(null);
+    64→  const [showSecrets, setShowSecrets] = useState(false);
+    65→  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+    66→  const lastFetchRef = useRef<Date | null>(null);
+    67→
+    68→  const fetchSettings = useCallback(async () => {
+    69→    setLoading(true);
+    70→    try {
+    71→      const res = await authGet("/api/v1/admin/settings");
+    72→      if (res.ok) {
+    73→        const data = await res.json();
+    74→        setSettings(data.data || {});
+    75→        const flat: Record<string, string> = {};
+    76→        Object.values(data.data || {}).forEach((cat: any) => {
+    77→          Object.entries(cat).forEach(([k, v]) => {
+    78→            flat[k] = v as string;
+    79→          });
+    80→        });
+    81→        setEditValues(flat);
+    82→        setOriginalValues(flat);
+    83→        setChangedKeys(new Set());
+    84→        lastFetchRef.current = new Date();
+    85→      } else {
+    86→        toast.error("فشل تحميل الإعدادات");
+    87→      }
+    88→    } catch {
+    89→      toast.error("خطأ في الاتصال بالخادم");
+    90→    } finally {
+    91→      setLoading(false);
+    92→    }
+    93→  }, []);
+    94→
+    95→  const fetchAuditLogs = useCallback(async () => {
+    96→    try {
+    97→      const res = await authGet("/api/v1/admin/audit-logs?limit=5&action=SETTINGS_UPDATE");
+    98→      const data = await res.json();
+    99→      if (res.ok && data.success) {
+   100→        setAuditLogs(Array.isArray(data.data) ? data.data : []);
+   101→      } else {
+   102→        // Fallback — fetch latest logs and filter client-side
+   103→        const fallback = await authGet("/api/v1/admin/audit-logs?limit=20");
+   104→        const fdata = await fallback.json();
+   105→        const all = Array.isArray(fdata?.data) ? fdata.data : [];
+   106→        setAuditLogs(all.filter((l: any) => (l.action || "").includes("SETTINGS")).slice(0, 5));
+   107→      }
+   108→    } catch {
+   109→      // silent
+   110→    }
+   111→  }, []);
+   112→
+   113→  useEffect(() => {
+   114→    fetchSettings();
+   115→    fetchAuditLogs();
+   116→  }, [fetchSettings, fetchAuditLogs]);
+   117→
+   118→  // Keyboard shortcuts: Ctrl/Cmd+S to save
+   119→  useEffect(() => {
+   120→    const onKey = (e: KeyboardEvent) => {
+   121→      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+   122→        e.preventDefault();
+   123→        if (changedKeys.size > 0 && !saving) handleSave();
+   124→      }
+   125→    };
+   126→    window.addEventListener("keydown", onKey);
+   127→    return () => window.removeEventListener("keydown", onKey);
+   128→    // eslint-disable-next-line react-hooks/exhaustive-deps
+   129→  }, [changedKeys, saving]);
+   130→
+   131→  const handleChange = (key: string, value: string) => {
+   132→    setEditValues((prev) => ({ ...prev, [key]: value }));
+   133→    setChangedKeys((prev) => {
+   134→      const next = new Set(prev);
+   135→      if (originalValues[key] === value) next.delete(key);
+   136→      else next.add(key);
+   137→      return next;
+   138→    });
+   139→  };
+   140→
+   141→  const handleSave = async (opts?: { skipConfirm?: boolean }) => {
+   142→    if (changedKeys.size === 0) {
+   143→      toast("لا توجد تغييرات للحفظ", { icon: "ℹ️" });
+   144→      return;
+   145→    }
+   146→
+   147→    // Sensitive keys require confirmation
+   148→    const sensitiveKeys = ["main_domain", "frontend_domain", "backend_domain", "admin_domain", "ssl_enabled"];
+   149→    const touchingSensitive = Array.from(changedKeys).some((k) => sensitiveKeys.includes(k));
+   150→
+   151→    if (!opts?.skipConfirm && touchingSensitive) {
+   152→      setConfirmAction({
+   153→        title: "تأكيد تغيير الإعدادات الحساسة",
+   154→        description: (
+   155→          <div className="space-y-2">
+   156→            <p>أنت على وشك تعديل إعدادات الدومين أو SSL. هذا قد يؤثر على وصول المستخدمين للمنصة.</p>
+   157→            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2.5 text-xs">
+   158→              <span className="text-yellow-400 font-medium">التغييرات المعلقة:</span>
+   159→              <ul className="mt-1.5 space-y-0.5 text-yellow-300/90">
+   160→                {Array.from(changedKeys).filter((k) => sensitiveKeys.includes(k)).map((k) => (
+   161→                  <li key={k} dir="ltr" className="font-mono">
+   162→                    {k}: <span className="text-muted-foreground line-through">{originalValues[k] || "—"}</span> → <span className="text-yellow-300">{editValues[k]}</span>
+   163→                  </li>
+   164→                ))}
+   165→              </ul>
+   166→            </div>
+   167→            <p className="text-xs text-muted-foreground">سيتم حفظ الإعدادات وإعادة تحميل nginx تلقائياً.</p>
+   168→          </div>
+   169→        ),
+   170→        confirmLabel: "حفظ وتطبيق",
+   171→        destructive: false,
+   172→        onConfirm: async () => {
+   173→          setConfirmAction(null);
+   174→          await doSave(true);
+   175→        },
+   176→      });
+   177→      return;
+   178→    }
+   179→
+   180→    await doSave(touchingSensitive);
+   181→  };
+   182→
+   183→  const doSave = async (reloadNginx: boolean) => {
+   184→    setSaving(true);
+   185→    try {
+   186→      const updates: Record<string, string> = {};
+   187→      changedKeys.forEach((k) => {
+   188→        updates[k] = editValues[k];
+   189→      });
+   190→      const res = await authPut("/api/v1/admin/settings", { settings: updates });
+   191→      const data = await res.json();
+   192→      if (res.ok && data.success) {
+   193→        toast.success(`تم تحديث ${data.updated?.length || 0} إعداد`);
+   194→        if (data.rejected?.length > 0) {
+   195→          toast.error(`تم رفض: ${data.rejected.join("، ")}`);
+   196→        }
+   197→        setOriginalValues({ ...editValues });
+   198→        setChangedKeys(new Set());
+   199→        fetchAuditLogs();
+   200→        if (reloadNginx) {
+   201→          toast("جاري إعادة تحميل nginx...", { icon: "🔄" });
+   202→          setTimeout(() => handleNginxReload(), 600);
+   203→        }
+   204→      } else {
+   205→        toast.error(data.error || "فشل الحفظ");
+   206→      }
+   207→    } catch {
+   208→      toast.error("خطأ في الاتصال");
+   209→    } finally {
+   210→      setSaving(false);
+   211→    }
+   212→  };
+   213→
+   214→  const handleNginxReload = async () => {
+   215→    setReloadingNginx(true);
+   216→    try {
+   217→      const res = await authPost("/api/v1/admin/nginx/reload", {});
+   218→      const data = await res.json();
+   219→      if (res.ok && data.success) {
+   220→        if (data.mode === "dev") {
+   221→          toast.success("تم التحديث (وضع التطوير — أعد تشغيل nginx يدوياً)");
+   222→        } else {
+   223→          toast.success("تم إعادة تحميل nginx بنجاح");
+   224→        }
+   225→        // Re-test all domains after reload
+   226→        setTimeout(() => testAllDomains(), 1500);
+   227→      } else {
+   228→        toast.error("فشل إعادة التحميل");
+   229→      }
+   230→    } catch {
+   231→      toast.error("خطأ في الاتصال");
+   232→    } finally {
+   233→      setReloadingNginx(false);
+   234→    }
+   235→  };
+   236→
+   237→  const handleCopy = async (text: string, label: string) => {
+   238→    if (!text) {
+   239→      toast.error("لا يوجد نص للنسخ");
+   240→      return;
+   241→    }
+   242→    try {
+   243→      await navigator.clipboard.writeText(text);
+   244→      toast.success(`تم نسخ ${label}`, { icon: "📋" });
+   245→    } catch {
+   246→      toast.error("فشل النسخ");
+   247→    }
+   248→  };
+   249→
+   250→  const testDomain = async (key: string) => {
+   251→    const domain = editValues[key];
+   252→    if (!domain) {
+   253→      toast.error("الدومين غير مُعرّف");
+   254→      return;
+   255→    }
+   256→    setDomainStatuses((prev) => ({ ...prev, [key]: "checking" }));
+   257→    try {
+   258→      // Use the /api/v1/config endpoint which is public + lightweight
+   259→      const proto = editValues.ssl_enabled === "true" ? "https" : "http";
+   260→      const url = `${proto}://${domain}/api/v1/config`;
+   261→      const controller = new AbortController();
+   262→      const timeoutId = setTimeout(() => controller.abort(), 5000);
+   263→      const res = await fetch(url, { signal: controller.signal, mode: "cors" });
+   264→      clearTimeout(timeoutId);
+   265→      if (res.ok) {
+   266→        setDomainStatuses((prev) => ({ ...prev, [key]: "online" }));
+   267→        toast.success(`${domain} متصل`, { icon: "✅" });
+   268→      } else {
+   269→        setDomainStatuses((prev) => ({ ...prev, [key]: "offline" }));
+   270→        toast.error(`${domain} أعاد ${res.status}`);
+   271→      }
+   272→    } catch (e: any) {
+   273→      setDomainStatuses((prev) => ({ ...prev, [key]: "offline" }));
+   274→      // Likely CORS or network — not necessarily a real outage
+   275→      toast(`تعذر الوصول لـ ${domain} (قد يكون بسبب CORS)`, { icon: "⚠️" });
+   276→    }
+   277→  };
+   278→
+   279→  const testAllDomains = () => {
+   280→    ["frontend_domain", "backend_domain", "admin_domain", "main_domain"].forEach((k, i) => {
+   281→      if (editValues[k]) setTimeout(() => testDomain(k), i * 200);
+   282→    });
+   283→  };
+   284→
+   285→  const handleReset = () => {
+   286→    setEditValues({ ...originalValues });
+   287→    setChangedKeys(new Set());
+   288→    toast("تم التراجع عن جميع التغييرات", { icon: "↩️" });
+   289→  };
+   290→
+   291→  const applyPreset = (preset: "ssl-on" | "ssl-off" | "maintenance-on" | "maintenance-off") => {
+   292→    const updates: Record<string, string> = {
+   293→      "ssl-on": { ssl_enabled: "true" },
+   294→      "ssl-off": { ssl_enabled: "false" },
+   295→      "maintenance-on": { maintenance_mode: "true" },
+   296→      "maintenance-off": { maintenance_mode: "false" },
+   297→    }[preset];
+   298→
+   299→    Object.entries(updates).forEach(([k, v]) => handleChange(k, v));
+   300→    toast.success("تم تطبيق الإعداد المسبق", { icon: "⚡" });
+   301→  };
+   302→
+   303→  if (loading) {
+   304→    return (
+   305→      <div className="flex items-center justify-center min-h-[60vh]">
+   306→        <div className="flex flex-col items-center gap-4">
+   307→          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center glow-emerald animate-pulse">
+   308→            <SettingsIcon className="h-6 w-6 text-white" />
+   309→          </div>
+   310→          <span className="spinner h-6 w-6" />
+   311→          <p className="text-sm text-muted-foreground">جاري تحميل الإعدادات...</p>
+   312→        </div>
+   313→      </div>
+   314→    );
+   315→  }
+   316→
+   317→  const sslEnabled = editValues.ssl_enabled === "true";
+   318→  const maintenanceMode = editValues.maintenance_mode === "true";
+   319→  const registrationOpen = editValues.registration_open === "true";
+   320→  const proto = sslEnabled ? "https" : "http";
+   321→
+   322→  const tabs = [
+   323→    { id: "overview", label: "نظرة عامة", icon: <Activity className="h-4 w-4" /> },
+   324→    { id: "domains", label: "الدومينات", icon: <Globe className="h-4 w-4" /> },
+   325→    {
+   326→      id: "ssl",
+   327→      label: "SSL والشهادات",
+   328→      icon: sslEnabled ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />,
+   329→      badge: sslEnabled ? (
+   330→        <span className="chip chip-success !px-1.5 !py-0 !text-[10px]">HTTPS</span>
+   331→      ) : (
+   332→        <span className="chip chip-warning !px-1.5 !py-0 !text-[10px]">HTTP</span>
+   333→      ),
+   334→    },
+   335→    {
+   336→      id: "security",
+   337→      label: "CORS",
+   338→      icon: <ShieldCheck className="h-4 w-4" />,
+   339→    },
+   340→    {
+   341→      id: "features",
+   342→      label: "الميزات",
+   343→      icon: <Wrench className="h-4 w-4" />,
+   344→      badge: maintenanceMode ? (
+   345→        <span className="chip chip-warning !px-1.5 !py-0 !text-[10px]">صيانة</span>
+   346→      ) : null,
+   347→    },
+   348→    { id: "history", label: "آخر التغييرات", icon: <History className="h-4 w-4" /> },
+   349→  ];
+   350→
+   351→  const tabItems = tabs as any[];
+   352→
+   353→  const changedDomains = ["frontend_domain", "backend_domain", "admin_domain", "main_domain"].filter(
+   354→    (k) => changedKeys.has(k)
+   355→  ).length;
+   356→
+   357→  return (
+   358→    <div className="space-y-6 pb-24">
+   359→      {/* Header */}
+   360→      <div className="flex items-center justify-between flex-wrap gap-4 animate-slide-in-down">
+   361→        <div className="flex items-center gap-3">
+   362→          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border border-primary/20">
+   363→            <SettingsIcon className="h-5 w-5 text-primary" />
+   364→          </div>
+   365→          <div>
+   366→            <h1 className="text-2xl lg:text-3xl font-bold">إعدادات النظام</h1>
+   367→            <p className="text-sm text-muted-foreground">
+   368→              إدارة الدومينات، شهادات SSL، والميزات — تنطبق التغييرات على جميع الخدمات فوراً.
+   369→            </p>
+   370→          </div>
+   371→        </div>
+   372→        <div className="flex gap-2">
+   373→          <button
+   374→            onClick={fetchSettings}
+   375→            className="btn-ghost"
+   376→            title="إعادة تحميل الإعدادات من الخادم"
+   377→          >
+   378→            <RefreshCw className="h-4 w-4" />
+   379→            تحديث
+   380→          </button>
+   381→          <button
+   382→            onClick={handleNginxReload}
+   383→            disabled={reloadingNginx}
+   384→            className="btn-ghost gap-2"
+   385→            title="إعادة توليد وإعادة تحميل nginx.conf"
+   386→          >
+   387→            {reloadingNginx ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Server className="h-4 w-4" />}
+   388→            إعادة تحميل Nginx
+   389→          </button>
+   390→        </div>
+   391→      </div>
+   392→
+   393→      {/* Status strip — visible across all tabs */}
+   394→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-slide-in-up delay-100">
+   395→        <StatusPill
+   396→          icon={<Globe className="h-4 w-4" />}
+   397→          label="الدومين الرئيسي"
+   398→          value={editValues.main_domain || "—"}
+   399→          color="teal"
+   400→        />
+   401→        <StatusPill
+   402→          icon={sslEnabled ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+   403→          label="حالة SSL"
+   404→          value={sslEnabled ? "مُفعّل" : "مُعطّل"}
+   405→          color={sslEnabled ? "emerald" : "yellow"}
+   406→        />
+   407→        <StatusPill
+   408→          icon={<Power className="h-4 w-4" />}
+   409→          label="التسجيل"
+   410→          value={registrationOpen ? "مفتوح" : "مغلق"}
+   411→          color={registrationOpen ? "emerald" : "red"}
+   412→        />
+   413→        <StatusPill
+   414→          icon={<Wrench className="h-4 w-4" />}
+   415→          label="وضع الصيانة"
+   416→          value={maintenanceMode ? "مُفعّل" : "مُعطّل"}
+   417→          color={maintenanceMode ? "yellow" : "emerald"}
+   418→        />
+   419→      </div>
+   420→
+   421→      {/* Tabs */}
+   422→      <div className="animate-slide-in-up delay-200">
+   423→        <Tabs items={tabItems} active={activeTab} onChange={(id) => setActiveTab(id as TabId)} />
+   424→      </div>
+   425→
+   426→      {/* Tab Content */}
+   427→      <div className="animate-fade-in" key={activeTab}>
+   428→        {activeTab === "overview" && (
+   429→          <OverviewTab
+   430→            editValues={editValues}
+   431→            sslEnabled={sslEnabled}
+   432→            maintenanceMode={maintenanceMode}
+   433→            registrationOpen={registrationOpen}
+   434→            domainStatuses={domainStatuses}
+   435→            changedKeys={changedKeys}
+   436→            onTestAll={testAllDomains}
+   437→            onNavigate={setActiveTab}
+   438→            onPreset={applyPreset}
+   439→            auditLogs={auditLogs}
+   440→            lastFetch={lastFetchRef.current}
+   441→          />
+   442→        )}
+   443→
+   444→        {activeTab === "domains" && (
+   445→          <DomainsTab
+   446→            editValues={editValues}
+   447→            originalValues={originalValues}
+   448→            changedKeys={changedKeys}
+   449→            sslEnabled={sslEnabled}
+   450→            domainStatuses={domainStatuses}
+   451→            onChange={handleChange}
+   452→            onCopy={handleCopy}
+   453→            onTest={testDomain}
+   454→            onTestAll={testAllDomains}
+   455→          />
+   456→        )}
+   457→
+   458→        {activeTab === "ssl" && (
+   459→          <SSLTab
+   460→            editValues={editValues}
+   461→            changedKeys={changedKeys}
+   462→            onSSLChanged={fetchSettings}
+   463→          />
+   464→        )}
+   465→
+   466→        {activeTab === "security" && (
+   467→          <SecurityTab
+   468→            editValues={editValues}
+   469→            changedKeys={changedKeys}
+   470→            showSecrets={showSecrets}
+   471→            onToggleSecrets={() => setShowSecrets((v) => !v)}
+   472→            onChange={handleChange}
+   473→          />
+   474→        )}
+   475→
+   476→        {activeTab === "features" && (
+   477→          <FeaturesTab
+   478→            editValues={editValues}
+   479→            changedKeys={changedKeys}
+   480→            onChange={handleChange}
+   481→          />
+   482→        )}
+   483→
+   484→        {activeTab === "history" && (
+   485→          <HistoryTab auditLogs={auditLogs} onRefresh={fetchAuditLogs} />
+   486→        )}
+   487→      </div>
+   488→
+   489→      {/* Sticky Action Bar */}
+   490→      {changedKeys.size > 0 && (
+   491→        <div className="action-bar animate-slide-in-up">
+   492→          <div className="flex items-center gap-3 flex-1 min-w-0">
+   493→            <AlertTriangle className="h-5 w-5 text-yellow-400 shrink-0" />
+   494→            <div className="min-w-0">
+   495→              <p className="text-sm font-medium text-foreground">
+   496→                لديك {changedKeys.size} تغيير غير محفوظ
+   497→                {changedDomains > 0 && (
+   498→                  <span className="text-yellow-400"> ({changedDomains} دومين)</span>
+   499→                )}
+   500→              </p>
+   501→              <p className="text-[11px] text-muted-foreground">
+   502→                اضغط Ctrl/Cmd+S للحفظ السريع
+   503→              </p>
+   504→            </div>
+   505→          </div>
+   506→          <div className="flex items-center gap-2 shrink-0">
+   507→            <button
+   508→              onClick={handleReset}
+   509→              disabled={saving}
+   510→              className="btn-ghost text-xs"
+   511→            >
+   512→              تراجع
+   513→            </button>
+   514→            <button
+   515→              onClick={() => handleSave()}
+   516→              disabled={saving}
+   517→              className="btn-primary text-sm"
+   518→            >
+   519→              {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+   520→              حفظ التغييرات ({changedKeys.size})
+   521→            </button>
+   522→          </div>
+   523→        </div>
+   524→      )}
+   525→
+   526→      <ConfirmDialog
+   527→        isOpen={!!confirmAction}
+   528→        onClose={() => !saving && setConfirmAction(null)}
+   529→        onConfirm={() => confirmAction?.onConfirm()}
+   530→        title={confirmAction?.title || ""}
+   531→        description={confirmAction?.description}
+   532→        confirmLabel={confirmAction?.confirmLabel || "تأكيد"}
+   533→        destructive={confirmAction?.destructive}
+   534→        loading={saving}
+   535→      />
+   536→    </div>
+   537→  );
+   538→}
+   539→
+   540→// ═══════════════════════════════════════════════════════════════════
+   541→// OVERVIEW TAB
+   542→// ═══════════════════════════════════════════════════════════════════
+   543→
+   544→function OverviewTab({
+   545→  editValues,
+   546→  sslEnabled,
+   547→  maintenanceMode,
+   548→  registrationOpen,
+   549→  domainStatuses,
+   550→  changedKeys,
+   551→  onTestAll,
+   552→  onNavigate,
+   553→  onPreset,
+   554→  auditLogs,
+   555→  lastFetch,
+   556→}: {
+   557→  editValues: Record<string, string>;
+   558→  sslEnabled: boolean;
+   559→  maintenanceMode: boolean;
+   560→  registrationOpen: boolean;
+   561→  domainStatuses: Record<string, DomainStatus>;
+   562→  changedKeys: Set<string>;
+   563→  onTestAll: () => void;
+   564→  onNavigate: (t: TabId) => void;
+   565→  onPreset: (p: "ssl-on" | "ssl-off" | "maintenance-on" | "maintenance-off") => void;
+   566→  auditLogs: any[];
+   567→  lastFetch: Date | null;
+   568→}) {
+   569→  const domains = [
+   570→    { key: "main_domain", label: "الرئيسي", icon: Globe, color: "teal" },
+   571→    { key: "frontend_domain", label: "Frontend", icon: Globe, color: "emerald" },
+   572→    { key: "backend_domain", label: "API", icon: Server, color: "blue" },
+   573→    { key: "admin_domain", label: "Admin", icon: ShieldCheck, color: "purple" },
+   574→  ] as const;
+   575→
+   576→  return (
+   577→    <div className="space-y-6">
+   578→      {/* Quick actions */}
+   579→      <div>
+   580→        <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
+   581→          إجراءات سريعة
+   582→        </h3>
+   583→        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   584→          <button
+   585→            onClick={() => onPreset("ssl-on")}
+   586→            className="preset-card text-right group"
+   587→          >
+   588→            <div className="flex items-center gap-3">
+   589→              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20 transition-colors">
+   590→                <Lock className="h-4 w-4" />
+   591→              </div>
+   592→              <div>
+   593→                <p className="text-sm font-medium text-foreground">تفعيل SSL</p>
+   594→                <p className="text-[11px] text-muted-foreground">HTTPS + redirect</p>
+   595→              </div>
+   596→            </div>
+   597→          </button>
+   598→          <button
+   599→            onClick={() => onPreset("ssl-off")}
+   600→            className="preset-card text-right group"
+   601→          >
+   602→            <div className="flex items-center gap-3">
+   603→              <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-400 group-hover:bg-yellow-500/20 transition-colors">
+   604→                <Unlock className="h-4 w-4" />
+   605→              </div>
+   606→              <div>
+   607→                <p className="text-sm font-medium text-foreground">تعطيل SSL</p>
+   608→                <p className="text-[11px] text-muted-foreground">HTTP فقط</p>
+   609→              </div>
+   610→            </div>
+   611→          </button>
+   612→          <button
+   613→            onClick={() => onPreset("maintenance-on")}
+   614→            className="preset-card text-right group"
+   615→          >
+   616→            <div className="flex items-center gap-3">
+   617→              <div className="p-2 rounded-lg bg-yellow-500/10 text-yellow-400 group-hover:bg-yellow-500/20 transition-colors">
+   618→                <PowerOff className="h-4 w-4" />
+   619→              </div>
+   620→              <div>
+   621→                <p className="text-sm font-medium text-foreground">وضع الصيانة</p>
+   622→                <p className="text-[11px] text-muted-foreground">إيقاف مؤقت</p>
+   623→              </div>
+   624→            </div>
+   625→          </button>
+   626→          <button
+   627→            onClick={() => onPreset("maintenance-off")}
+   628→            className="preset-card text-right group"
+   629→          >
+   630→            <div className="flex items-center gap-3">
+   631→              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20 transition-colors">
+   632→                <Power className="h-4 w-4" />
+   633→              </div>
+   634→              <div>
+   635→                <p className="text-sm font-medium text-foreground">إنهاء الصيانة</p>
+   636→                <p className="text-[11px] text-muted-foreground">استئناف الخدمة</p>
+   637→              </div>
+   638→            </div>
+   639→          </button>
+   640→        </div>
+   641→      </div>
+   642→
+   643→      {/* Domain status grid */}
+   644→      <div>
+   645→        <div className="flex items-center justify-between mb-3">
+   646→          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+   647→            حالة الدومينات
+   648→          </h3>
+   649→          <button
+   650→            onClick={onTestAll}
+   651→            className="btn-ghost text-xs"
+   652→          >
+   653→            <Wifi className="h-3.5 w-3.5" />
+   654→            اختبار الكل
+   655→          </button>
+   656→        </div>
+   657→        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+   658→          {domains.map((d) => {
+   659→            const status = domainStatuses[d.key] || "idle";
+   660→            const domain = editValues[d.key];
+   661→            const Icon = d.icon;
+   662→            const changed = changedKeys.has(d.key);
+   663→            return (
+   664→              <div
+   665→                key={d.key}
+   666→                className={`domain-card domain-card-${d.color === "teal" ? "main" : d.color}`}
+   667→              >
+   668→                <div className="relative z-10 flex items-start justify-between gap-3">
+   669→                  <div className="flex items-center gap-3 min-w-0 flex-1">
+   670→                    <div className={`p-2 rounded-lg bg-${d.color}-500/10 text-${d.color}-400 shrink-0`}>
+   671→                      <Icon className="h-4 w-4" />
+   672→                    </div>
+   673→                    <div className="min-w-0">
+   674→                      <div className="flex items-center gap-2">
+   675→                        <p className="text-xs font-medium text-muted-foreground">{d.label}</p>
+   676→                        {changed && (
+   677→                          <span className="chip chip-warning !px-1.5 !py-0 !text-[10px]">معدّل</span>
+   678→                        )}
+   679→                      </div>
+   680→                      <p className="text-sm font-mono text-foreground truncate mt-0.5" dir="ltr">
+   681→                        {domain || "—"}
+   682→                      </p>
+   683→                    </div>
+   684→                  </div>
+   685→                  <DomainStatusBadge status={status} />
+   686→                </div>
+   687→              </div>
+   688→            );
+   689→          })}
+   690→        </div>
+   691→      </div>
+   692→
+   693→      {/* Recent activity */}
+   694→      <div className="glass-panel rounded-2xl p-5">
+   695→        <div className="flex items-center justify-between mb-4">
+   696→          <div className="flex items-center gap-2">
+   697→            <History className="h-4 w-4 text-purple-400" />
+   698→            <h3 className="font-semibold">آخر التغييرات على الإعدادات</h3>
+   699→          </div>
+   700→          <button
+   701→            onClick={() => onNavigate("history")}
+   702→            className="btn-ghost text-xs"
+   703→          >
+   704→            عرض الكل
+   705→          </button>
+   706→        </div>
+   707→        {auditLogs.length === 0 ? (
+   708→          <div className="flex flex-col items-center justify-center py-8 text-center">
+   709→            <Database className="h-8 w-8 text-muted-foreground/30 mb-2" />
+   710→            <p className="text-sm text-muted-foreground">لا توجد تغييرات مسجلة بعد</p>
+   711→          </div>
+   712→        ) : (
+   713→          <div className="space-y-3">
+   714→            {auditLogs.slice(0, 4).map((log: any, i: number) => (
+   715→              <div key={i} className="timeline-item timeline-item-info">
+   716→                <div className="flex items-start justify-between gap-2">
+   717→                  <div className="min-w-0">
+   718→                    <p className="text-sm text-foreground font-medium truncate" dir="ltr">
+   719→                      {log.details || log.action}
+   720→                    </p>
+   721→                    <p className="text-xs text-muted-foreground mt-0.5">
+   722→                      بواسطة <span className="font-medium text-foreground/80">{log.username || "admin"}</span>
+   723→                    </p>
+   724→                  </div>
+   725→                  <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
+   726→                    {new Date(log.createdAt).toLocaleString("ar-EG", {
+   727→                      month: "short",
+   728→                      day: "numeric",
+   729→                      hour: "2-digit",
+   730→                      minute: "2-digit",
+   731→                    })}
+   732→                  </span>
+   733→                </div>
+   734→              </div>
+   735→            ))}
+   736→          </div>
+   737→        )}
+   738→      </div>
+   739→
+   740→      {/* System info */}
+   741→      <div className="glass-panel rounded-2xl p-5">
+   742→        <div className="flex items-center gap-2 mb-3">
+   743→          <Cpu className="h-4 w-4 text-blue-400" />
+   744→          <h3 className="font-semibold">معلومات النظام</h3>
+   745→        </div>
+   746→        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+   747→          <InfoRow label="SSL" value={sslEnabled ? "مُفعّل" : "مُعطّل"} ok={sslEnabled} />
+   748→          <InfoRow label="التسجيل" value={registrationOpen ? "مفتوح" : "مغلق"} ok={registrationOpen} />
+   749→          <InfoRow label="الصيانة" value={maintenanceMode ? "نشطة" : "متوقفة"} ok={!maintenanceMode} />
+   750→          <InfoRow
+   751→            label="آخر تحديث"
+   752→            value={lastFetch ? lastFetch.toLocaleTimeString("ar-EG") : "—"}
+   753→            neutral
+   754→          />
+   755→        </div>
+   756→      </div>
+   757→    </div>
+   758→  );
+   759→}
+   760→
+   761→// ═══════════════════════════════════════════════════════════════════
+   762→// DOMAINS TAB
+   763→// ═══════════════════════════════════════════════════════════════════
+   764→
+   765→function DomainsTab({
+   766→  editValues,
+   767→  originalValues,
+   768→  changedKeys,
+   769→  sslEnabled,
+   770→  domainStatuses,
+   771→  onChange,
+   772→  onCopy,
+   773→  onTest,
+   774→  onTestAll,
+   775→}: {
+   776→  editValues: Record<string, string>;
+   777→  originalValues: Record<string, string>;
+   778→  changedKeys: Set<string>;
+   779→  sslEnabled: boolean;
+   780→  domainStatuses: Record<string, DomainStatus>;
+   781→  onChange: (k: string, v: string) => void;
+   782→  onCopy: (text: string, label: string) => void;
+   783→  onTest: (k: string) => void;
+   784→  onTestAll: () => void;
+   785→}) {
+   786→  const proto = sslEnabled ? "https" : "http";
+   787→
+   788→  const fields = [
+   789→    {
+   790→      key: "main_domain",
+   791→      label: "الدومين الرئيسي",
+   792→      hint: "النطاق الجذر المستخدم في الروابط العامة ورسائل البريد.",
+   793→      placeholder: "eg-money.local",
+   794→      icon: Globe,
+   795→      color: "teal",
+   796→    },
+   797→    {
+   798→      key: "frontend_domain",
+   799→      label: "دومين الواجهة الأمامية (Frontend)",
+   800→      hint: "النطاق الذي يُقدّم تطبيق المستخدم (SvelteKit).",
+   801→      placeholder: "eg-money.local",
+   802→      icon: Globe,
+   803→      color: "emerald",
+   804→    },
+   805→    {
+   806→      key: "backend_domain",
+   807→      label: "دومين الـ API (Backend)",
+   808→      hint: "النطاق الذي يُقدّم واجهة Go/Gin البرمجية.",
+   809→      placeholder: "api.eg-money.local",
+   810→      icon: Server,
+   811→      color: "blue",
+   812→    },
+   813→    {
+   814→      key: "admin_domain",
+   815→      label: "دومين لوحة الإدارة (Admin)",
+   816→      hint: "النطاق الذي يُقدّم لوحة Next.js الإدارية.",
+   817→      placeholder: "admin.eg-money.local",
+   818→      icon: ShieldCheck,
+   819→      color: "purple",
+   820→    },
+   821→  ] as const;
+   822→
+   823→  return (
+   824→    <div className="space-y-5">
+   825→      {/* Helper banner */}
+   826→      <div className="glass-panel rounded-2xl p-4 flex items-start gap-3 border-r-2 border-r-blue-500/50">
+   827→        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
+   828→          <Rocket className="h-4 w-4" />
+   829→        </div>
+   830→        <div className="flex-1">
+   831→          <p className="text-sm text-foreground font-medium">
+   832→            تعديل أسماء النطاقات الفرعية (subdomains)
+   833→          </p>
+   834→          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+   835→            عند الحفظ، يولّد nginx تلقائياً <code className="bg-muted/30 px-1 py-0.5 rounded text-purple-300">server_name</code> جديد لكل خدمة
+   836→            ويُعيد تحميل الإعدادات بدون توقف. تأكد من إضافة DNS records أو إدخالات hosts محلية لكل نطاق فرعي.
+   837→          </p>
+   838→        </div>
+   839→        <button
+   840→          onClick={onTestAll}
+   841→          className="btn-ghost text-xs shrink-0"
+   842→        >
+   843→          <Wifi className="h-3.5 w-3.5" />
+   844→          اختبار الكل
+   845→        </button>
+   846→      </div>
+   847→
+   848→      {/* Domain cards with full edit + status */}
+   849→      <div className="space-y-4">
+   850→        {fields.map((f) => {
+   851→          const Icon = f.icon;
+   852→          const changed = changedKeys.has(f.key);
+   853→          const status = domainStatuses[f.key] || "idle";
+   854→          const value = editValues[f.key] || "";
+   855→          const preview = value ? `${proto}://${value}` : "";
+   856→
+   857→          return (
+   858→            <div
+   859→              key={f.key}
+   860→              className={`domain-card domain-card-${f.color === "teal" ? "main" : f.color} ${changed ? "ring-1 ring-yellow-500/30" : ""}`}
+   861→            >
+   862→              <div className="relative z-10 space-y-3">
+   863→                <div className="flex items-start justify-between gap-3">
+   864→                  <div className="flex items-center gap-3">
+   865→                    <div className={`p-2 rounded-lg bg-${f.color}-500/10 text-${f.color}-400`}>
+   866→                      <Icon className="h-4 w-4" />
+   867→                    </div>
+   868→                    <div>
+   869→                      <div className="flex items-center gap-2">
+   870→                        <label className="text-sm font-medium text-foreground">{f.label}</label>
+   871→                        {changed && (
+   872→                          <span className="chip chip-warning !px-1.5 !py-0">
+   873→                            <span className="text-yellow-400">●</span>
+   874→                            معدّل
+   875→                          </span>
+   876→                        )}
+   877→                      </div>
+   878→                      <p className="text-xs text-muted-foreground mt-0.5">{f.hint}</p>
+   879→                    </div>
+   880→                  </div>
+   881→                  <DomainStatusBadge status={status} />
+   882→                </div>
+   883→
+   884→                {/* Input row */}
+   885→                <div className="flex flex-col sm:flex-row gap-2">
+   886→                  <div className="flex-1 relative">
+   887→                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono text-muted-foreground/60 pointer-events-none">
+   888→                      {proto}://
+   889→                    </span>
+   890→                    <input
+   891→                      type="text"
+   892→                      value={value}
+   893→                      onChange={(e) => onChange(f.key, e.target.value)}
+   894→                      placeholder={f.placeholder}
+   895→                      className="input-field pr-16 font-mono text-sm"
+   896→                      dir="ltr"
+   897→                    />
+   898→                  </div>
+   899→                  <div className="flex gap-2">
+   900→                    <button
+   901→                      onClick={() => onCopy(value, f.label)}
+   902→                      className="copy-btn border border-border/30"
+   903→                      title="نسخ"
+   904→                    >
+   905→                      <Copy className="h-3.5 w-3.5" />
+   906→                    </button>
+   907→                    <button
+   908→                      onClick={() => onTest(f.key)}
+   909→                      disabled={status === "checking"}
+   910→                      className="btn-ghost text-xs px-3"
+   911→                      title="اختبار الاتصال"
+   912→                    >
+   913→                      {status === "checking" ? (
+   914→                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+   915→                      ) : (
+   916→                        <Wifi className="h-3.5 w-3.5" />
+   917→                      )}
+   918→                      اختبار
+   919→                    </button>
+   920→                    {value && (
+   921→                      <a
+   922→                        href={preview}
+   923→                        target="_blank"
+   924→                        rel="noopener noreferrer"
+   925→                        className="copy-btn border border-border/30"
+   926→                        title="فتح في تبويب جديد"
+   927→                      >
+   928→                        <ExternalLink className="h-3.5 w-3.5" />
+   929→                      </a>
+   930→                    )}
+   931→                  </div>
+   932→                </div>
+   933→
+   934→                {/* Diff preview */}
+   935→                {changed && (
+   936→                  <div className="text-xs flex items-center gap-2 bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-2 animate-fade-in">
+   937→                    <span className="text-muted-foreground">القيمة المحفوظة:</span>
+   938→                    <span className="font-mono text-red-400 line-through" dir="ltr">
+   939→                      {originalValues[f.key] || "—"}
+   940→                    </span>
+   941→                    <span className="text-muted-foreground">←</span>
+   942→                    <span className="font-mono text-emerald-400" dir="ltr">
+   943→                      {value}
+   944→                    </span>
+   945→                  </div>
+   946→                )}
+   947→              </div>
+   948→            </div>
+   949→          );
+   950→        })}
+   951→      </div>
+   952→
+   953→      {/* DNS hint */}
+   954→      <div className="glass-panel rounded-2xl p-4 bg-blue-500/5 border border-blue-500/20">
+   955→        <div className="flex items-start gap-3">
+   956→          <Database className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+   957→          <div className="text-xs text-muted-foreground leading-relaxed">
+   958→            <p className="font-medium text-foreground mb-1">للتطوير المحلي:</p>
+   959→            أضف الإدخالات التالية في ملف <code className="bg-muted/30 px-1 py-0.5 rounded text-purple-300">/etc/hosts</code>:
+   960→            <pre className="mt-1.5 text-[11px] font-mono bg-muted/20 rounded p-2 overflow-x-auto" dir="ltr">
+   961→{`127.0.0.1  ${editValues.main_domain || "eg-money.local"}
+   962→127.0.0.1  ${editValues.frontend_domain || "eg-money.local"}
+   963→127.0.0.1  ${editValues.backend_domain || "api.eg-money.local"}
+   964→127.0.0.1  ${editValues.admin_domain || "admin.eg-money.local"}`}
+   965→            </pre>
+   966→          </div>
+   967→        </div>
+   968→      </div>
+   969→    </div>
+   970→  );
+   971→}
+   972→
+   973→// ═══════════════════════════════════════════════════════════════════
+   974→// SECURITY TAB
+   975→// ═══════════════════════════════════════════════════════════════════
+   976→
+   977→function SecurityTab({
+   978→  editValues,
+   979→  changedKeys,
+   980→  onChange,
+   981→}: {
+   982→  editValues: Record<string, string>;
+   983→  changedKeys: Set<string>;
+   984→  showSecrets: boolean;
+   985→  onToggleSecrets: () => void;
+   986→  onChange: (k: string, v: string) => void;
+   987→}) {
+   988→  const sslEnabled = editValues.ssl_enabled === "true";
+   989→
+   990→  return (
+   991→    <div className="space-y-5">
+   992→      {/* Quick SSL toggle — full SSL management is in the SSL tab */}
+   993→      <Section
+   994→        title="حالة SSL"
+   995→        icon={sslEnabled ? <Lock className="h-5 w-5 text-emerald-400" /> : <Unlock className="h-5 w-5 text-yellow-400" />}
+   996→        description="تبديل سريع لتفعيل/تعطيل HTTPS. لتوليد شهادات جديدة أو إدارتها، استخدم تبويب «SSL والشهادات»."
+   997→        accent={sslEnabled ? "emerald" : "yellow"}
+   998→      >
+   999→        <ToggleRow
+  1000→          label="تفعيل SSL"
+  1001→          hint="عند التفعيل، يصغي nginx على المنفذ 443 ويُعيد توجيه HTTP → HTTPS. الشهادة الحالية:"
+  1002→          checked={sslEnabled}
+  1003→          onChange={(v) => onChange("ssl_enabled", v ? "true" : "false")}
+  1004→          changed={changedKeys.has("ssl_enabled")}
+  1005→        />
+  1006→        {sslEnabled && (
+  1007→          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3 flex items-start gap-2">
+  1008→            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+  1009→            <div className="text-xs">
+  1010→              <p className="text-emerald-300 font-medium">SSL مُفعّل</p>
+  1011→              <p className="text-muted-foreground mt-0.5" dir="ltr">
+  1012→                {editValues.ssl_cert_path || "/etc/nginx/certs/local.pem"}
+  1013→              </p>
+  1014→            </div>
+  1015→          </div>
+  1016→        )}
+  1017→      </Section>
+  1018→
+  1019→      {/* CORS Section */}
+  1020→      <Section
+  1021→        title="CORS — الأصولات الإضافية"
+  1022→        icon={<ShieldCheck className="h-5 w-5 text-blue-400" />}
+  1023→        description="قائمة مفصولة بفواصل للنطاقات الإضافية المسموح لها بالوصول للـ API (إضافة للدومينات المُعدّة في تبويب الدومينات)."
+  1024→        accent="blue"
+  1025→      >
+  1026→        <div>
+  1027→          <label className="block text-sm font-medium text-foreground mb-1">
+  1028→            أصول CORS إضافية
+  1029→          </label>
+  1030→          <p className="text-xs text-muted-foreground mb-2">
+  1031→            مثال: <code className="bg-muted/30 px-1 py-0.5 rounded text-purple-300">https://app.example.com, https://wallet.example.com</code>
+  1032→          </p>
+  1033→          <textarea
+  1034→            value={editValues.cors_extra_origins || ""}
+  1035→            onChange={(e) => onChange("cors_extra_origins", e.target.value)}
+  1036→            placeholder="https://app.example.com, https://wallet.example.com"
+  1037→            rows={3}
+  1038→            className={`input-field font-mono text-sm ${changedKeys.has("cors_extra_origins") ? "ring-1 ring-yellow-500/30" : ""}`}
+  1039→            dir="ltr"
+  1040→          />
+  1041→        </div>
+  1042→        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/20 rounded-lg p-3">
+  1043→          <Zap className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+  1044→          <p>
+  1045→            الإعدادات التالية تُضاف تلقائياً لأصول CORS المسموح بها: النطاق الرئيسي، الواجهة، الـ API، ولوحة الإدارة.
+  1046→            لا حاجة لتكرارها هنا.
+  1047→          </p>
+  1048→        </div>
+  1049→      </Section>
+  1050→    </div>
+  1051→  );
+  1052→}
+  1053→
+  1054→// ═══════════════════════════════════════════════════════════════════
+  1055→// FEATURES TAB
+  1056→// ═══════════════════════════════════════════════════════════════════
+  1057→
+  1058→function FeaturesTab({
+  1059→  editValues,
+  1060→  changedKeys,
+  1061→  onChange,
+  1062→}: {
+  1063→  editValues: Record<string, string>;
+  1064→  changedKeys: Set<string>;
+  1065→  onChange: (k: string, v: string) => void;
+  1066→}) {
+  1067→  const maintenanceMode = editValues.maintenance_mode === "true";
+  1068→  const registrationOpen = editValues.registration_open === "true";
+  1069→
+  1070→  return (
+  1071→    <div className="space-y-5">
+  1072→      <Section
+  1073→        title="التسجيل والمصادقة"
+  1074→        icon={<Power className="h-5 w-5 text-emerald-400" />}
+  1075→        description="تحكم في فتح أو إغلاق إنشاء حسابات جديدة على المنصة."
+  1076→        accent={registrationOpen ? "emerald" : "red"}
+  1077→      >
+  1078→        <ToggleRow
+  1079→          label="فتح التسجيل"
+  1080→          hint="عند التعطيل، يُرفض إنشاء حسابات جديدة عبر /api/v1/auth/register مع رسالة توضيحية."
+  1081→          checked={registrationOpen}
+  1082→          onChange={(v) => onChange("registration_open", v ? "true" : "false")}
+  1083→          changed={changedKeys.has("registration_open")}
+  1084→        />
+  1085→      </Section>
+  1086→
+  1087→      <Section
+  1088→        title="وضع الصيانة"
+  1089→        icon={<Wrench className="h-5 w-5 text-yellow-400" />}
+  1090→        description="عند التفعيل، تظهر رسالة صيانة للمستخدمين. يُفضّل تفعيله أثناء التحديثات الجذرية."
+  1091→        accent={maintenanceMode ? "yellow" : "emerald"}
+  1092→      >
+  1093→        <ToggleRow
+  1094→          label="تفعيل وضع الصيانة"
+  1095→          hint="يُعيد الـ API خطأ 503 لجميع الطلبات غير الـ /api/v1/health* و /api/v1/config."
+  1096→          checked={maintenanceMode}
+  1097→          onChange={(v) => onChange("maintenance_mode", v ? "true" : "false")}
+  1098→          changed={changedKeys.has("maintenance_mode")}
+  1099→        />
+  1100→        <div className={maintenanceMode ? "block animate-fade-in" : "hidden"}>
+  1101→          <label className="block text-sm font-medium text-foreground mb-1">
+  1102→            رسالة الصيانة
+  1103→          </label>
+  1104→          <p className="text-xs text-muted-foreground mb-2">
+  1105→            تظهر للمستخدمين عند تفعيل وضع الصيانة.
+  1106→          </p>
+  1107→          <textarea
+  1108→            value={editValues.maintenance_message || ""}
+  1109→            onChange={(e) => onChange("maintenance_message", e.target.value)}
+  1110→            placeholder="المنصة قيد الصيانة. عودة قريباً."
+  1111→            rows={3}
+  1112→            className={`input-field text-sm ${changedKeys.has("maintenance_message") ? "ring-1 ring-yellow-500/30" : ""}`}
+  1113→          />
+  1114→        </div>
+  1115→      </Section>
+  1116→
+  1117→      {/* How it works */}
+  1118→      <Section
+  1119→        title="كيف يعمل النظام؟"
+  1120→        icon={<Rocket className="h-5 w-5 text-purple-400" />}
+  1121→        description="شرح موجز لتدفق البيانات عند تعديل الإعدادات."
+  1122→        accent="purple"
+  1123→      >
+  1124→        <div className="space-y-3 text-sm text-muted-foreground">
+  1125→          {[
+  1126→            { step: 1, title: "حفظ الإعدادات", desc: "تكتب القيم في جدول system_settings في قاعدة البيانات.", color: "blue" },
+  1127→            { step: 2, title: "تحديث ذاكرة الـ Backend", desc: "يُحدّث الـ cache الفوري للـ CORS والـ feature flags بدون إعادة تشغيل.", color: "emerald" },
+  1128→            { step: 3, title: "إشارة Nginx", desc: "يكتب الـ backend في ملف trigger مشترك، فيكتشف الـ sidecar في حاوية nginx التغيير.", color: "purple" },
+  1129→            { step: 4, title: "إعادة توليد config", desc: "يسحب الـ sidecar الإعدادات الجديدة من /api/v1/config ويولّد nginx.conf جديد.", color: "teal" },
+  1130→            { step: 5, title: "Reload آمن", desc: "يختبر الـ config بـ nginx -t ثم يرسل إشارة reload بدون توقف الخدمة.", color: "emerald" },
+  1131→          ].map((s) => (
+  1132→            <div key={s.step} className="flex items-start gap-3">
+  1133→              <div className={`bg-${s.color}-500/20 text-${s.color}-400 rounded-full w-6 h-6 flex items-center justify-center shrink-0 text-xs font-bold`}>
+  1134→                {s.step}
+  1135→              </div>
+  1136→              <div>
+  1137→                <span className="text-foreground font-medium">{s.title}:</span>{" "}
+  1138→                {s.desc}
+  1139→              </div>
+  1140→            </div>
+  1141→          ))}
+  1142→        </div>
+  1143→      </Section>
+  1144→    </div>
+  1145→  );
+  1146→}
+  1147→
+  1148→// ═══════════════════════════════════════════════════════════════════
+  1149→// HISTORY TAB
+  1150→// ═══════════════════════════════════════════════════════════════════
+  1151→
+  1152→function HistoryTab({ auditLogs, onRefresh }: { auditLogs: any[]; onRefresh: () => void }) {
+  1153→  return (
+  1154→    <div className="glass-panel rounded-2xl p-5">
+  1155→      <div className="flex items-center justify-between mb-4">
+  1156→        <div className="flex items-center gap-2">
+  1157→          <History className="h-4 w-4 text-purple-400" />
+  1158→          <h3 className="font-semibold">سجل تغييرات الإعدادات</h3>
+  1159→        </div>
+  1160→        <button onClick={onRefresh} className="btn-ghost text-xs">
+  1161→          <RefreshCw className="h-3.5 w-3.5" />
+  1162→          تحديث
+  1163→        </button>
+  1164→      </div>
+  1165→
+  1166→      {auditLogs.length === 0 ? (
+  1167→        <div className="flex flex-col items-center justify-center py-16 text-center">
+  1168→          <div className="w-16 h-16 rounded-2xl bg-muted/20 flex items-center justify-center mb-4">
+  1169→            <History className="h-8 w-8 text-muted-foreground/30" />
+  1170→          </div>
+  1171→          <p className="text-sm text-muted-foreground font-medium">لا توجد تغييرات مسجلة</p>
+  1172→          <p className="text-xs text-muted-foreground/50 mt-1">
+  1173→            ستظهر هنا آخر العمليات على إعدادات النظام
+  1174→          </p>
+  1175→        </div>
+  1176→      ) : (
+  1177→        <div className="space-y-3">
+  1178→          {auditLogs.map((log: any, i: number) => (
+  1179→            <div key={i} className="timeline-item timeline-item-info">
+  1180→              <div className="flex items-start justify-between gap-3 mb-1">
+  1181→                <p className="text-sm font-medium text-foreground" dir="ltr">
+  1182→                  {log.details || log.action}
+  1183→                </p>
+  1184→                <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
+  1185→                  {new Date(log.createdAt).toLocaleString("ar-EG", {
+  1186→                    year: "numeric",
+  1187→                    month: "short",
+  1188→                    day: "numeric",
+  1189→                    hour: "2-digit",
+  1190→                    minute: "2-digit",
+  1191→                  })}
+  1192→                </span>
+  1193→              </div>
+  1194→              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+  1195→                <span className="flex items-center gap-1">
+  1196→                  بواسطة <span className="font-medium text-foreground/80">{log.username || "admin"}</span>
+  1197→                </span>
+  1198→                {log.ipAddress && (
+  1199→                  <span className="font-mono" dir="ltr">
+  1200→                    {log.ipAddress}
+  1201→                  </span>
+  1202→                )}
+  1203→              </div>
+  1204→            </div>
+  1205→          ))}
+  1206→        </div>
+  1207→      )}
+  1208→    </div>
+  1209→  );
+  1210→}
+  1211→
+  1212→// ═══════════════════════════════════════════════════════════════════
+  1213→// SHARED COMPONENTS
+  1214→// ═══════════════════════════════════════════════════════════════════
+  1215→
+  1216→function StatusPill({
+  1217→  icon,
+  1218→  label,
+  1219→  value,
+  1220→  color,
+  1221→}: {
+  1222→  icon: React.ReactNode;
+  1223→  label: string;
+  1224→  value: string;
+  1225→  color: "emerald" | "yellow" | "red" | "teal" | "blue" | "purple";
+  1226→}) {
+  1227→  const colorMap: Record<string, string> = {
+  1228→    emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  1229→    yellow: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+  1230→    red: "bg-red-500/10 text-red-400 border-red-500/20",
+  1231→    teal: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+  1232→    blue: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  1233→    purple: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  1234→  };
+  1235→  return (
+  1236→    <div className={`glass-panel rounded-xl p-3 border ${colorMap[color].split(" ").slice(-1)[0]}`}>
+  1237→      <div className="flex items-center gap-2 mb-1">
+  1238→        <span className={colorMap[color]}>{icon}</span>
+  1239→        <span className="text-[11px] text-muted-foreground font-medium">{label}</span>
+  1240→      </div>
+  1241→      <p className={`text-sm font-semibold truncate ${colorMap[color].split(" ")[1]}`} dir="ltr" title={value}>
+  1242→        {value}
+  1243→      </p>
+  1244→    </div>
+  1245→  );
+  1246→}
+  1247→
+  1248→function DomainStatusBadge({ status }: { status: DomainStatus }) {
+  1249→  if (status === "idle") {
+  1250→    return <span className="chip chip-default">لم يُختبر</span>;
+  1251→  }
+  1252→  if (status === "checking") {
+  1253→    return (
+  1254→      <span className="chip chip-info">
+  1255→        <Loader2 className="h-3 w-3 animate-spin" />
+  1256→        جاري الاختبار
+  1257→      </span>
+  1258→    );
+  1259→  }
+  1260→  if (status === "online") {
+  1261→    return (
+  1262→      <span className="chip chip-success">
+  1263→        <Check className="h-3 w-3" />
+  1264→        متصل
+  1265→      </span>
+  1266→    );
+  1267→  }
+  1268→  return (
+  1269→    <span className="chip chip-danger">
+  1270→      <AlertTriangle className="h-3 w-3" />
+  1271→      غير متصل
+  1272→    </span>
+  1273→  );
+  1274→}
+  1275→
+  1276→function Section({
+  1277→  title,
+  1278→  icon,
+  1279→  description,
+  1280→  accent = "blue",
+  1281→  children,
+  1282→}: {
+  1283→  title: string;
+  1284→  icon: React.ReactNode;
+  1285→  description: string;
+  1286→  accent?: "emerald" | "yellow" | "blue" | "purple" | "red" | "teal";
+  1287→  children: React.ReactNode;
+  1288→}) {
+  1289→  const accentMap: Record<string, string> = {
+  1290→    emerald: "border-r-emerald-500/60",
+  1291→    yellow: "border-r-yellow-500/60",
+  1292→    blue: "border-r-blue-500/60",
+  1293→    purple: "border-r-purple-500/60",
+  1294→    red: "border-r-red-500/60",
+  1295→    teal: "border-r-teal-500/60",
+  1296→  };
+  1297→  return (
+  1298→    <div className={`glass-panel rounded-2xl p-6 border-r-2 ${accentMap[accent]}`}>
+  1299→      <div className="flex items-center gap-3 mb-2">
+  1300→        <div className="shrink-0">{icon}</div>
+  1301→        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+  1302→      </div>
+  1303→      <p className="text-gray-400 text-sm mb-4">{description}</p>
+  1304→      <div className="space-y-4">{children}</div>
+  1305→    </div>
+  1306→  );
+  1307→}
+  1308→
+  1309→function ToggleRow({
+  1310→  label,
+  1311→  hint,
+  1312→  checked,
+  1313→  onChange,
+  1314→  changed,
+  1315→}: {
+  1316→  label: string;
+  1317→  hint?: string;
+  1318→  checked: boolean;
+  1319→  onChange: (v: boolean) => void;
+  1320→  changed?: boolean;
+  1321→}) {
+  1322→  return (
+  1323→    <div className="flex items-start justify-between gap-4 py-2">
+  1324→      <div className="flex-1">
+  1325→        <div className="flex items-center gap-2">
+  1326→          <label className="block text-sm font-medium text-foreground">{label}</label>
+  1327→          {changed && (
+  1328→            <span className="chip chip-warning !px-1.5 !py-0 !text-[10px]">
+  1329→              <span className="text-yellow-400">●</span>
+  1330→              معدّل
+  1331→            </span>
+  1332→          )}
+  1333→        </div>
+  1334→        {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+  1335→      </div>
+  1336→      <button
+  1337→        type="button"
+  1338→        onClick={() => onChange(!checked)}
+  1339→        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 shrink-0 ${
+  1340→          checked
+  1341→            ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+  1342→            : "bg-gray-600"
+  1343→        }`}
+  1344→      >
+  1345→        <span
+  1346→          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-all duration-200 ${
+  1347→            checked ? "translate-x-6" : "translate-x-1"
+  1348→          }`}
+  1349→        />
+  1350→      </button>
+  1351→    </div>
+  1352→  );
+  1353→}
+  1354→
+  1355→function InfoRow({ label, value, ok, neutral }: { label: string; value: string; ok?: boolean; neutral?: boolean }) {
+  1356→  return (
+  1357→    <div className="bg-muted/20 rounded-lg p-3">
+  1358→      <p className="text-[11px] text-muted-foreground mb-0.5">{label}</p>
+  1359→      <p
+  1360→        className={`text-sm font-semibold ${
+  1361→          neutral ? "text-foreground" : ok ? "text-emerald-400" : "text-yellow-400"
+  1362→        }`}
+  1363→      >
+  1364→        {value}
+  1365→      </p>
+  1366→    </div>
+  1367→  );
+  1368→}
+  1369→
