@@ -17,15 +17,43 @@ let runtimeApiBase: string | null = null;
 
 function getInitialApiBase(): string {
   if (browser) {
-    // Try cached runtime config first
+    // Try cached runtime config first — but validate it's reachable
+    // (stale cached values like https://api.eg-money.local cause
+    // ERR_CONNECTION_REFUSED when the domain doesn't resolve locally)
     const cached = localStorage.getItem('runtime_api_base');
-    if (cached) {
+    if (cached && isCacheValid(cached)) {
       runtimeApiBase = cached;
       return cached;
     }
+    // Invalid cache — clear it and fall back to VITE_API_URL
+    if (cached) localStorage.removeItem('runtime_api_base');
     return (import.meta.env.VITE_API_URL as string) || '';
   }
   return process.env.API_URL || (import.meta.env.VITE_API_URL as string) || 'http://localhost:3000';
+}
+
+/**
+ * Validate a cached API base URL. Rejects obviously broken values:
+ * - non-localhost .local domains that won't resolve
+ * - HTTPS when we're on HTTP page (mixed content)
+ */
+function isCacheValid(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // .local domains only resolve if explicitly added to /etc/hosts
+    // In most dev setups they don't — skip them and rediscover
+    if (parsed.hostname.endsWith('.local') && parsed.hostname !== 'localhost') {
+      return false;
+    }
+    // If current page is HTTP and cached URL is HTTPS, it won't work
+    // (mixed content blocked by browsers)
+    if (window.location.protocol === 'http:' && parsed.protocol === 'https:') {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const API_BASE = getInitialApiBase();
@@ -46,6 +74,11 @@ export async function loadRuntimeConfig(): Promise<void> {
     if (data.backend_domain) {
       const scheme = data.ssl_enabled ? 'https' : 'http';
       const newBase = `${scheme}://${data.backend_domain}`;
+      // Validate before applying — don't cache broken .local or mixed-content URLs
+      if (!isCacheValid(newBase)) {
+        console.warn(`[runtime-config] Ignoring invalid backend_domain: ${newBase} — keeping ${API_BASE}`);
+        return;
+      }
       if (newBase !== runtimeApiBase) {
         runtimeApiBase = newBase;
         localStorage.setItem('runtime_api_base', newBase);
