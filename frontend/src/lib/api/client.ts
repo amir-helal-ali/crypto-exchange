@@ -34,15 +34,17 @@ function getInitialApiBase(): string {
 
 /**
  * Validate a cached API base URL. Rejects obviously broken values:
- * - non-localhost .local domains that won't resolve
- * - HTTPS when we're on HTTP page (mixed content)
+ * - HTTPS API URL when page is HTTP (mixed content blocked by browsers)
+ * - .local domains only rejected when current page is NOT on .local
+ *   (if the page is served from a .local domain, the user has /etc/hosts set up)
  */
 function isCacheValid(url: string): boolean {
   try {
     const parsed = new URL(url);
-    // .local domains only resolve if explicitly added to /etc/hosts
-    // In most dev setups they don't — skip them and rediscover
-    if (parsed.hostname.endsWith('.local') && parsed.hostname !== 'localhost') {
+    const currentHost = window.location.hostname;
+    // If current page is on .local, trust .local API URLs too
+    // (the user clearly has /etc/hosts configured)
+    if (parsed.hostname.endsWith('.local') && !currentHost.endsWith('.local')) {
       return false;
     }
     // If current page is HTTP and cached URL is HTTPS, it won't work

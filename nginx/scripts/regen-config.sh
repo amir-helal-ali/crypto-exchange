@@ -50,13 +50,13 @@ echo "[regen-config] fetching settings from $SETTINGS_URL"
 RESPONSE=$(wget -q -O - "$SETTINGS_URL" 2>/dev/null || echo "")
 
 if [ -z "$RESPONSE" ]; then
-  echo "[regen-config] WARNING: backend unreachable, using defaults" >&2
-  # Fallback to environment variables or safe defaults
-  FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-eg-money.local}"
-  BACKEND_DOMAIN="${BACKEND_DOMAIN:-api.eg-money.local}"
-  ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.eg-money.local}"
-  MAIN_DOMAIN="${MAIN_DOMAIN:-eg-money.local}"
-  SSL_ENABLED="${SSL_ENABLED:-true}"
+  echo "[regen-config] WARNING: backend unreachable, using env/defaults" >&2
+  # Fallback to environment variables or safe localhost defaults
+  FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-localhost}"
+  BACKEND_DOMAIN="${BACKEND_DOMAIN:-localhost}"
+  ADMIN_DOMAIN="${ADMIN_DOMAIN:-localhost}"
+  MAIN_DOMAIN="${MAIN_DOMAIN:-localhost}"
+  SSL_ENABLED="${SSL_ENABLED:-false}"
   SSL_CERT_PATH="${SSL_CERT_PATH:-/etc/nginx/certs/local.pem}"
   SSL_KEY_PATH="${SSL_KEY_PATH:-/etc/nginx/certs/local-key.pem}"
 else
@@ -75,6 +75,7 @@ fi
 echo "[regen-config] frontend_domain=$FRONTEND_DOMAIN"
 echo "[regen-config] backend_domain=$BACKEND_DOMAIN"
 echo "[regen-config] admin_domain=$ADMIN_DOMAIN"
+echo "[regen-config] main_domain=$MAIN_DOMAIN"
 echo "[regen-config] ssl_enabled=$SSL_ENABLED"
 
 # Build derived values
@@ -89,23 +90,99 @@ FRONTEND_UPSTREAM_URL="http://frontend_upstream"
 BACKEND_UPSTREAM_URL="http://backend_upstream"
 ADMIN_UPSTREAM_URL="http://admin_upstream"
 
-# Build SSL-related blocks
+# ===========================================
+# Build HTTP_BLOCK_CONTENT (for port 80 server block)
+# ===========================================
+# When SSL is enabled: just redirect to HTTPS
+# When SSL is disabled: serve full proxy with all location blocks
 if [ "$SSL_ENABLED" = "true" ]; then
-  SSL_DIRECTIVES="listen 443 ssl;\n    http2 on;\n    ssl_certificate $SSL_CERT_PATH;\n    ssl_certificate_key $SSL_KEY_PATH;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers HIGH:!aNULL:!MD5;\n    ssl_session_cache shared:SSL:10m;\n    ssl_session_timeout 10m;"
-  SSL_REDIRECT_OR_FALLTHROUGH="return 301 https://\$host\$request_uri;"
+  HTTP_BLOCK_CONTENT="return 301 https://\$host\$request_uri;"
+  SSL_DIRECTIVES="listen 443 ssl;
+    http2 on;
+    ssl_certificate $SSL_CERT_PATH;
+    ssl_certificate_key $SSL_KEY_PATH;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;"
   LISTEN_DIRECTIVE="listen 443 ssl;"
 else
-  SSL_DIRECTIVES="# SSL disabled"
-  SSL_REDIRECT_OR_FALLTHROUGH="# SSL disabled — serving over HTTP\n    location / { proxy_pass \$upstream; proxy_http_version 1.1; proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; }"
-  LISTEN_DIRECTIVE="# SSL disabled"
+  # Full proxy configuration in HTTP server block
+  HTTP_BLOCK_CONTENT="# Security headers
+    add_header X-Content-Type-Options \"nosniff\" always;
+    add_header X-Frame-Options \"SAMEORIGIN\" always;
+    add_header X-XSS-Protection \"1; mode=block\" always;
+    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;
+    add_header Permissions-Policy \"camera=(), microphone=(), geolocation=()\" always;
+
+    client_max_body_size 10M;
+
+    # Default location — proxies to the routed upstream
+    location / {
+      proxy_pass \$upstream;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection \$connection_upgrade;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+      proxy_read_timeout 60s;
+      proxy_send_timeout 60s;
+    }
+
+    # WebSocket routes — always go to backend
+    location /ws/ {
+      proxy_pass http://backend_upstream;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection \"upgrade\";
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_read_timeout 86400;
+      proxy_send_timeout 86400;
+    }
+
+    # Server-Sent Events (admin live stream)
+    location /api/v1/admin/stream {
+      proxy_pass http://backend_upstream;
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+      proxy_set_header Connection \"\";
+      proxy_buffering off;
+      proxy_cache off;
+      proxy_read_timeout 86400s;
+      proxy_send_timeout 86400s;
+      chunked_transfer_encoding on;
+    }
+
+    # Static uploads — served by backend
+    location /uploads/ {
+      proxy_pass http://backend_upstream;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+      expires 30d;
+      add_header Cache-Control \"public, immutable\";
+    }"
+  SSL_DIRECTIVES="# SSL disabled — entire HTTPS server block is hidden"
+  LISTEN_DIRECTIVE="listen 443 ssl;
+    # This block is intentionally incomplete — SSL is disabled
+    # and traffic is served from the HTTP server block above.
+    # We keep this server block only as a placeholder.
+    server_name _;
+    return 444;"
 fi
 
 # Generate the final config
 TMP_OUTPUT="${OUTPUT}.tmp"
 
-# Substitute placeholders. We use envsubst if available, otherwise sed.
-# envsubst is in gettext package; nginx:alpine doesn't have it by default.
-# Use sed for portability.
+# Substitute flat placeholders with sed
 sed \
   -e "s|\${MAIN_DOMAIN}|$MAIN_DOMAIN|g" \
   -e "s|\${FRONTEND_DOMAIN}|$FRONTEND_DOMAIN|g" \
@@ -122,16 +199,15 @@ sed \
   -e "s|\${SSL_KEY_PATH}|$SSL_KEY_PATH|g" \
   "$TEMPLATE" > "$TMP_OUTPUT"
 
-# Insert the multi-line SSL_DIRECTIVES (sed doesn't handle \n well)
-# Use awk for the SSL_DIRECTIVES substitution
-if [ "$SSL_ENABLED" = "true" ]; then
-  awk -v ssl="$SSL_DIRECTIVES" '{gsub(/\$\{SSL_DIRECTIVES\}/, ssl)} 1' "$TMP_OUTPUT" > "${TMP_OUTPUT}.2"
-  mv "${TMP_OUTPUT}.2" "$TMP_OUTPUT"
-  awk -v redir="$SSL_REDIRECT_OR_FALLTHROUGH" '{gsub(/\$\{SSL_REDIRECT_OR_FALLTHROUGH\}/, redir)} 1' "$TMP_OUTPUT" > "${TMP_OUTPUT}.2"
-  mv "${TMP_OUTPUT}.2" "$TMP_OUTPUT"
-  awk -v listen="$LISTEN_DIRECTIVE" '{gsub(/\$\{LISTEN_DIRECTIVE\}/, listen)} 1' "$TMP_OUTPUT" > "${TMP_OUTPUT}.2"
-  mv "${TMP_OUTPUT}.2" "$TMP_OUTPUT"
-fi
+# Insert multi-line blocks using awk (sed can't handle \n reliably)
+awk -v block="$HTTP_BLOCK_CONTENT" '{gsub(/\$\{HTTP_BLOCK_CONTENT\}/, block)} 1' "$TMP_OUTPUT" > "${TMP_OUTPUT}.2"
+mv "${TMP_OUTPUT}.2" "$TMP_OUTPUT"
+
+awk -v ssl="$SSL_DIRECTIVES" '{gsub(/\$\{SSL_DIRECTIVES\}/, ssl)} 1' "$TMP_OUTPUT" > "${TMP_OUTPUT}.2"
+mv "${TMP_OUTPUT}.2" "$TMP_OUTPUT"
+
+awk -v listen="$LISTEN_DIRECTIVE" '{gsub(/\$\{LISTEN_DIRECTIVE\}/, listen)} 1' "$TMP_OUTPUT" > "${TMP_OUTPUT}.2"
+mv "${TMP_OUTPUT}.2" "$TMP_OUTPUT"
 
 # Compare with current config — skip reload if unchanged
 if [ -f "$OUTPUT" ] && [ "$ONCE" = "1" ]; then

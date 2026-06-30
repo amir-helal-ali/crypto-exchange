@@ -129,15 +129,19 @@ func createIndexes() {
 // These are written once on first startup; admin users can edit them
 // later via the /api/v1/admin/settings endpoint. Existing rows are
 // never overwritten by seedSystemSettings.
+//
+// Domain and SSL defaults are read from environment variables so the
+// initial seed matches the deployment environment (docker-compose .env).
+// If the env vars are not set, safe localhost defaults are used.
 var defaultSettings = []models.SystemSetting{
         // Domains (used by nginx template + CORS middleware)
-        {Key: "frontend_domain", Value: "eg-money.local", Category: "domains"},
-        {Key: "backend_domain", Value: "api.eg-money.local", Category: "domains"},
-        {Key: "admin_domain", Value: "admin.eg-money.local", Category: "domains"},
-        {Key: "main_domain", Value: "eg-money.local", Category: "domains"},
+        {Key: "frontend_domain", Value: envOrDefault("FRONTEND_DOMAIN", "localhost"), Category: "domains"},
+        {Key: "backend_domain", Value: envOrDefault("BACKEND_DOMAIN", "localhost"), Category: "domains"},
+        {Key: "admin_domain", Value: envOrDefault("ADMIN_DOMAIN", "localhost"), Category: "domains"},
+        {Key: "main_domain", Value: envOrDefault("MAIN_DOMAIN", "localhost"), Category: "domains"},
 
-        // SSL configuration
-        {Key: "ssl_enabled", Value: "true", Category: "ssl"},
+        // SSL configuration — defaults to off for local dev
+        {Key: "ssl_enabled", Value: envOrDefault("SSL_ENABLED", "false"), Category: "ssl"},
         {Key: "ssl_cert_path", Value: "/etc/nginx/certs/local.pem", Category: "ssl"},
         {Key: "ssl_key_path", Value: "/etc/nginx/certs/local-key.pem", Category: "ssl"},
 
@@ -149,6 +153,15 @@ var defaultSettings = []models.SystemSetting{
         {Key: "registration_open", Value: "true", Category: "features"},
         {Key: "maintenance_mode", Value: "false", Category: "features"},
         {Key: "maintenance_message", Value: "The platform is temporarily under maintenance. Please check back soon.", Category: "features"},
+}
+
+// envOrDefault returns the value of the environment variable named by the key,
+// or the provided fallback value if the variable is not set or empty.
+func envOrDefault(key, fallback string) string {
+        if v := os.Getenv(key); v != "" {
+                return v
+        }
+        return fallback
 }
 
 // seedSystemSettings inserts default SystemSetting rows if they don't

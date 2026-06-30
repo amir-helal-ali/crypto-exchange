@@ -25,12 +25,12 @@ done
 echo "[nginx-entrypoint] generating initial nginx.conf..."
 /etc/nginx/scripts/regen-config.sh --check || {
   echo "[nginx-entrypoint] initial config generation failed, retrying with defaults" >&2
-  # Fallback: use defaults (eg-money.local) so nginx can start
-  SSL_ENABLED=true \
-  FRONTEND_DOMAIN=eg-money.local \
-  BACKEND_DOMAIN=api.eg-money.local \
-  ADMIN_DOMAIN=admin.eg-money.local \
-  MAIN_DOMAIN=eg-money.local \
+  # Fallback: use localhost defaults so nginx can start
+  SSL_ENABLED=false \
+  FRONTEND_DOMAIN=localhost \
+  BACKEND_DOMAIN=localhost \
+  ADMIN_DOMAIN=localhost \
+  MAIN_DOMAIN=localhost \
   /etc/nginx/scripts/regen-config.sh --check
 }
 

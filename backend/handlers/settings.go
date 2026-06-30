@@ -192,10 +192,33 @@ func ReloadNginx(c *gin.Context) {
 //
 // Public endpoint: GET /api/v1/config
 func GetPublicConfig(c *gin.Context) {
+        // Determine the effective backend_domain.
+        // If the DB value is "localhost" or empty, we also send the
+        // Host header so the frontend can detect the actual domain
+        // being used to reach the API (useful behind nginx/reverse proxy).
+        backendDomain := settings.GetDefault("backend_domain", "")
+        if backendDomain == "" || backendDomain == "localhost" {
+                // Prefer the Host header (which reflects the domain the
+                // client used to reach us, possibly via nginx).
+                if host := c.Request.Host; host != "" {
+                        // Strip port number if present
+                        for i := 0; i < len(host); i++ {
+                                if host[i] == ':' {
+                                        host = host[:i]
+                                        break
+                                }
+                        }
+                        if host != "" && host != "localhost" && host != "127.0.0.1" {
+                                backendDomain = host
+                        }
+                }
+        }
+
         c.JSON(http.StatusOK, gin.H{
-                "backend_domain":      settings.GetDefault("backend_domain", ""),
+                "backend_domain":      backendDomain,
                 "frontend_domain":     settings.GetDefault("frontend_domain", ""),
                 "admin_domain":        settings.GetDefault("admin_domain", ""),
+                "main_domain":         settings.GetDefault("main_domain", ""),
                 "ssl_enabled":         settings.GetBool("ssl_enabled"),
                 "registration_open":   settings.GetBool("registration_open"),
                 "maintenance_mode":    settings.GetBool("maintenance_mode"),
