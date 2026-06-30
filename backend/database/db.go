@@ -3,6 +3,7 @@ package database
 import (
         "log"
         "os"
+        "strings"
         "time"
 
         "crypto-exchange-backend/models"
@@ -165,7 +166,9 @@ func envOrDefault(key, fallback string) string {
 }
 
 // seedSystemSettings inserts default SystemSetting rows if they don't
-// already exist. Idempotent — safe to call on every startup.
+// already exist. Also updates domain/SSL settings if they still have
+// the old hardcoded .local defaults and env vars provide better values.
+// Idempotent — safe to call on every startup.
 func seedSystemSettings() {
         for _, s := range defaultSettings {
                 var existing models.SystemSetting
@@ -176,5 +179,46 @@ func seedSystemSettings() {
                         }
                 }
         }
+
+        // Migrate stale .local defaults: if a domain setting still has a
+        // *.local value and the corresponding env var is set to something
+        // else (e.g. localhost or a real domain), update it automatically.
+        // This handles databases created before the env-based seed was added.
+        envMigrations := map[string]string{
+                "frontend_domain": os.Getenv("FRONTEND_DOMAIN"),
+                "backend_domain":  os.Getenv("BACKEND_DOMAIN"),
+                "admin_domain":    os.Getenv("ADMIN_DOMAIN"),
+                "main_domain":     os.Getenv("MAIN_DOMAIN"),
+        }
+        for key, envVal := range envMigrations {
+                if envVal == "" {
+                        continue
+                }
+                var existing models.SystemSetting
+                if err := DB.Where("key = ?", key).First(&existing).Error; err == nil {
+                        // Only migrate if the current value is a .local domain
+                        // that differs from the env var
+                        if existing.Value != envVal && strings.HasSuffix(existing.Value, ".local") {
+                                if err := DB.Model(&existing).Update("value", envVal).Error; err != nil {
+                                        log.Printf("[DB] Warning: Failed to migrate setting %s: %v", key, err)
+                                } else {
+                                        log.Printf("[DB] Migrated setting %s: %s → %s", key, existing.Value, envVal)
+                                }
+                        }
+                }
+        }
+
+        // Also migrate ssl_enabled if it's still "true" but env says "false"
+        if sslEnv := os.Getenv("SSL_ENABLED"); sslEnv == "false" {
+                var existing models.SystemSetting
+                if err := DB.Where("key = ? AND value = ?", "ssl_enabled", "true").First(&existing).Error; err == nil {
+                        if err := DB.Model(&existing).Update("value", "false").Error; err != nil {
+                                log.Printf("[DB] Warning: Failed to migrate ssl_enabled: %v", err)
+                        } else {
+                                log.Printf("[DB] Migrated setting ssl_enabled: true → false")
+                        }
+                }
+        }
+
         log.Println("[DB] System settings verified")
 }

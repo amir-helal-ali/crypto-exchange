@@ -47,7 +47,13 @@ services:
       PORT: ${PORT:-3000}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - set it in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123456}
-      FRONTEND_URL: ${FRONTEND_URL:-https://eg-money.local}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+      # Domain settings — used by backend to seed/migrate DB settings
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-localhost}
+      BACKEND_DOMAIN: ${BACKEND_DOMAIN:-localhost}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-localhost}
+      MAIN_DOMAIN: ${MAIN_DOMAIN:-localhost}
+      SSL_ENABLED: ${SSL_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -141,11 +147,11 @@ services:
       NGINX_RELOAD_TRIGGER: /shared/nginx/.reload-trigger
       NGINX_WATCH_INTERVAL: "2"
       # Fallback values used if backend is unreachable on startup
-      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-eg-money.local}
-      BACKEND_DOMAIN: ${BACKEND_DOMAIN:-api.eg-money.local}
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.eg-money.local}
-      MAIN_DOMAIN: ${MAIN_DOMAIN:-eg-money.local}
-      SSL_ENABLED: ${SSL_ENABLED:-true}
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-localhost}
+      BACKEND_DOMAIN: ${BACKEND_DOMAIN:-localhost}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-localhost}
+      MAIN_DOMAIN: ${MAIN_DOMAIN:-localhost}
+      SSL_ENABLED: ${SSL_ENABLED:-false}
     depends_on:
       backend:
         condition: service_healthy
