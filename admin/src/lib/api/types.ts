@@ -1,5 +1,6 @@
 import { API, getToken } from './client';
 
+// ─── Admin Stats ───
 export interface AdminStats {
   totalUsers: number;
   totalOrders: number;
@@ -9,6 +10,7 @@ export interface AdminStats {
   pendingKYC: number;
 }
 
+// ─── Users ───
 export interface AdminUser {
   id: number;
   email: string;
@@ -16,9 +18,11 @@ export interface AdminUser {
   role: string;
   email_verified: boolean;
   two_fa_enabled: boolean;
+  kyc_status?: 'VERIFIED' | 'PENDING' | 'REJECTED' | 'NONE';
   created_at: string;
 }
 
+// ─── KYC ───
 export interface KYCRequest {
   id: number;
   user_id: number;
@@ -33,6 +37,13 @@ export interface KYCRequest {
   user: { id: number; username: string; email: string };
 }
 
+export interface KYCStats {
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
+// ─── Transactions ───
 export interface AdminTransaction {
   id: number;
   user_id: number;
@@ -47,6 +58,7 @@ export interface AdminTransaction {
   createdAt: string;
 }
 
+// ─── Audit Logs ───
 export interface AuditLog {
   id: number;
   user_id: number;
@@ -57,6 +69,7 @@ export interface AuditLog {
   createdAt: string;
 }
 
+// ─── Ads ───
 export interface Ad {
   id: number;
   title: string;
@@ -71,6 +84,7 @@ export interface Ad {
   updated_at: string;
 }
 
+// ─── Fees ───
 export interface FeeSchedule {
   id: number;
   user_type: string;
@@ -82,6 +96,7 @@ export interface FeeSchedule {
   updated_at: string;
 }
 
+// ─── System Settings ───
 export interface SystemSettings {
   domains: Record<string, string>;
   ssl: Record<string, string>;
@@ -89,6 +104,7 @@ export interface SystemSettings {
   features: Record<string, string>;
 }
 
+// ─── SSL Status ───
 export interface SSLStatus {
   enabled: boolean;
   type: string;
@@ -103,7 +119,21 @@ export interface SSLStatus {
   key_path: string;
 }
 
-// SSE Stream
+// ─── Pagination ───
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedResponse<T> {
+  success: boolean;
+  data: T[];
+  pagination: PaginationMeta;
+}
+
+// ─── SSE Stream ───
 export function createAdminStream(types: string[] = ['*']): EventSource | null {
   const token = getToken();
   if (!token) return null;

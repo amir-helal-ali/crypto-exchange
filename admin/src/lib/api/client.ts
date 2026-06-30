@@ -1,16 +1,38 @@
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 export { API };
 
-// Token helpers
+// ─── Token Management ───
 export function getToken(): string {
   if (typeof window === 'undefined') return '';
   return localStorage.getItem('token') || '';
 }
+
+export function getRefreshToken(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem('refresh_token') || '';
+}
+
 export function setTokens(token: string, refreshToken: string) {
   if (typeof window === 'undefined') return;
   localStorage.setItem('token', token);
   localStorage.setItem('refresh_token', refreshToken);
 }
+
+export function setUser(user: any) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('user', JSON.stringify(user));
+}
+
+export function getUser(): any {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function clearTokens() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem('token');
@@ -18,16 +40,21 @@ export function clearTokens() {
   localStorage.removeItem('user');
 }
 
-// Refresh queue
+export function isAuthenticated(): boolean {
+  return !!getToken() && getUser()?.role === 'ADMIN';
+}
+
+// ─── Refresh Queue ───
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: (t: string) => void; reject: (e: any) => void }> = [];
+
 function processQueue(error: any, token: string | null = null) {
   failedQueue.forEach(p => error ? p.reject(error) : p.resolve(token!));
   failedQueue = [];
 }
 
 async function refreshAccessToken(): Promise<string> {
-  const rt = localStorage.getItem('refresh_token');
+  const rt = getRefreshToken();
   if (!rt) throw new Error('No refresh token');
   const res = await fetch(`${API}/api/v1/auth/refresh`, {
     method: 'POST',
@@ -40,6 +67,7 @@ async function refreshAccessToken(): Promise<string> {
   return data.token;
 }
 
+// ─── Auth Fetch ───
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -82,6 +110,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   return response;
 }
 
+// ─── Convenience Methods ───
 export const authGet = (path: string) => authFetch(`${API}${path}`);
 export const authPost = (path: string, body?: any) => authFetch(`${API}${path}`, {
   method: 'POST', body: body ? JSON.stringify(body) : undefined

@@ -8,5 +8,5 @@
 </script>
 
 <div class="min-h-screen flex items-center justify-center">
-  <div class="animate-shimmer w-12 h-12 rounded-xl bg-white/5"></div>
+  <div class="animate-spin w-10 h-10 rounded-xl border-2 border-transparent" style="border-top-color: #f5b544; border-right-color: #f5b544;"></div>
 </div>
