@@ -1,0 +1,738 @@
+     1→     1→package handlers
+     2→     2→
+     3→     3→import (
+     4→     4→        "crypto/x509"
+     5→     5→        "encoding/pem"
+     6→     6→        "fmt"
+     7→     7→        "os"
+     8→     8→        "os/exec"
+     9→     9→        "path/filepath"
+    10→    10→        "regexp"
+    11→    11→        "strings"
+    12→    12→        "time"
+    13→    13→
+    14→    14→        "crypto-exchange-backend/database"
+    15→    15→        "crypto-exchange-backend/models"
+    16→    16→        "crypto-exchange-backend/settings"
+    17→    17→
+    18→    18→        "github.com/gin-gonic/gin"
+    19→    19→)
+    20→    20→
+    21→    21→// ─── SSL Certificate Management ───────────────────────────────────────
+    22→    22→//
+    23→    23→// This file implements one-click SSL certificate generation for both
+    24→    24→// local development and production (Let's Encrypt) use cases.
+    25→    25→//
+    26→    26→// Endpoints:
+    27→    27→//   GET  /api/v1/admin/ssl/status     — current cert info (issuer, expiry, SANs)
+    28→    28→//   POST /api/v1/admin/ssl/generate   — generate new cert (local or letsencrypt)
+    29→    29→//   POST /api/v1/admin/ssl/renew      — renew existing Let's Encrypt cert
+    30→    30→//   POST /api/v1/admin/ssl/install    — upload existing PEM cert + key
+    31→    31→//
+    32→    32→// Architecture:
+    33→    33→//   - Backend runs openssl/certbot directly (installed in backend image)
+    34→    34→//   - Certs are written to /etc/nginx/certs/ (shared volume with nginx)
+    35→    35→//   - ACME challenges go to /var/www/certbot/ (also shared with nginx)
+    36→    36→//   - After cert generation, settings are updated + nginx is reloaded
+    37→    37→//
+    38→    38→// The admin doesn't need to know any paths — everything is auto-detected
+    39→    39→// from the current domain settings.
+    40→    40→
+    41→    41→// certsDir returns the directory where SSL certs are stored.
+    42→    42→// Defaults to /etc/nginx/certs but can be overridden via SSL_CERTS_DIR env.
+    43→    43→func certsDir() string {
+    44→    44→        if d := os.Getenv("SSL_CERTS_DIR"); d != "" {
+    45→    45→                return d
+    46→    46→        }
+    47→    47→        return "/etc/nginx/certs"
+    48→    48→}
+    49→    49→
+    50→    50→// acmeWebroot returns the directory for Let's Encrypt HTTP-01 challenges.
+    51→    51→func acmeWebroot() string {
+    52→    52→        if d := os.Getenv("ACME_WEBROOT"); d != "" {
+    53→    53→                return d
+    54→    54→        }
+    55→    55→        return "/var/www/certbot"
+    56→    56→}
+    57→    57→
+    58→    58→// ─── Types ────────────────────────────────────────────────────────────
+    59→    59→
+    60→    60→type generateSSLRequest struct {
+    61→    61→        Type    string   `json:"type" binding:"required"` // "local" | "letsencrypt"
+    62→    62→        Domains []string `json:"domains"`                 // optional — auto-detected from settings if empty
+    63→    63→        Email   string   `json:"email"`                   // required for letsencrypt
+    64→    64→        Staging bool     `json:"staging"`                 // use Let's Encrypt staging (for testing)
+    65→    65→}
+    66→    66→
+    67→    67→type installSSLRequest struct {
+    68→    68→        CertPEM string `json:"cert_pem" binding:"required"`
+    69→    69→        KeyPEM  string `json:"key_pem" binding:"required"`
+    70→    70→        Domains []string `json:"domains"`
+    71→    71→}
+    72→    72→
+    73→    73→// ─── GetSSLStatus ────────────────────────────────────────────────────
+    74→    74→// Returns information about the currently configured SSL certificate.
+    75→    75→// Parses the cert file (if exists) using Go's crypto/x509 — no shell-out.
+    76→    76→//
+    77→    77→// GET /api/v1/admin/ssl/status
+    78→    78→func GetSSLStatus(c *gin.Context) {
+    79→    79→        certPath := settings.Get("ssl_cert_path")
+    80→    80→        keyPath := settings.Get("ssl_key_path")
+    81→    81→        sslEnabled := settings.GetBool("ssl_enabled")
+    82→    82→        sslType := settings.GetDefault("ssl_type", "unknown")
+    83→    83→
+    84→    84→        response := gin.H{
+    85→    85→                "enabled":      sslEnabled,
+    86→    86→                "type":         sslType,
+    87→    87→                "issuer":       settings.GetDefault("ssl_issuer", "—"),
+    88→    88→                "cert_path":    certPath,
+    89→    89→                "key_path":     keyPath,
+    90→    90→                "domains":      settings.Get("ssl_domains"),
+    91→    91→                "email":        settings.Get("ssl_email"),
+    92→    92→                "generated_at": settings.Get("ssl_generated_at"),
+    93→    93→                "exists":       false,
+    94→    94→        }
+    95→    95→
+    96→    96→        if certPath == "" {
+    97→    97→                c.JSON(200, gin.H{"success": true, "data": response})
+    98→    98→                return
+    99→    99→        }
+   100→   100→
+   101→   101→        // Try to read + parse the cert file
+   102→   102→        certBytes, err := os.ReadFile(certPath)
+   103→   103→        if err != nil {
+   104→   104→                response["error"] = fmt.Sprintf("cert file not readable: %v", err)
+   105→   105→                c.JSON(200, gin.H{"success": true, "data": response})
+   106→   106→                return
+   107→   107→        }
+   108→   108→
+   109→   109→        block, _ := pem.Decode(certBytes)
+   110→   110→        if block == nil {
+   111→   111→                response["error"] = "cert file is not valid PEM"
+   112→   112→                c.JSON(200, gin.H{"success": true, "data": response})
+   113→   113→                return
+   114→   114→        }
+   115→   115→
+   116→   116→        cert, err := x509.ParseCertificate(block.Bytes)
+   117→   117→        if err != nil {
+   118→   118→                response["error"] = fmt.Sprintf("cert parse failed: %v", err)
+   119→   119→                c.JSON(200, gin.H{"success": true, "data": response})
+   120→   120→                return
+   121→   121→        }
+   122→   122→
+   123→   123→        // Calculate days remaining
+   124→   124→        daysRemaining := int(time.Until(cert.NotAfter).Hours() / 24)
+   125→   125→
+   126→   126→        // Health check
+   127→   127→        health := "healthy"
+   128→   128→        if daysRemaining < 0 {
+   129→   129→                health = "expired"
+   130→   130→        } else if daysRemaining < 7 {
+   131→   131→                health = "critical"
+   132→   132→        } else if daysRemaining < 30 {
+   133→   133→                health = "warning"
+   134→   134→        }
+   135→   135→
+   136→   136→        response["exists"] = true
+   137→   137→        response["subject"] = cert.Subject.CommonName
+   138→   138→        response["issuer"] = cert.Issuer.CommonName
+   139→   139→        response["issuer_org"] = strings.Join(cert.Issuer.Organization, ", ")
+   140→   140→        response["not_before"] = cert.NotBefore.Format(time.RFC3339)
+   141→   141→        response["not_after"] = cert.NotAfter.Format(time.RFC3339)
+   142→   142→        response["expires_at"] = cert.NotAfter.Format("2006-01-02")
+   143→   143→        response["days_remaining"] = daysRemaining
+   144→   144→        response["health"] = health
+   145→   145→        response["sans"] = cert.DNSNames
+   146→   146→        response["key_algorithm"] = cert.PublicKeyAlgorithm.String()
+   147→   147→        response["signature_algorithm"] = cert.SignatureAlgorithm.String()
+   148→   148→        response["serial_number"] = cert.SerialNumber.String()
+   149→   149→
+   150→   150→        // Check key file too
+   151→   151→        if _, err := os.Stat(keyPath); err != nil {
+   152→   152→                response["key_exists"] = false
+   153→   153→                response["error"] = "key file not found"
+   154→   154→        } else {
+   155→   155→                response["key_exists"] = true
+   156→   156→        }
+   157→   157→
+   158→   158→        c.JSON(200, gin.H{"success": true, "data": response})
+   159→   159→}
+   160→   160→
+   161→   161→// ─── GenerateSSLCertificate ──────────────────────────────────────────
+   162→   162→// One-click SSL cert generation. Auto-detects domains from settings.
+   163→   163→//
+   164→   164→// POST /api/v1/admin/ssl/generate
+   165→   165→// Body: {
+   166→   166→//   "type": "local" | "letsencrypt",
+   167→   167→//   "domains": ["eg-money.local", ...],  // optional, auto-filled from settings
+   168→   168→//   "email": "admin@example.com",         // required for letsencrypt
+   169→   169→//   "staging": false                      // use LE staging env (for testing)
+   170→   170→// }
+   171→   171→func GenerateSSLCertificate(c *gin.Context) {
+   172→   172→        var req generateSSLRequest
+   173→   173→        if err := c.ShouldBindJSON(&req); err != nil {
+   174→   174→                c.JSON(400, gin.H{"error": "Invalid request", "details": err.Error()})
+   175→   175→                return
+   176→   176→        }
+   177→   177→
+   178→   178→        // Normalize type
+   179→   179→        req.Type = strings.ToLower(strings.TrimSpace(req.Type))
+   180→   180→        if req.Type != "local" && req.Type != "letsencrypt" {
+   181→   181→                c.JSON(400, gin.H{"error": "type must be 'local' or 'letsencrypt'"})
+   182→   182→                return
+   183→   183→        }
+   184→   184→
+   185→   185→        // Auto-detect domains from settings if not provided
+   186→   186→        if len(req.Domains) == 0 {
+   187→   187→                req.Domains = autoDetectDomains()
+   188→   188→        }
+   189→   189→        if len(req.Domains) == 0 {
+   190→   190→                c.JSON(400, gin.H{"error": "No domains configured. Set domains in the Domains tab first."})
+   191→   191→                return
+   192→   192→        }
+   193→   193→
+   194→   194→        // Sanitize domains (lowercase, trim, dedupe)
+   195→   195→        req.Domains = sanitizeDomains(req.Domains)
+   196→   196→        if len(req.Domains) == 0 {
+   197→   197→                c.JSON(400, gin.H{"error": "No valid domains provided"})
+   198→   198→                return
+   199→   199→        }
+   200→   200→
+   201→   201→        // Validate email for letsencrypt
+   202→   202→        if req.Type == "letsencrypt" && req.Email == "" {
+   203→   203→                c.JSON(400, gin.H{"error": "Email is required for Let's Encrypt certificates"})
+   204→   204→                return
+   205→   205→        }
+   206→   206→
+   207→   207→        // Validate domains for letsencrypt (must be real, public-facing domains)
+   208→   208→        if req.Type == "letsencrypt" {
+   209→   209→                for _, d := range req.Domains {
+   210→   210→                        if isLocalDomain(d) {
+   211→   211→                                c.JSON(400, gin.H{
+   212→   212→                                        "error": fmt.Sprintf("Let's Encrypt cannot issue certs for local domain '%s'. Use 'local' type for development.", d),
+   213→   213→                                })
+   214→   214→                                return
+   215→   215→                        }
+   216→   216→                }
+   217→   217→        }
+   218→   218→
+   219→   219→        // Ensure certs directory exists
+   220→   220→        if err := os.MkdirAll(certsDir(), 0755); err != nil {
+   221→   221→                c.JSON(500, gin.H{"error": "Cannot create certs directory", "details": err.Error()})
+   222→   222→                return
+   223→   223→        }
+   224→   224→
+   225→   225→        // Determine cert file paths. Use a single wildcard-style name based on
+   226→   226→        // the primary domain so it's easy to find later.
+   227→   227→        primaryDomain := req.Domains[0]
+   228→   228→        certPath := filepath.Join(certsDir(), primaryDomain+".pem")
+   229→   229→        keyPath := filepath.Join(certsDir(), primaryDomain+"-key.pem")
+   230→   230→
+   231→   231→        // Generate the cert
+   232→   232→        var output strings.Builder
+   233→   233→        var err error
+   234→   234→
+   235→   235→        switch req.Type {
+   236→   236→        case "local":
+   237→   237→                output, err = generateLocalCert(req.Domains, certPath, keyPath)
+   238→   238→        case "letsencrypt":
+   239→   239→                output, err = generateLetsEncryptCert(req.Domains, req.Email, req.Staging, certPath, keyPath)
+   240→   240→        }
+   241→   241→
+   242→   242→        if err != nil {
+   243→   243→                c.JSON(500, gin.H{
+   244→   244→                        "error":   "Certificate generation failed",
+   245→   245→                        "details": err.Error(),
+   246→   246→                        "output":  output.String(),
+   247→   247→                })
+   248→   248→                return
+   249→   249→        }
+   250→   250→
+   251→   251→        // Update DB settings
+   252→   252→        userID, _ := c.Get("user_id")
+   253→   253→        uid, _ := userID.(uint)
+   254→   254→
+   255→   255→        issuer := "Self-Signed (OpenSSL)"
+   256→   256→        if req.Type == "letsencrypt" {
+   257→   257→                if req.Staging {
+   258→   258→                        issuer = "Let's Encrypt (Staging)"
+   259→   259→                } else {
+   260→   260→                        issuer = "Let's Encrypt"
+   261→   261→                }
+   262→   262→        }
+   263→   263→
+   264→   264→        now := time.Now().UTC()
+   265→   265→        settings.Set("ssl_cert_path", certPath, "ssl", uid)
+   266→   266→        settings.Set("ssl_key_path", keyPath, "ssl", uid)
+   267→   267→        settings.Set("ssl_enabled", "true", "ssl", uid)
+   268→   268→        settings.Set("ssl_type", req.Type, "ssl", uid)
+   269→   269→        settings.Set("ssl_issuer", issuer, "ssl", uid)
+   270→   270→        settings.Set("ssl_generated_at", now.Format(time.RFC3339), "ssl", uid)
+   271→   271→        settings.Set("ssl_domains", strings.Join(req.Domains, ","), "ssl", uid)
+   272→   272→        if req.Email != "" {
+   273→   273→                settings.Set("ssl_email", req.Email, "ssl", uid)
+   274→   274→        }
+   275→   275→        settings.Set("ssl_staging", boolStr(req.Staging), "ssl", uid)
+   276→   276→
+   277→   277→        // Read cert expiry
+   278→   278→        if expiry, err := readCertExpiry(certPath); err == nil {
+   279→   279→                settings.Set("ssl_expiry", expiry.Format(time.RFC3339), "ssl", uid)
+   280→   280→        }
+   281→   281→
+   282→   282→        // Log to audit
+   283→   283→        database.DB.Create(&models.AuditLog{
+   284→   284→                UserID:    uid,
+   285→   285→                Action:    "SSL_CERT_GENERATED",
+   286→   286→                Details:   fmt.Sprintf("Generated %s SSL cert for: %s (issuer: %s)", req.Type, strings.Join(req.Domains, ", "), issuer),
+   287→   287→                IPAddress: c.ClientIP(),
+   288→   288→        })
+   289→   289→
+   290→   290→        // Trigger nginx reload
+   291→   291→        triggerNginxReload()
+   292→   292→
+   293→   293→        c.JSON(200, gin.H{
+   294→   294→                "success":   true,
+   295→   295→                "message":   "SSL certificate generated successfully. Nginx is reloading.",
+   296→   296→                "type":      req.Type,
+   297→   297→                "issuer":    issuer,
+   298→   298→                "domains":   req.Domains,
+   299→   299→                "cert_path": certPath,
+   300→   300→                "key_path":  keyPath,
+   301→   301→                "output":    output.String(),
+   302→   302→        })
+   303→   303→}
+   304→   304→
+   305→   305→// ─── RenewSSLCertificate ─────────────────────────────────────────────
+   306→   306→// Renews an existing Let's Encrypt certificate.
+   307→   307→//
+   308→   308→// POST /api/v1/admin/ssl/renew
+   309→   309→func RenewSSLCertificate(c *gin.Context) {
+   310→   310→        sslType := settings.Get("ssl_type")
+   311→   311→        if sslType != "letsencrypt" {
+   312→   312→                c.JSON(400, gin.H{"error": "Only Let's Encrypt certificates can be renewed. Current type: " + sslType})
+   313→   313→                return
+   314→   314→        }
+   315→   315→
+   316→   316→        certPath := settings.Get("ssl_cert_path")
+   317→   317→        if certPath == "" {
+   318→   318→                c.JSON(400, gin.H{"error": "No certificate path configured"})
+   319→   319→                return
+   320→   320→        }
+   321→   321→
+   322→   322→        domainsStr := settings.Get("ssl_domains")
+   323→   323→        if domainsStr == "" {
+   324→   324→                c.JSON(400, gin.H{"error": "No domains configured for renewal"})
+   325→   325→                return
+   326→   326→        }
+   327→   327→        domains := strings.Split(domainsStr, ",")
+   328→   328→
+   329→   329→        email := settings.Get("ssl_email")
+   330→   330→        staging := settings.GetBool("ssl_staging")
+   331→   331→
+   332→   332→        // Run certbot renew for the specific cert
+   333→   333→        var output strings.Builder
+   334→   334→        args := []string{"certonly", "--webroot", "-w", acmeWebroot(), "--non-interactive", "--keep-until-expiring"}
+   335→   335→        if staging {
+   336→   336→                args = append(args, "--staging")
+   337→   337→        }
+   338→   338→        if email != "" {
+   339→   339→                args = append(args, "--email", email)
+   340→   340→        }
+   341→   341→        args = append(args, "--agree-tos", "--no-eff-email")
+   342→   342→        for _, d := range domains {
+   343→   343→                args = append(args, "-d", strings.TrimSpace(d))
+   344→   344→        }
+   345→   345→
+   346→   346→        cmd := exec.Command("certbot", args...)
+   347→   347→        cmd.Stdout = &output
+   348→   348→        cmd.Stderr = &output
+   349→   349→        if err := cmd.Run(); err != nil {
+   350→   350→                c.JSON(500, gin.H{
+   351→   351→                        "error":   "Renewal failed",
+   352→   352→                        "details": err.Error(),
+   353→   353→                        "output":  output.String(),
+   354→   354→                })
+   355→   355→                return
+   356→   356→        }
+   357→   357→
+   358→   358→        // Certbot stores certs in /etc/letsencrypt/live/<primary>/. Copy them
+   359→   359→        // to our shared certs directory so nginx picks them up.
+   360→   360→        primaryDomain := strings.TrimSpace(domains[0])
+   361→   361→        leCertPath := filepath.Join("/etc/letsencrypt/live", primaryDomain, "fullchain.pem")
+   362→   362→        leKeyPath := filepath.Join("/etc/letsencrypt/live", primaryDomain, "privkey.pem")
+   363→   363→
+   364→   364→        if err := copyFile(leCertPath, certPath); err != nil {
+   365→   365→                c.JSON(500, gin.H{"error": "Failed to copy renewed cert", "details": err.Error()})
+   366→   366→                return
+   367→   367→        }
+   368→   368→        if err := copyFile(leKeyPath, settings.Get("ssl_key_path")); err != nil {
+   369→   369→                c.JSON(500, gin.H{"error": "Failed to copy renewed key", "details": err.Error()})
+   370→   370→                return
+   371→   371→        }
+   372→   372→
+   373→   373→        // Update timestamp + expiry
+   374→   374→        userID, _ := c.Get("user_id")
+   375→   375→        uid, _ := userID.(uint)
+   376→   376→        settings.Set("ssl_generated_at", time.Now().UTC().Format(time.RFC3339), "ssl", uid)
+   377→   377→        if expiry, err := readCertExpiry(certPath); err == nil {
+   378→   378→                settings.Set("ssl_expiry", expiry.Format(time.RFC3339), "ssl", uid)
+   379→   379→        }
+   380→   380→
+   381→   381→        // Audit log
+   382→   382→        database.DB.Create(&models.AuditLog{
+   383→   383→                UserID:    uid,
+   384→   384→                Action:    "SSL_CERT_RENEWED",
+   385→   385→                Details:   fmt.Sprintf("Renewed Let's Encrypt cert for: %s", domainsStr),
+   386→   386→                IPAddress: c.ClientIP(),
+   387→   387→        })
+   388→   388→
+   389→   389→        triggerNginxReload()
+   390→   390→
+   391→   391→        c.JSON(200, gin.H{
+   392→   392→                "success": true,
+   393→   393→                "message": "Certificate renewed successfully. Nginx is reloading.",
+   394→   394→                "output":  output.String(),
+   395→   395→        })
+   396→   396→}
+   397→   397→
+   398→   398→// ─── InstallSSLCertificate ───────────────────────────────────────────
+   399→   399→// Allows the admin to paste an existing PEM cert + key (e.g. from
+   400→   400→// ZeroSSL, Cloudflare, or a paid CA) instead of generating one.
+   401→   401→//
+   402→   402→// POST /api/v1/admin/ssl/install
+   403→   403→// Body: { "cert_pem": "...", "key_pem": "...", "domains": [...] }
+   404→   404→func InstallSSLCertificate(c *gin.Context) {
+   405→   405→        var req installSSLRequest
+   406→   406→        if err := c.ShouldBindJSON(&req); err != nil {
+   407→   407→                c.JSON(400, gin.H{"error": "Invalid request", "details": err.Error()})
+   408→   408→                return
+   409→   409→        }
+   410→   410→
+   411→   411→        // Validate PEM
+   412→   412→        certBlock, _ := pem.Decode([]byte(req.CertPEM))
+   413→   413→        if certBlock == nil {
+   414→   414→                c.JSON(400, gin.H{"error": "cert_pem is not valid PEM"})
+   415→   415→                return
+   416→   416→        }
+   417→   417→        keyBlock, _ := pem.Decode([]byte(req.KeyPEM))
+   418→   418→        if keyBlock == nil {
+   419→   419→                c.JSON(400, gin.H{"error": "key_pem is not valid PEM"})
+   420→   420→                return
+   421→   421→        }
+   422→   422→
+   423→   423→        // Determine name
+   424→   424→        if len(req.Domains) == 0 {
+   425→   425→                req.Domains = autoDetectDomains()
+   426→   426→        }
+   427→   427→        if len(req.Domains) == 0 {
+   428→   428→                req.Domains = []string{"custom"}
+   429→   429→        }
+   430→   430→        req.Domains = sanitizeDomains(req.Domains)
+   431→   431→        primaryDomain := req.Domains[0]
+   432→   432→
+   433→   433→        certPath := filepath.Join(certsDir(), primaryDomain+".pem")
+   434→   434→        keyPath := filepath.Join(certsDir(), primaryDomain+"-key.pem")
+   435→   435→
+   436→   436→        // Write files with secure permissions
+   437→   437→        if err := os.WriteFile(certPath, []byte(req.CertPEM), 0644); err != nil {
+   438→   438→                c.JSON(500, gin.H{"error": "Failed to write cert file", "details": err.Error()})
+   439→   439→                return
+   440→   440→        }
+   441→   441→        if err := os.WriteFile(keyPath, []byte(req.KeyPEM), 0600); err != nil {
+   442→   442→                c.JSON(500, gin.H{"error": "Failed to write key file", "details": err.Error()})
+   443→   443→                return
+   444→   444→        }
+   445→   445→
+   446→   446→        // Update settings
+   447→   447→        userID, _ := c.Get("user_id")
+   448→   448→        uid, _ := userID.(uint)
+   449→   449→
+   450→   450→        settings.Set("ssl_cert_path", certPath, "ssl", uid)
+   451→   451→        settings.Set("ssl_key_path", keyPath, "ssl", uid)
+   452→   452→        settings.Set("ssl_enabled", "true", "ssl", uid)
+   453→   453→        settings.Set("ssl_type", "custom", "ssl", uid)
+   454→   454→        settings.Set("ssl_issuer", "Custom Upload", "ssl", uid)
+   455→   455→        settings.Set("ssl_generated_at", time.Now().UTC().Format(time.RFC3339), "ssl", uid)
+   456→   456→        settings.Set("ssl_domains", strings.Join(req.Domains, ","), "ssl", uid)
+   457→   457→
+   458→   458→        if expiry, err := readCertExpiry(certPath); err == nil {
+   459→   459→                settings.Set("ssl_expiry", expiry.Format(time.RFC3339), "ssl", uid)
+   460→   460→        }
+   461→   461→
+   462→   462→        database.DB.Create(&models.AuditLog{
+   463→   463→                UserID:    uid,
+   464→   464→                Action:    "SSL_CERT_INSTALLED",
+   465→   465→                Details:   fmt.Sprintf("Installed custom SSL cert for: %s", strings.Join(req.Domains, ", ")),
+   466→   466→                IPAddress: c.ClientIP(),
+   467→   467→        })
+   468→   468→
+   469→   469→        triggerNginxReload()
+   470→   470→
+   471→   471→        c.JSON(200, gin.H{
+   472→   472→                "success":   true,
+   473→   473→                "message":   "SSL certificate installed successfully. Nginx is reloading.",
+   474→   474→                "cert_path": certPath,
+   475→   475→                "key_path":  keyPath,
+   476→   476→        })
+   477→   477→}
+   478→   478→
+   479→   479→// ═══════════════════════════════════════════════════════════════════
+   480→   480→// INTERNAL HELPERS
+   481→   481→// ═══════════════════════════════════════════════════════════════════
+   482→   482→
+   483→   483→// generateLocalCert creates a self-signed cert using openssl with proper SANs.
+   484→   484→// The cert is valid for 365 days and includes all provided domains as SANs.
+   485→   485→//
+   486→   486→// Note: Browsers will show a "not trusted" warning for self-signed certs.
+   487→   487→// For trusted local certs, the admin should install mkcert in the backend
+   488→   488→// container (see Dockerfile comments) — but self-signed is the universal
+   489→   489→// fallback that works everywhere.
+   490→   490→func generateLocalCert(domains []string, certPath, keyPath string) (strings.Builder, error) {
+   491→   491→        var output strings.Builder
+   492→   492→
+   493→   493→        // Build SAN config
+   494→   494→        sanEntries := []string{}
+   495→   495→        for _, d := range domains {
+   496→   496→                sanEntries = append(sanEntries, "DNS:"+d)
+   497→   497→        }
+   498→   498→        sanList := strings.Join(sanEntries, ",")
+   499→   499→
+   500→   500→        // Write a temp openssl config with SAN extension
+   501→   501→        tmpConfig, err := os.CreateTemp("", "openssl-san-*.cnf")
+   502→   502→        if err != nil {
+   503→   503→                return output, fmt.Errorf("create temp config: %w", err)
+   504→   504→        }
+   505→   505→        defer os.Remove(tmpConfig.Name())
+   506→   506→
+   507→   507→        configContent := fmt.Sprintf(`[req]
+   508→   508→distinguished_name = req_distinguished_name
+   509→   509→req_extensions = v3_req
+   510→   510→prompt = no
+   511→   511→
+   512→   512→[req_distinguished_name]
+   513→   513→CN = %s
+   514→   514→O = EgMoney Local Dev
+   515→   515→
+   516→   516→[v3_req]
+   517→   517→subjectAltName = %s
+   518→   518→basicConstraints = CA:FALSE
+   519→   519→keyUsage = digitalSignature, keyEncipherment
+   520→   520→extendedKeyUsage = serverAuth
+   521→   521→
+   522→   522→[v3_ext]
+   523→   523→subjectAltName = %s
+   524→   524→basicConstraints = CA:FALSE
+   525→   525→keyUsage = digitalSignature, keyEncipherment
+   526→   526→extendedKeyUsage = serverAuth
+   527→   527→`, domains[0], sanList, sanList)
+   528→   528→
+   529→   529→        if _, err := tmpConfig.WriteString(configContent); err != nil {
+   530→   530→                tmpConfig.Close()
+   531→   531→                return output, fmt.Errorf("write config: %w", err)
+   532→   532→        }
+   533→   533→        tmpConfig.Close()
+   534→   534→
+   535→   535→        // Generate private key + self-signed cert in one step
+   536→   536→        cmd := exec.Command("openssl", "req", "-x509",
+   537→   537→                "-newkey", "rsa:2048",
+   538→   538→                "-nodes",
+   539→   539→                "-keyout", keyPath,
+   540→   540→                "-out", certPath,
+   541→   541→                "-days", "365",
+   542→   542→                "-config", tmpConfig.Name(),
+   543→   543→                "-extensions", "v3_ext",
+   544→   544→        )
+   545→   545→        cmd.Stdout = &output
+   546→   546→        cmd.Stderr = &output
+   547→   547→
+   548→   548→        if err := cmd.Run(); err != nil {
+   549→   549→                return output, fmt.Errorf("openssl req failed: %w\n%s", err, output.String())
+   550→   550→        }
+   551→   551→
+   552→   552→        // Set secure permissions on the key
+   553→   553→        if err := os.Chmod(keyPath, 0600); err != nil {
+   554→   554→                output.WriteString(fmt.Sprintf("\n[warn] chmod key failed: %v", err))
+   555→   555→        }
+   556→   556→        if err := os.Chmod(certPath, 0644); err != nil {
+   557→   557→                output.WriteString(fmt.Sprintf("\n[warn] chmod cert failed: %v", err))
+   558→   558→        }
+   559→   559→
+   560→   560→        output.WriteString(fmt.Sprintf("\n[ok] Generated self-signed cert for %d domain(s)\n", len(domains)))
+   561→   561→        output.WriteString(fmt.Sprintf("[ok] Cert: %s\n", certPath))
+   562→   562→        output.WriteString(fmt.Sprintf("[ok] Key:  %s\n", keyPath))
+   563→   563→
+   564→   564→        return output, nil
+   565→   565→}
+   566→   566→
+   567→   567→// generateLetsEncryptCert uses certbot with the webroot plugin to issue
+   568→   568→// a real, browser-trusted certificate via Let's Encrypt.
+   569→   569→//
+   570→   570→// Prerequisites:
+   571→   571→//   - Domains must be real, public, and pointing to this server's IP
+   572→   572→//   - Port 80 must be reachable from the internet (for HTTP-01 challenge)
+   573→   573→//   - nginx must be running and serving /.well-known/acme-challenge/ from webroot
+   574→   574→func generateLetsEncryptCert(domains []string, email string, staging bool, certPath, keyPath string) (strings.Builder, error) {
+   575→   575→        var output strings.Builder
+   576→   576→
+   577→   577→        // Ensure webroot exists
+   578→   578→        if err := os.MkdirAll(acmeWebroot(), 0755); err != nil {
+   579→   579→                return output, fmt.Errorf("create webroot: %w", err)
+   580→   580→        }
+   581→   581→
+   582→   582→        // Build certbot command
+   583→   583→        args := []string{"certonly",
+   584→   584→                "--webroot", "-w", acmeWebroot(),
+   585→   585→                "--non-interactive",
+   586→   586→                "--agree-tos",
+   587→   587→                "--no-eff-email",
+   588→   588→                "--email", email,
+   589→   589→        }
+   590→   590→        if staging {
+   591→   591→                args = append(args, "--staging")
+   592→   592→        }
+   593→   593→        for _, d := range domains {
+   594→   594→                args = append(args, "-d", d)
+   595→   595→        }
+   596→   596→
+   597→   597→        cmd := exec.Command("certbot", args...)
+   598→   598→        cmd.Stdout = &output
+   599→   599→        cmd.Stderr = &output
+   600→   600→
+   601→   601→        if err := cmd.Run(); err != nil {
+   602→   602→                return output, fmt.Errorf("certbot failed: %w\n%s", err, output.String())
+   603→   603→        }
+   604→   604→
+   605→   605→        // Certbot stores certs at /etc/letsencrypt/live/<primary>/
+   606→   606→        primaryDomain := domains[0]
+   607→   607→        leCertPath := filepath.Join("/etc/letsencrypt/live", primaryDomain, "fullchain.pem")
+   608→   608→        leKeyPath := filepath.Join("/etc/letsencrypt/live", primaryDomain, "privkey.pem")
+   609→   609→
+   610→   610→        // Copy to our shared certs directory
+   611→   611→        if err := copyFile(leCertPath, certPath); err != nil {
+   612→   612→                return output, fmt.Errorf("copy cert: %w", err)
+   613→   613→        }
+   614→   614→        if err := copyFile(leKeyPath, keyPath); err != nil {
+   615→   615→                return output, fmt.Errorf("copy key: %w", err)
+   616→   616→        }
+   617→   617→
+   618→   618→        // Secure the key
+   619→   619→        if err := os.Chmod(keyPath, 0600); err != nil {
+   620→   620→                output.WriteString(fmt.Sprintf("\n[warn] chmod key failed: %v", err))
+   621→   621→        }
+   622→   622→        if err := os.Chmod(certPath, 0644); err != nil {
+   623→   623→                output.WriteString(fmt.Sprintf("\n[warn] chmod cert failed: %v", err))
+   624→   624→        }
+   625→   625→
+   626→   626→        output.WriteString(fmt.Sprintf("\n[ok] Let's Encrypt cert issued for %d domain(s)\n", len(domains)))
+   627→   627→        output.WriteString(fmt.Sprintf("[ok] Cert: %s\n", certPath))
+   628→   628→        output.WriteString(fmt.Sprintf("[ok] Key:  %s\n", keyPath))
+   629→   629→
+   630→   630→        return output, nil
+   631→   631→}
+   632→   632→
+   633→   633→// autoDetectDomains returns the list of configured domains from settings,
+   634→   634→// deduplicated, with empties removed.
+   635→   635→func autoDetectDomains() []string {
+   636→   636→        seen := map[string]bool{}
+   637→   637→        out := []string{}
+   638→   638→        for _, k := range []string{"main_domain", "frontend_domain", "backend_domain", "admin_domain"} {
+   639→   639→                v := settings.Get(k)
+   640→   640→                if v == "" {
+   641→   641→                        continue
+   642→   642→                }
+   643→   643→                if seen[v] {
+   644→   644→                        continue
+   645→   645→                }
+   646→   646→                seen[v] = true
+   647→   647→                out = append(out, v)
+   648→   648→        }
+   649→   649→        return out
+   650→   650→}
+   651→   651→
+   652→   652→// sanitizeDomains lowercases, trims, and deduplicates a domain list.
+   653→   653→func sanitizeDomains(domains []string) []string {
+   654→   654→        seen := map[string]bool{}
+   655→   655→        out := []string{}
+   656→   656→        for _, d := range domains {
+   657→   657→                d = strings.ToLower(strings.TrimSpace(d))
+   658→   658→                if d == "" || seen[d] {
+   659→   659→                        continue
+   660→   660→                }
+   661→   661→                // Basic validation
+   662→   662→                if len(d) < 3 || strings.Contains(d, " ") || strings.Contains(d, "://") {
+   663→   663→                        continue
+   664→   664→                }
+   665→   665→                seen[d] = true
+   666→   666→                out = append(out, d)
+   667→   667→        }
+   668→   668→        return out
+   669→   669→}
+   670→   670→
+   671→   671→// isLocalDomain returns true if the domain looks like a local/test domain
+   672→   672→// (not resolvable from the public internet).
+   673→   673→func isLocalDomain(domain string) bool {
+   674→   674→        localSuffixes := []string{
+   675→   675→                ".local", ".localhost", ".test", ".example", ".invalid",
+   676→   676→                ".localdomain", ".home",
+   677→   677→        }
+   678→   678→        if domain == "localhost" || strings.HasPrefix(domain, "127.") || strings.HasPrefix(domain, "192.168.") {
+   679→   679→                return true
+   680→   680→        }
+   681→   681→        for _, sfx := range localSuffixes {
+   682→   682→                if strings.HasSuffix(domain, sfx) {
+   683→   683→                        return true
+   684→   684→                }
+   685→   685→        }
+   686→   686→        // IP address regex
+   687→   687→        if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+\.\d+$`, domain); matched {
+   688→   688→                return true
+   689→   689→        }
+   690→   690→        return false
+   691→   691→}
+   692→   692→
+   693→   693→// readCertExpiry parses a PEM cert file and returns the NotAfter time.
+   694→   694→func readCertExpiry(certPath string) (time.Time, error) {
+   695→   695→        certBytes, err := os.ReadFile(certPath)
+   696→   696→        if err != nil {
+   697→   697→                return time.Time{}, err
+   698→   698→        }
+   699→   699→        block, _ := pem.Decode(certBytes)
+   700→   700→        if block == nil {
+   701→   701→                return time.Time{}, fmt.Errorf("not valid PEM")
+   702→   702→        }
+   703→   703→        cert, err := x509.ParseCertificate(block.Bytes)
+   704→   704→        if err != nil {
+   705→   705→                return time.Time{}, err
+   706→   706→        }
+   707→   707→        return cert.NotAfter, nil
+   708→   708→}
+   709→   709→
+   710→   710→// copyFile copies a file from src to dst. Used to move certs from
+   711→   711→// certbot's directory to our shared certs directory.
+   712→   712→func copyFile(src, dst string) error {
+   713→   713→        data, err := os.ReadFile(src)
+   714→   714→        if err != nil {
+   715→   715→                return err
+   716→   716→        }
+   717→   717→        return os.WriteFile(dst, data, 0644)
+   718→   718→}
+   719→   719→
+   720→   720→// boolStr returns "true" or "false" for a bool.
+   721→   721→func boolStr(b bool) string {
+   722→   722→        if b {
+   723→   723→                return "true"
+   724→   724→        }
+   725→   725→        return "false"
+   726→   726→}
+   727→   727→
+   728→   728→// triggerNginxReload writes to the shared trigger file so the nginx
+   729→   729→// sidecar regenerates the config and reloads. Same mechanism as the
+   730→   730→// existing /api/v1/admin/nginx/reload endpoint.
+   731→   731→func triggerNginxReload() {
+   732→   732→        triggerPath := os.Getenv("NGINX_RELOAD_TRIGGER")
+   733→   733→        if triggerPath == "" {
+   734→   734→                triggerPath = "/shared/nginx/.reload-trigger"
+   735→   735→        }
+   736→   736→        _ = os.WriteFile(triggerPath, []byte(fmt.Sprintf("%d\n", time.Now().UnixNano())), 0644)
+   737→   737→}
+   738→   738→

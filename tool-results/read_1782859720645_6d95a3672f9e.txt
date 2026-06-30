@@ -1,0 +1,656 @@
+     1→<script lang="ts">
+     2→  import { onMount, onDestroy } from 'svelte';
+     3→  import { browser } from '$app/environment';
+     4→  import { page } from '$app/stores';
+     5→  import { goto } from '$app/navigation';
+     6→  import { authStore } from '$lib/stores/auth';
+     7→  import { toasts } from '$lib/stores/toast';
+     8→  import { favorites, marketStore, type MarketTicker } from '$lib/stores/market';
+     9→  import { nexusMarket } from '$lib/stores/nexus-market';
+    10→  import { auth } from '$lib/api/endpoints';
+    11→  import { API_BASE, forceLogout } from '$lib/api/client';
+    12→  import { wallet as walletApi } from '$lib/api/endpoints';
+    13→  import { parseApiResponse } from '$lib/api/client';
+    14→  import { usdToEgp, egpCompact, usdEgpRate } from '$lib/utils/currency';
+    15→  import Avatar from '$lib/components/Avatar.svelte';
+    16→  import Toaster from '$lib/components/Toaster.svelte';
+    17→  import ChangeBadge from '$lib/components/ChangeBadge.svelte';
+    18→  import BottomNav from '$lib/components/BottomNav.svelte';
+    19→  import CommandPalette from '$lib/components/CommandPalette.svelte';
+    20→  import {
+    21→    LayoutDashboard,
+    22→    TrendingUp,
+    23→    Wallet,
+    24→    Clock,
+    25→    User,
+    26→    LogOut,
+    27→    Menu,
+    28→    X,
+    29→    ChevronDown,
+    30→    Shield,
+    31→    FileText,
+    32→    Bell,
+    33→    CheckCheck,
+    34→    Settings,
+    35→    Users,
+    36→    ArrowRightLeft,
+    37→    Megaphone,
+    38→    Coins,
+    39→    Star,
+    40→    Search,
+    41→    Home,
+    42→    AlertCircle,
+    43→    BellRing,
+    44→    Sparkles,
+    45→    Gift,
+    46→    Command,
+    47→    Zap,
+    48→    Trophy,
+    49→    Key,
+    50→    Grid2x2,
+    51→    FlaskConical,
+    52→    Copy,
+    53→    Bot,
+    54→    ArrowLeft
+    55→  } from 'lucide-svelte';
+    56→  import type { Snippet } from 'svelte';
+    57→
+    58→  interface Props {
+    59→    children: Snippet;
+    60→  }
+    61→
+    62→  let { children }: Props = $props();
+    63→
+    64→  // Sidebar state
+    65→  let sidebarOpen = $state(false);
+    66→
+    67→  // Command Palette
+    68→  let paletteOpen = $state(false);
+    69→
+    70→  // Notification dropdown
+    71→  let notifOpen = $state(false);
+    72→  let userMenuOpen = $state(false);
+    73→  let notifications = $state<any[]>([]);
+    74→  let unreadCount = $state(0);
+    75→
+    76→  // Live ticker tape data
+    77→  let tickerSymbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT'];
+    78→  let tickerData = $state<Record<string, MarketTicker>>({});
+    79→  let unsubNexusGlobal: (() => void) | null = null;
+    80→  let unsubMarketLocal: (() => void) | null = null;
+    81→
+    82→  // Portfolio total (USD) — derived from balances + market prices
+    83→  let balances = $state<any[]>([]);
+    84→  let portfolioUsd = $state(0);
+    85→  let portfolioEgp = $state(0);
+    86→  let currentRate = $state(48.5);
+    87→
+    88→  // Subscribe to EGP rate
+    89→  const unsubRate = usdEgpRate.subscribe((r) => (currentRate = r));
+    90→
+    91→  // Market data WebSocket for sidebar ticker
+    92→  onMount(() => {
+    93→    if (!authStore.isAuthenticated()) {
+    94→      goto('/login');
+    95→      return;
+    96→    }
+    97→    loadNotifications();
+    98→    loadPortfolio();
+    99→    connectTickerWebSocket();
+   100→    connectUserWebSocket();
+   101→    // No setInterval polling — notifications arrive live via /ws/user,
+   102→    // portfolio recomputes automatically when marketStore updates.
+   103→    return () => {
+   104→      unsubNexusGlobal?.();
+   105→      unsubMarketLocal?.();
+   106→      unsubRate();
+   107→      unsubMarket?.();
+   108→      unsubUserWS?.();
+   109→    };
+   110→  });
+   111→
+   112→  // Subscribe to market store to recompute EGP portfolio value
+   113→  let unsubMarket: (() => void) | null = null;
+   114→  function attachMarket() {
+   115→    unsubMarket = marketStore.subscribe((tickers) => {
+   116→      recomputePortfolio(tickers);
+   117→    });
+   118→  }
+   119→
+   120→  function recomputePortfolio(tickers: Record<string, MarketTicker>) {
+   121→    let sum = 0;
+   122→    for (const b of balances) {
+   123→      const bal = parseFloat(b.balance);
+   124→      if (!isFinite(bal)) continue;
+   125→      if (b.currency === 'USDT') {
+   126→        sum += bal;
+   127→      } else {
+   128→        const t = tickers[`${b.currency}USDT`];
+   129→        if (t) sum += bal * t.price;
+   130→      }
+   131→    }
+   132→    portfolioUsd = sum;
+   133→    portfolioEgp = usdToEgp(sum, currentRate);
+   134→  }
+   135→
+   136→  async function loadPortfolio() {
+   137→    try {
+   138→      const res = await walletApi.getBalances();
+   139→      const data = (await parseApiResponse<any[]>(res)) || [];
+   140→      balances = data.filter((b) => parseFloat(b.balance) > 0);
+   141→      if (!unsubMarket) attachMarket();
+   142→      recomputePortfolio({});
+   143→    } catch {
+   144→      // silent
+   145→    }
+   146→  }
+   147→
+   148→  async function loadNotifications() {
+   149→    try {
+   150→      const { authGet, parseApiResponse } = await import('$lib/api/client');
+   151→      const r = await authGet('/api/v1/notifications?limit=10');
+   152→      const data = await parseApiResponse<any[]>(r);
+   153→      notifications = data || [];
+   154→      unreadCount = notifications.filter((n) => !n.read).length;
+   155→    } catch {
+   156→      // silent
+   157→    }
+   158→  }
+   159→
+   160→  // Live notifications & portfolio updates via the user WebSocket.
+   161→  let unsubUserWS: (() => void) | null = null;
+   162→  function connectUserWebSocket() {
+   163→    if (!browser) return;
+   164→    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+   165→    if (!token) return;
+   166→    const wsBase = API_BASE.replace(/^http/, 'ws');
+   167→    let ws: WebSocket | null = null;
+   168→    let reconnectTimer: any = null;
+   169→    let closed = false;
+   170→    const connect = () => {
+   171→      if (closed) return;
+   172→      try {
+   173→        ws = new WebSocket(`${wsBase}/ws/user?token=${encodeURIComponent(token)}`);
+   174→        ws.onmessage = (ev) => {
+   175→          try {
+   176→            const evt = JSON.parse(ev.data);
+   177→            // Any event type → refresh notifications + portfolio (cheap)
+   178→            if (evt && evt.type) {
+   179→              loadNotifications();
+   180→              if (evt.type === 'order_fill' || evt.type === 'deposit_approved' || evt.type === 'withdrawal_approved') {
+   181→                loadPortfolio();
+   182→              }
+   183→            }
+   184→          } catch {}
+   185→        };
+   186→        ws.onclose = () => {
+   187→          if (closed) return;
+   188→          reconnectTimer = setTimeout(connect, 2000);
+   189→        };
+   190→        ws.onerror = () => {};
+   191→      } catch {
+   192→        reconnectTimer = setTimeout(connect, 2000);
+   193→      }
+   194→    };
+   195→    connect();
+   196→    unsubUserWS = () => {
+   197→      closed = true;
+   198→      if (reconnectTimer) clearTimeout(reconnectTimer);
+   199→      try { ws?.close(); } catch {}
+   200→    };
+   201→  }
+   202→
+   203→  function connectTickerWebSocket() {
+   204→    // Bootstrap with REST snapshot of all tickers
+   205→    (async () => {
+   206→      const all = await nexusMarket.getAllTickers();
+   207→      for (const t of all) {
+   208→        tickerData[t.symbol] = {
+   209→          symbol: t.symbol,
+   210→          price: t.price,
+   211→          prevPrice: t.price,
+   212→          change24h: t.change24h,
+   213→          high24h: t.high24h,
+   214→          low24h: t.low24h,
+   215→          volume24h: t.volume24h
+   216→        };
+   217→        marketStore.updateTicker(t.symbol, tickerData[t.symbol]);
+   218→      }
+   219→    })();
+   220→
+   221→    // Single live subscription — all ticker symbols at once, no cycling.
+   222→    unsubNexusGlobal = nexusMarket.subscribeAll((tick) => {
+   223→      const ticker: MarketTicker = {
+   224→        symbol: tick.symbol,
+   225→        price: tick.price,
+   226→        prevPrice: tickerData[tick.symbol]?.price ?? tick.price,
+   227→        change24h: tick.change24h,
+   228→        high24h: tick.high24h,
+   229→        low24h: tick.low24h,
+   230→        volume24h: tick.volume24h
+   231→      };
+   232→      tickerData[tick.symbol] = ticker;
+   233→      marketStore.updateTicker(tick.symbol, ticker);
+   234→    });
+   235→  }
+   236→
+   237→  const navSections = [
+   238→    {
+   239→      items: [
+   240→        { href: '/dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
+   241→        { href: '/dashboard/exchange', icon: TrendingUp, label: 'التداول سبوت' },
+   242→        { href: '/dashboard/futures', icon: Zap, label: 'العقود', badge: 'جديد' },
+   243→        { href: '/dashboard/heatmap', icon: Grid2x2, label: 'خريطة السوق', badge: 'جديد' },
+   244→        { href: '/dashboard/backtest', icon: FlaskConical, label: 'اختبار الاستراتيجيات', badge: 'جديد' },
+   245→        { href: '/dashboard/p2p', icon: Users, label: 'سوق P2P', badge: 'جديد' },
+   246→        { href: '/dashboard/copy-trading', icon: Copy, label: 'نسخ المتداولين', badge: 'جديد' },
+   247→        { href: '/dashboard/bots', icon: Bot, label: 'بوتات التداول', badge: 'جديد' },
+   248→        { href: '/dashboard/wallet', icon: Wallet, label: 'المحفظة' },
+   249→        { href: '/dashboard/earn', icon: Sparkles, label: 'Earn & Staking', badge: 'جديد' },
+   250→        { href: '/dashboard/history', icon: Clock, label: 'سجل الصفقات' },
+   251→        { href: '/dashboard/alerts', icon: BellRing, label: 'التنبيهات' }
+   252→      ]
+   253→    },
+   254→    {
+   255→      title: 'النمو',
+   256→      items: [
+   257→        { href: '/dashboard/competitions', icon: Trophy, label: 'المسابقات', badge: 'جديد' },
+   258→        { href: '/dashboard/referral', icon: Gift, label: 'برنامج الإحالة', badge: 'جديد' }
+   259→      ]
+   260→    },
+   261→    {
+   262→      title: 'الحساب',
+   263→      items: [
+   264→        { href: '/dashboard/notifications', icon: Bell, label: 'الإشعارات' },
+   265→        { href: '/dashboard/kyc', icon: FileText, label: 'التحقق' },
+   266→        { href: '/dashboard/fees', icon: Coins, label: 'الرسوم' },
+   267→        { href: '/dashboard/api-keys', icon: Key, label: 'مفاتيح API', badge: 'جديد' },
+   268→        { href: '/dashboard/security', icon: Shield, label: 'الأمان' },
+   269→        { href: '/dashboard/settings', icon: Settings, label: 'الإعدادات', badge: 'جديد' },
+   270→        { href: '/dashboard/profile', icon: User, label: 'الملف الشخصي' }
+   271→      ]
+   272→    }
+   273→  ];
+   274→
+   275→  const adminNavSection = {
+   276→    title: 'الإدارة',
+   277→    items: [
+   278→      { href: '/dashboard/admin', icon: Settings, label: 'لوحة الإدارة' },
+   279→      { href: '/dashboard/admin/users', icon: Users, label: 'المستخدمين' },
+   280→      { href: '/dashboard/admin/kyc', icon: FileText, label: 'طلبات التحقق' },
+   281→      { href: '/dashboard/admin/transactions', icon: ArrowRightLeft, label: 'المعاملات' },
+   282→      { href: '/dashboard/admin/ads', icon: Megaphone, label: 'الإعلانات' },
+   283→      { href: '/dashboard/admin/fees', icon: Coins, label: 'الرسوم' }
+   284→    ]
+   285→  };
+   286→
+   287→  const currentPath = $derived($page.url.pathname);
+   288→  const user = $derived($authStore);
+   289→  const isAdmin = $derived(user?.role === 'admin' || user?.role === 'ADMIN');
+   290→
+   291→  function isActive(href: string): boolean {
+   292→    if (href === '/dashboard') return currentPath === '/dashboard';
+   293→    return currentPath.startsWith(href);
+   294→  }
+   295→
+   296→  async function handleLogout() {
+   297→    try {
+   298→      const refreshToken = localStorage.getItem('refresh_token');
+   299→      if (refreshToken) await auth.logout(refreshToken);
+   300→    } catch {}
+   301→    forceLogout();
+   302→    toasts.info('تم تسجيل الخروج');
+   303→  }
+   304→
+   305→  async function markAllRead() {
+   306→    try {
+   307→      const { authPut } = await import('$lib/api/client');
+   308→      await authPut('/api/v1/notifications/read-all');
+   309→      notifications = notifications.map((n) => ({ ...n, read: true }));
+   310→      unreadCount = 0;
+   311→    } catch {}
+   312→  }
+   313→
+   314→  function closeAllDropdowns() {
+   315→    notifOpen = false;
+   316→    userMenuOpen = false;
+   317→  }
+   318→</script>
+   319→
+   320→<svelte:window onclick={closeAllDropdowns} onkeydown={(e) => e.key === 'Escape' && (sidebarOpen = false)} />
+   321→
+   322→<Toaster />
+   323→
+   324→<div class="min-h-screen flex flex-col bg-ink-950">
+   325→  <!-- Top Ticker Tape -->
+   326→  <div class="h-9 bg-ink-950/90 border-b border-white/5 overflow-hidden flex items-center relative">
+   327→    <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(90deg, var(--bg-ink-950-95) 0%, transparent 5%, transparent 95%, var(--bg-ink-950-95) 100%);"></div>
+   328→    <div class="relative flex items-center gap-1 shrink-0 px-3 ml-1 border-l border-accent-gold/15 h-full">
+   329→      <span class="relative flex h-1.5 w-1.5">
+   330→        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-gold opacity-60"></span>
+   331→        <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-gold"></span>
+   332→      </span>
+   333→      <span class="text-[10px] uppercase tracking-wider text-accent-gold font-bold">ج.م</span>
+   334→    </div>
+   335→    <div class="relative flex items-center gap-6 px-4 whitespace-nowrap" style="animation: tickerScroll 60s linear infinite;">
+   336→      {#each [...tickerSymbols, ...tickerSymbols] as sym}
+   337→        {@const t = tickerData[sym]}
+   338→        <div class="flex items-center gap-2 text-xs">
+   339→          <span class="font-semibold text-slate-300">{sym.replace('USDT', '')}</span>
+   340→          {#if t}
+   341→            <span class="font-mono text-slate-400 text-[11px]">
+   342→              {egpCompact(usdToEgp(t.price, currentRate))}
+   343→            </span>
+   344→            <ChangeBadge change={t.change24h} showIcon={false} className="text-[10px]" />
+   345→          {:else}
+   346→            <span class="font-mono text-slate-500">--</span>
+   347→          {/if}
+   348→        </div>
+   349→        <span class="text-slate-700">•</span>
+   350→      {/each}
+   351→    </div>
+   352→  </div>
+   353→
+   354→  <!-- Topbar -->
+   355→  <header class="sticky top-0 z-40 h-16 border-b border-white/5 bg-ink-950/85 backdrop-blur-2xl relative">
+   356→    <!-- Subtle bottom highlight line -->
+   357→    <div class="absolute bottom-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.25), rgba(168, 85, 247, 0.2), transparent);"></div>
+   358→    <div class="h-full flex items-center justify-between px-4 sm:px-6">
+   359→      <!-- Right: logo + mobile menu -->
+   360→      <div class="flex items-center gap-3">
+   361→        <button
+   362→          class="lg:hidden p-2 rounded-lg hover:bg-white/5 text-slate-300"
+   363→          onclick={(e) => {
+   364→            e.stopPropagation();
+   365→            sidebarOpen = !sidebarOpen;
+   366→          }}
+   367→          aria-label="القائمة"
+   368→        >
+   369→          {#if sidebarOpen}<X size={20} />{:else}<Menu size={20} />{/if}
+   370→        </button>
+   371→        <a href="/dashboard" class="flex items-center gap-2 group">
+   372→          <div class="relative w-9 h-9 rounded-xl bg-gradient-to-br from-accent-gold via-accent-rose to-accent-violet flex items-center justify-center font-black text-ink-950 transition-transform group-hover:scale-105">
+   373→            <span class="absolute inset-0 rounded-xl opacity-50 blur-md bg-gradient-to-br from-accent-gold to-accent-violet"></span>
+   374→            <span class="relative">N</span>
+   375→          </div>
+   376→          <span class="text-lg font-bold text-white hidden sm:block tracking-tight">
+   377→            NEXUS
+   378→          </span>
+   379→        </a>
+   380→      </div>
+   381→
+   382→      <!-- Center: portfolio value (EGP) + search -->
+   383→      <div class="hidden md:flex items-center gap-4 flex-1 max-w-xl mx-6">
+   384→        <!-- Portfolio pill — EGP main currency -->
+   385→        <a
+   386→          href="/dashboard/wallet"
+   387→          class="group flex items-center gap-3 px-4 py-2 rounded-xl bg-gradient-to-br from-accent-gold/10 to-accent-violet/5 border border-accent-gold/20 hover:border-accent-gold/40 transition-all"
+   388→          title="إجمالي قيمة المحفظة بالجنيه المصري"
+   389→        >
+   390→          <div class="w-8 h-8 rounded-lg bg-accent-gold/15 flex items-center justify-center shrink-0">
+   391→            <Wallet size={15} class="text-accent-gold" />
+   392→          </div>
+   393→          <div class="leading-tight">
+   394→            <div class="flex items-center gap-1 text-[10px] text-slate-400 uppercase tracking-wider">
+   395→              <span>المحفظة</span>
+   396→              <span class="text-accent-gold font-bold">EGP</span>
+   397→            </div>
+   398→            <div class="text-sm font-bold text-white font-mono tabular-nums">
+   399→              {egpCompact(portfolioEgp)}
+   400→            </div>
+   401→          </div>
+   402→        </a>
+   403→
+   404→        <!-- Search / Command Palette trigger -->
+   405→        <button
+   406→          onclick={() => (paletteOpen = true)}
+   407→          class="relative flex-1 flex items-center gap-2 bg-ink-900/60 border border-white/5 rounded-xl pr-10 pl-4 py-2 text-sm text-slate-500 hover:border-accent-gold/30 transition-colors text-right"
+   408→        >
+   409→          <Search size={16} class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+   410→          <span>بحث عن عملة، صفقة...</span>
+   411→          <kbd class="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+   412→            <Command size={10} />K
+   413→          </kbd>
+   414→        </button>
+   415→      </div>
+   416→
+   417→      <!-- Left: actions -->
+   418→      <div class="flex items-center gap-2">
+   419→        <!-- Live status pill -->
+   420→        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-accent-mint/8 border border-accent-mint/20" title="اتصال مباشر بالأسواق">
+   421→          <span class="relative flex h-2 w-2">
+   422→            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-mint opacity-60"></span>
+   423→            <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-mint"></span>
+   424→          </span>
+   425→          <span class="text-[11px] font-bold text-accent-mint tracking-wide">LIVE</span>
+   426→        </div>
+   427→
+   428→        <!-- Notifications -->
+   429→        <div class="relative" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+   430→          <button
+   431→            class="relative p-2 rounded-lg hover:bg-white/5 text-slate-300 transition-colors"
+   432→            onclick={() => (notifOpen = !notifOpen)}
+   433→            aria-label="الإشعارات"
+   434→          >
+   435→            <Bell size={20} />
+   436→            {#if unreadCount > 0}
+   437→              <span class="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-accent-rose text-white text-[10px] font-bold flex items-center justify-center">
+   438→                {unreadCount > 9 ? '9+' : unreadCount}
+   439→              </span>
+   440→            {/if}
+   441→          </button>
+   442→
+   443→          {#if notifOpen}
+   444→            <div class="absolute left-0 mt-2 w-80 panel-glow overflow-hidden" style="animation: dropdownIn 0.15s ease-out;">
+   445→              <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+   446→                <h3 class="text-sm font-bold text-white">الإشعارات</h3>
+   447→                {#if unreadCount > 0}
+   448→                  <button onclick={markAllRead} class="text-xs text-accent-gold hover:underline flex items-center gap-1">
+   449→                    <CheckCheck size={12} /> تعليم الكل كمقروء
+   450→                  </button>
+   451→                {/if}
+   452→              </div>
+   453→              <div class="max-h-80 overflow-y-auto">
+   454→                {#if notifications.length === 0}
+   455→                  <div class="py-10 text-center text-slate-500 text-sm">
+   456→                    <Bell size={32} class="mx-auto mb-2 opacity-30" />
+   457→                    لا توجد إشعارات
+   458→                  </div>
+   459→                {:else}
+   460→                  {#each notifications.slice(0, 8) as n}
+   461→                    <a
+   462→                      href="/dashboard/notifications"
+   463→                      class="block px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 {!n.read ? 'bg-accent-gold/5' : ''}"
+   464→                    >
+   465→                      <div class="flex items-start gap-2">
+   466→                        {#if !n.read}<span class="w-2 h-2 rounded-full bg-accent-gold mt-1.5 shrink-0"></span>{/if}
+   467→                        <div class="flex-1 min-w-0">
+   468→                          <p class="text-sm font-medium text-white truncate">{n.title}</p>
+   469→                          <p class="text-xs text-slate-400 line-clamp-2 mt-0.5">{n.body}</p>
+   470→                        </div>
+   471→                      </div>
+   472→                    </a>
+   473→                  {/each}
+   474→                {/if}
+   475→              </div>
+   476→              <a href="/dashboard/notifications" class="block px-4 py-2.5 text-center text-xs text-accent-gold hover:bg-white/5 border-t border-white/5">
+   477→                عرض كل الإشعارات
+   478→              </a>
+   479→            </div>
+   480→          {/if}
+   481→        </div>
+   482→
+   483→        <!-- User menu -->
+   484→        <div class="relative" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+   485→          <button
+   486→            class="flex items-center gap-2 p-1 rounded-xl hover:bg-white/5 transition-colors"
+   487→            onclick={() => (userMenuOpen = !userMenuOpen)}
+   488→          >
+   489→            <Avatar size={32} />
+   490→            <ChevronDown size={14} class="text-slate-400 hidden sm:block" />
+   491→          </button>
+   492→
+   493→          {#if userMenuOpen}
+   494→            <div class="absolute left-0 mt-2 w-56 panel-glow overflow-hidden" style="animation: dropdownIn 0.15s ease-out;">
+   495→              <div class="px-4 py-3 border-b border-white/5">
+   496→                <p class="text-sm font-semibold text-white truncate">{user?.username || 'مستخدم'}</p>
+   497→                <p class="text-xs text-slate-400 truncate">{user?.email}</p>
+   498→              </div>
+   499→              <div class="py-1">
+   500→                <a href="/dashboard/profile" class="flex items-center gap-2 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
+   501→                  <User size={14} /> الملف الشخصي
+   502→                </a>
+   503→                <a href="/dashboard/security" class="flex items-center gap-2 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
+   504→                  <Shield size={14} /> الأمان
+   505→                </a>
+   506→                <a href="/dashboard/kyc" class="flex items-center gap-2 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
+   507→                  <FileText size={14} /> التحقق
+   508→                </a>
+   509→              </div>
+   510→              <div class="border-t border-white/5 py-1">
+   511→                <button
+   512→                  onclick={handleLogout}
+   513→                  class="w-full flex items-center gap-2 px-4 py-2 text-sm text-accent-rose hover:bg-accent-rose/5 transition-colors"
+   514→                >
+   515→                  <LogOut size={14} /> تسجيل الخروج
+   516→                </button>
+   517→              </div>
+   518→            </div>
+   519→          {/if}
+   520→        </div>
+   521→      </div>
+   522→    </div>
+   523→  </header>
+   524→
+   525→  <!-- Body: sidebar + content -->
+   526→  <div class="flex-1 flex">
+   527→    <!-- Sidebar -->
+   528→    <aside
+   529→      class="fixed lg:sticky top-0 lg:top-[6.25rem] right-0 z-30 h-screen lg:h-[calc(100vh-6.25rem)] w-64 bg-ink-900/95 backdrop-blur-2xl border-l border-white/5 transition-transform duration-300 lg:translate-x-0 {sidebarOpen
+   530→        ? 'translate-x-0'
+   531→        : 'translate-x-full lg:translate-x-0'}"
+   532→    >
+   533→      <!-- Subtle top fade for sidebar nav -->
+   534→      <div class="absolute top-0 inset-x-0 h-24 pointer-events-none" style="background: linear-gradient(180deg, rgba(245, 181, 68, 0.04), transparent);"></div>
+   535→      <div class="h-full flex flex-col relative">
+   536→        <!-- Mobile close -->
+   537→        <div class="lg:hidden flex items-center justify-between p-4 border-b border-white/5">
+   538→          <span class="text-sm font-bold text-white">القائمة</span>
+   539→          <button onclick={() => (sidebarOpen = false)} class="p-1.5 rounded-lg hover:bg-white/5">
+   540→            <X size={18} class="text-slate-400" />
+   541→          </button>
+   542→        </div>
+   543→
+   544→        <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-none relative">
+   545→          {#each navSections as section, i}
+   546→            <div>
+   547→              {#if section.title}
+   548→                <p class="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+   549→                  {section.title}
+   550→                </p>
+   551→              {/if}
+   552→              <div class="space-y-0.5">
+   553→                {#each section.items as item}
+   554→                  <a
+   555→                    href={item.href}
+   556→                    class="nav-link {isActive(item.href) ? 'active' : ''}"
+   557→                    onclick={() => (sidebarOpen = false)}
+   558→                  >
+   559→                    <item.icon size={18} />
+   560→                    <span>{item.label}</span>
+   561→                    {#if item.badge}
+   562→                      <span class="mr-auto text-[9px] px-1.5 py-0.5 rounded-full bg-accent-gold/20 text-accent-gold font-bold">
+   563→                        {item.badge}
+   564→                      </span>
+   565→                    {/if}
+   566→                  </a>
+   567→                {/each}
+   568→              </div>
+   569→            </div>
+   570→          {/each}
+   571→
+   572→          {#if isAdmin}
+   573→            <div>
+   574→              <p class="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+   575→                {adminNavSection.title}
+   576→              </p>
+   577→              <div class="space-y-0.5">
+   578→                {#each adminNavSection.items as item}
+   579→                  <a
+   580→                    href={item.href}
+   581→                    class="nav-link {isActive(item.href) ? 'active' : ''}"
+   582→                    onclick={() => (sidebarOpen = false)}
+   583→                  >
+   584→                    <item.icon size={18} />
+   585→                    <span>{item.label}</span>
+   586→                  </a>
+   587→                {/each}
+   588→              </div>
+   589→            </div>
+   590→          {/if}
+   591→        </nav>
+   592→
+   593→        <!-- Footer: upgrade card -->
+   594→        <div class="p-3">
+   595→          <div class="panel-glow p-4 text-center relative overflow-hidden">
+   596→            <div class="absolute -top-8 left-1/2 -translate-x-1/2 w-32 h-32 rounded-full bg-accent-gold/15 blur-2xl pointer-events-none"></div>
+   597→            <div class="relative">
+   598→              <div class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-accent-gold/20 to-accent-rose/10 border border-accent-gold/30 mb-2">
+   599→                <Star size={18} class="text-accent-gold" />
+   600→              </div>
+   601→              <p class="text-xs font-bold text-white mb-1">حساب VIP</p>
+   602→              <p class="text-[10px] text-slate-400 mb-2 leading-relaxed">رسوم أقل وامتيازات حصرية</p>
+   603→              <a href="/dashboard/fees" class="inline-flex items-center gap-1 text-[11px] text-accent-gold hover:gap-1.5 transition-all font-medium">
+   604→                ترقية الآن
+   605→                <ArrowLeft size={10} />
+   606→              </a>
+   607→            </div>
+   608→          </div>
+   609→        </div>
+   610→      </div>
+   611→    </aside>
+   612→
+   613→    <!-- Backdrop for mobile -->
+   614→    {#if sidebarOpen}
+   615→      <div
+   616→        role="presentation"
+   617→        class="fixed inset-0 bg-ink-950/70 backdrop-blur-sm z-20 lg:hidden"
+   618→        onclick={() => (sidebarOpen = false)}
+   619→        onkeydown={(e) => { if (e.key === 'Escape') sidebarOpen = false; }}
+   620→      ></div>
+   621→    {/if}
+   622→
+   623→    <!-- Main content -->
+   624→    <main class="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8">
+   625→      {@render children()}
+   626→    </main>
+   627→  </div>
+   628→</div>
+   629→
+   630→<!-- Mobile bottom navigation -->
+   631→<BottomNav />
+   632→
+   633→<!-- Command Palette (Cmd+K) -->
+   634→<CommandPalette bind:open={paletteOpen} />
+   635→
+   636→<style>
+   637→  @keyframes tickerScroll {
+   638→    from {
+   639→      transform: translateX(0);
+   640→    }
+   641→    to {
+   642→      transform: translateX(50%);
+   643→    }
+   644→  }
+   645→  @keyframes dropdownIn {
+   646→    from {
+   647→      opacity: 0;
+   648→      transform: translateY(-8px) scale(0.96);
+   649→    }
+   650→    to {
+   651→      opacity: 1;
+   652→      transform: translateY(0) scale(1);
+   653→    }
+   654→  }
+   655→</style>
+   656→

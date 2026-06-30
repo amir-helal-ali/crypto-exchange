@@ -1,0 +1,877 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useEffect, useState, useCallback } from "react";
+     4→     4→import toast from "react-hot-toast";
+     5→     5→import {
+     6→     6→  Lock,
+     7→     7→  Unlock,
+     8→     8→  ShieldCheck,
+     9→     9→  AlertTriangle,
+    10→    10→  CheckCircle2,
+    11→    11→  XCircle,
+    12→    12→  Clock,
+    13→    13→  Plus,
+    14→    14→  RefreshCw,
+    15→    15→  Upload,
+    16→    16→  Globe,
+    17→    17→  Server,
+    18→    18→  Zap,
+    19→    19→  FileText,
+    20→    20→  Calendar,
+    21→    21→  Building2,
+    22→    22→  Hash,
+    23→    23→  KeyRound,
+    24→    24→  Loader2,
+    25→    25→  Info,
+    26→    26→  Rocket,
+    27→    27→  Sparkles,
+    28→    28→  Eye,
+    29→    29→  EyeOff,
+    30→    30→  X,
+    31→    31→} from "lucide-react";
+    32→    32→import { authGet, authPost } from "@/lib/api";
+    33→    33→import { ConfirmDialog } from "@/components/ui";
+    34→    34→
+    35→    35→interface SSLStatus {
+    36→    36→  enabled: boolean;
+    37→    37→  type: string; // "local" | "letsencrypt" | "custom" | "unknown"
+    38→    38→  issuer: string;
+    39→    39→  issuer_org?: string;
+    40→    40→  cert_path: string;
+    41→    41→  key_path: string;
+    42→    42→  domains: string;
+    43→    43→  email?: string;
+    44→    44→  generated_at: string;
+    45→    45→  exists: boolean;
+    46→    46→  subject?: string;
+    47→    47→  not_before?: string;
+    48→    48→  not_after?: string;
+    49→    49→  expires_at?: string;
+    50→    50→  days_remaining?: number;
+    51→    51→  health?: "healthy" | "warning" | "critical" | "expired";
+    52→    52→  sans?: string[];
+    53→    53→  key_algorithm?: string;
+    54→    54→  signature_algorithm?: string;
+    55→    55→  serial_number?: string;
+    56→    56→  key_exists?: boolean;
+    57→    57→  error?: string;
+    58→    58→  ssl_staging?: boolean;
+    59→    59→}
+    60→    60→
+    61→    61→type GenerateMode = "local" | "letsencrypt";
+    62→    62→
+    63→    63→export default function SSLTab({
+    64→    64→  editValues,
+    65→    65→  changedKeys,
+    66→    66→  onSSLChanged,
+    67→    67→}: {
+    68→    68→  editValues: Record<string, string>;
+    69→    69→  changedKeys: Set<string>;
+    70→    70→  onSSLChanged: () => void;
+    71→    71→}) {
+    72→    72→  const [status, setStatus] = useState<SSLStatus | null>(null);
+    73→    73→  const [loading, setLoading] = useState(true);
+    74→    74→  const [generating, setGenerating] = useState(false);
+    75→    75→  const [renewing, setRenewing] = useState(false);
+    76→    76→  const [showWizard, setShowWizard] = useState(false);
+    77→    77→  const [showInstall, setShowInstall] = useState(false);
+    78→    78→  const [confirmRegen, setConfirmRegen] = useState<null | (() => void)>(null);
+    79→    79→
+    80→    80→  const fetchStatus = useCallback(async () => {
+    81→    81→    setLoading(true);
+    82→    82→    try {
+    83→    83→      const res = await authGet("/api/v1/admin/ssl/status");
+    84→    84→      if (res.ok) {
+    85→    85→        const data = await res.json();
+    86→    86→        setStatus(data.data || null);
+    87→    87→      }
+    88→    88→    } catch {
+    89→    89→      // silent
+    90→    90→    } finally {
+    91→    91→      setLoading(false);
+    92→    92→    }
+    93→    93→  }, []);
+    94→    94→
+    95→    95→  useEffect(() => {
+    96→    96→    fetchStatus();
+    97→    97→  }, [fetchStatus]);
+    98→    98→
+    99→    99→  const handleGenerate = async (mode: GenerateMode, email?: string, staging?: boolean) => {
+   100→   100→    setGenerating(true);
+   101→   101→    setShowWizard(false);
+   102→   102→    try {
+   103→   103→      const res = await authPost("/api/v1/admin/ssl/generate", {
+   104→   104→        type: mode,
+   105→   105→        email: email || undefined,
+   106→   106→        staging: staging || false,
+   107→   107→      });
+   108→   108→      const data = await res.json();
+   109→   109→      if (res.ok && data.success) {
+   110→   110→        toast.success(data.message || "تم توليد الشهادة بنجاح");
+   111→   111→        await fetchStatus();
+   112→   112→        onSSLChanged();
+   113→   113→      } else {
+   114→   114→        toast.error(data.error || "فشل توليد الشهادة");
+   115→   115→        if (data.output) {
+   116→   116→          console.error("Cert generation output:", data.output);
+   117→   117→        }
+   118→   118→      }
+   119→   119→    } catch {
+   120→   120→      toast.error("خطأ في الاتصال بالخادم");
+   121→   121→    } finally {
+   122→   122→      setGenerating(false);
+   123→   123→    }
+   124→   124→  };
+   125→   125→
+   126→   126→  const handleRenew = async () => {
+   127→   127→    setRenewing(true);
+   128→   128→    try {
+   129→   129→      const res = await authPost("/api/v1/admin/ssl/renew", {});
+   130→   130→      const data = await res.json();
+   131→   131→      if (res.ok && data.success) {
+   132→   132→        toast.success(data.message || "تم تجديد الشهادة بنجاح");
+   133→   133→        await fetchStatus();
+   134→   134→        onSSLChanged();
+   135→   135→      } else {
+   136→   136→        toast.error(data.error || "فشل التجديد");
+   137→   137→      }
+   138→   138→    } catch {
+   139→   139→      toast.error("خطأ في الاتصال");
+   140→   140→    } finally {
+   141→   141→      setRenewing(false);
+   142→   142→    }
+   143→   143→  };
+   144→   144→
+   145→   145→  const handleInstall = async (certPem: string, keyPem: string) => {
+   146→   146→    setGenerating(true);
+   147→   147→    setShowInstall(false);
+   148→   148→    try {
+   149→   149→      const res = await authPost("/api/v1/admin/ssl/install", {
+   150→   150→        cert_pem: certPem,
+   151→   151→        key_pem: keyPem,
+   152→   152→      });
+   153→   153→      const data = await res.json();
+   154→   154→      if (res.ok && data.success) {
+   155→   155→        toast.success(data.message || "تم تثبيت الشهادة بنجاح");
+   156→   156→        await fetchStatus();
+   157→   157→        onSSLChanged();
+   158→   158→      } else {
+   159→   159→        toast.error(data.error || "فشل التثبيت");
+   160→   160→      }
+   161→   161→    } catch {
+   162→   162→      toast.error("خطأ في الاتصال");
+   163→   163→    } finally {
+   164→   164→      setGenerating(false);
+   165→   165→    }
+   166→   166→  };
+   167→   167→
+   168→   168→  if (loading) {
+   169→   169→    return (
+   170→   170→      <div className="flex items-center justify-center py-20">
+   171→   171→        <div className="flex flex-col items-center gap-3">
+   172→   172→          <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+   173→   173→          <p className="text-sm text-muted-foreground">جاري تحميل حالة الشهادة...</p>
+   174→   174→        </div>
+   175→   175→      </div>
+   176→   176→    );
+   177→   177→  }
+   178→   178→
+   179→   179→  const hasCert = status?.exists && status?.key_exists;
+   180→   180→  const isExpired = status?.health === "expired";
+   181→   181→  const isCritical = status?.health === "critical";
+   182→   182→  const isWarning = status?.health === "warning";
+   183→   183→  const isHealthy = status?.health === "healthy";
+   184→   184→
+   185→   185→  return (
+   186→   186→    <div className="space-y-5">
+   187→   187→      {/* Generating overlay */}
+   188→   188→      {generating && (
+   189→   189→        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md">
+   190→   190→          <div className="glass-panel-strong rounded-2xl p-8 flex flex-col items-center gap-4 max-w-md">
+   191→   191→            <div className="relative">
+   192→   192→              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border border-primary/20">
+   193→   193→                <Lock className="h-8 w-8 text-primary animate-pulse" />
+   194→   194→              </div>
+   195→   195→              <Loader2 className="absolute -top-1 -right-1 h-5 w-5 animate-spin text-primary" />
+   196→   196→            </div>
+   197→   197→            <div className="text-center">
+   198→   198→              <p className="font-semibold text-foreground">جاري توليد الشهادة...</p>
+   199→   199→              <p className="text-xs text-muted-foreground mt-1">
+   200→   200→                قد يستغرق هذا من 5 ثوانٍ إلى دقيقتين حسب نوع الشهادة
+   201→   201→              </p>
+   202→   202→            </div>
+   203→   203→            <div className="w-full bg-muted/30 rounded-full h-1 overflow-hidden">
+   204→   204→              <div className="h-full bg-gradient-to-l from-emerald-500 to-teal-500 animate-pulse" style={{ width: "60%" }} />
+   205→   205→            </div>
+   206→   206→          </div>
+   207→   207→        </div>
+   208→   208→      )}
+   209→   209→
+   210→   210→      {/* ─── Current Certificate Status Card ─── */}
+   211→   211→      {hasCert ? (
+   212→   212→        <div
+   213→   213→          className={`glass-panel rounded-2xl p-6 border-r-2 ${
+   214→   214→            isExpired
+   215→   215→              ? "border-r-red-500/60"
+   216→   216→              : isCritical
+   217→   217→              ? "border-r-red-500/60"
+   218→   218→              : isWarning
+   219→   219→              ? "border-r-yellow-500/60"
+   220→   220→              : "border-r-emerald-500/60"
+   221→   221→          }`}
+   222→   222→        >
+   223→   223→          <div className="flex items-start justify-between gap-4 mb-5">
+   224→   224→            <div className="flex items-center gap-3">
+   225→   225→              <div
+   226→   226→                className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+   227→   227→                  isExpired || isCritical
+   228→   228→                    ? "bg-red-500/10 text-red-400"
+   229→   229→                    : isWarning
+   230→   230→                    ? "bg-yellow-500/10 text-yellow-400"
+   231→   231→                    : "bg-emerald-500/10 text-emerald-400"
+   232→   232→                }`}
+   233→   233→              >
+   234→   234→                {isExpired ? <XCircle className="h-6 w-6" /> : isHealthy ? <CheckCircle2 className="h-6 w-6" /> : <AlertTriangle className="h-6 w-6" />}
+   235→   235→              </div>
+   236→   236→              <div>
+   237→   237→                <h3 className="text-lg font-bold text-foreground">الشهادة الحالية</h3>
+   238→   238→                <p className="text-xs text-muted-foreground mt-0.5">
+   239→   239→                  {status?.issuer || "—"}
+   240→   240→                  {status?.issuer_org && status?.issuer_org !== status?.issuer && ` • ${status.issuer_org}`}
+   241→   241→                </p>
+   242→   242→              </div>
+   243→   243→            </div>
+   244→   244→            <HealthBadge health={status?.health} daysRemaining={status?.days_remaining} />
+   245→   245→          </div>
+   246→   246→
+   247→   247→          {/* Cert details grid */}
+   248→   248→          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+   249→   249→            <DetailRow icon={<Globe className="h-3.5 w-3.5" />} label="النطاقات (SANs)" value={(status?.sans || []).join("، ") || status?.domains || "—"} dir="ltr" />
+   250→   250→            <DetailRow icon={<Building2 className="h-3.5 w-3.5" />} label="النوع" value={getCertTypeLabel(status?.type)} />
+   251→   251→            <DetailRow icon={<Calendar className="h-3.5 w-3.5" />} label="تاريخ الانتهاء" value={status?.expires_at || "—"} />
+   252→   252→            <DetailRow icon={<Clock className="h-3.5 w-3.5" />} label="الأيام المتبقية" value={`${status?.days_remaining ?? "—"} يوم`} highlight={isWarning || isCritical || isExpired} />
+   253→   253→            <DetailRow icon={<Hash className="h-3.5 w-3.5" />} label="الرقم التسلسلي" value={status?.serial_number?.slice(0, 16) + "..." || "—"} dir="ltr" mono />
+   254→   254→            <DetailRow icon={<KeyRound className="h-3.5 w-3.5" />} label="خوارزمية المفتاح" value={status?.key_algorithm || "—"} dir="ltr" />
+   255→   255→          </div>
+   256→   256→
+   257→   257→          {/* Action buttons */}
+   258→   258→          <div className="flex flex-wrap gap-2 pt-4 border-t border-border/30">
+   259→   259→            <button
+   260→   260→              onClick={() =>
+   261→   261→                setConfirmRegen(() => () => {
+   262→   262→                  const mode = (status?.type === "letsencrypt" ? "letsencrypt" : "local") as GenerateMode;
+   263→   263→                  handleGenerate(mode, status?.email, status?.ssl_staging);
+   264→   264→                })
+   265→   265→              }
+   266→   266→              className="btn-ghost text-sm gap-2"
+   267→   267→            >
+   268→   268→              <RefreshCw className="h-4 w-4" />
+   269→   269→              إعادة التوليد
+   270→   270→            </button>
+   271→   271→            {status?.type === "letsencrypt" && (
+   272→   272→              <button
+   273→   273→                onClick={handleRenew}
+   274→   274→                disabled={renewing}
+   275→   275→                className="btn-ghost text-sm gap-2"
+   276→   276→              >
+   277→   277→                {renewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+   278→   278→                تجديد (Renew)
+   279→   279→              </button>
+   280→   280→            )}
+   281→   281→            <button
+   282→   282→              onClick={() => setShowInstall(true)}
+   283→   283→              className="btn-ghost text-sm gap-2"
+   284→   284→            >
+   285→   285→              <Upload className="h-4 w-4" />
+   286→   286→              تثبيت شهادة موجودة
+   287→   287→            </button>
+   288→   288→            <button
+   289→   289→              onClick={() => setShowWizard(true)}
+   290→   290→              className="btn-primary text-sm gap-2 mr-auto"
+   291→   291→            >
+   292→   292→              <Plus className="h-4 w-4" />
+   293→   293→              توليد شهادة جديدة
+   294→   294→            </button>
+   295→   295→          </div>
+   296→   296→        </div>
+   297→   297→      ) : (
+   298→   298→        /* ─── No Certificate Card ─── */
+   299→   299→        <div className="glass-panel rounded-2xl p-8 text-center border-r-2 border-r-yellow-500/60">
+   300→   300→          <div className="w-16 h-16 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
+   301→   301→            <Unlock className="h-8 w-8 text-yellow-400" />
+   302→   302→          </div>
+   303→   303→          <h3 className="text-lg font-bold text-foreground mb-1">لا توجد شهادة SSL مُفعّلة</h3>
+   304→   304→          <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
+   305→   305→            يتم تشفير الاتصال عبر HTTPS باستخدام شهادة SSL. يمكنك توليد شهادة موثوقة بنقرة واحدة — للتنمية المحلية أو للإنتاج.
+   306→   306→          </p>
+   307→   307→          <div className="flex flex-wrap gap-2 justify-center">
+   308→   308→            <button
+   309→   309→              onClick={() => setShowWizard(true)}
+   310→   310→              className="btn-primary gap-2"
+   311→   311→            >
+   312→   312→              <Sparkles className="h-4 w-4" />
+   313→   313→              توليد شهادة SSL
+   314→   314→            </button>
+   315→   315→            <button
+   316→   316→              onClick={() => setShowInstall(true)}
+   317→   317→              className="btn-ghost gap-2"
+   318→   318→            >
+   319→   319→              <Upload className="h-4 w-4" />
+   320→   320→              تثبيت شهادة موجودة
+   321→   321→            </button>
+   322→   322→          </div>
+   323→   323→        </div>
+   324→   324→      )}
+   325→   325→
+   326→   326→      {/* ─── Quick info card ─── */}
+   327→   327→      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+   328→   328→        <InfoCard
+   329→   329→          icon={<Rocket className="h-4 w-4" />}
+   330→   330→          title="تنمية محلية"
+   331→   331→          description="شهادة موقعة ذاتياً صالحة لمدة سنة. مناسبة للتطوير والاختبار."
+   332→   332→          color="emerald"
+   333→   333→          onClick={() => handleGenerate("local")}
+   334→   334→          disabled={generating}
+   335→   335→        />
+   336→   336→        <InfoCard
+   337→   337→          icon={<ShieldCheck className="h-4 w-4" />}
+   338→   338→          title="Let's Encrypt"
+   339→   339→          description="شهادة إنتاجية موثوقة في جميع المتصفحات، صالحة لـ 90 يوماً مع تجديد تلقائي."
+   340→   340→          color="blue"
+   341→   341→          onClick={() => setShowWizard(true)}
+   342→   342→          disabled={generating}
+   343→   343→        />
+   344→   344→        <InfoCard
+   345→   345→          icon={<Upload className="h-4 w-4" />}
+   346→   346→          title="شهادة مخصصة"
+   347→   347→          description="ارفع شهادة من ZeroSSL أو Cloudflare أو CA مدفوع بصيغة PEM."
+   348→   348→          color="purple"
+   349→   349→          onClick={() => setShowInstall(true)}
+   350→   350→          disabled={generating}
+   351→   351→        />
+   352→   352→      </div>
+   353→   353→
+   354→   354→      {/* ─── How it works ─── */}
+   355→   355→      <div className="glass-panel rounded-2xl p-5 bg-blue-500/5 border border-blue-500/20">
+   356→   356→        <div className="flex items-start gap-3">
+   357→   357→          <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
+   358→   358→          <div className="text-xs text-muted-foreground leading-relaxed space-y-2">
+   359→   359→            <p className="font-medium text-foreground">كيف يعمل النظام؟</p>
+   360→   360→            <p>
+   361→   361→              <span className="text-emerald-400 font-medium">للتنمية المحلية:</span> يولّد الـ backend شهادة RSA 2048 موقعة ذاتياً مع SANs لجميع النطاقات المُعدّة. المتصفح سيُظهر تحذيراً (يمكن تجاوله).
+   362→   362→            </p>
+   363→   363→            <p>
+   364→   364→              <span className="text-blue-400 font-medium">للإنتاج (Let's Encrypt):</span> يستخدم النظام certbot مع HTTP-01 challenge عبر nginx. يتطلب نطاقات حقيقية موجّهة لخادمك وبريد إلكتروني لتنبيهات الانتهاء.
+   365→   365→            </p>
+   366→   366→            <p>
+   367→   367→              <span className="text-purple-400 font-medium">شهادة مخصصة:</span> الصق محتوى PEM للشهادة والمفتاح. مفيد لـ ZeroSSL أو Cloudflare Origin CA أو CA مدفوع.
+   368→   368→            </p>
+   369→   369→            <p className="text-muted-foreground/70 pt-2 border-t border-border/20">
+   370→   370→              بعد التوليد، يتم تحديث إعدادات nginx تلقائياً وإعادة تحميله بدون توقف للخدمة.
+   371→   371→            </p>
+   372→   372→          </div>
+   373→   373→        </div>
+   374→   374→      </div>
+   375→   375→
+   376→   376→      {/* ─── Wizard Modal ─── */}
+   377→   377→      {showWizard && (
+   378→   378→        <GenerateWizard
+   379→   379→          editValues={editValues}
+   380→   380→          onClose={() => setShowWizard(false)}
+   381→   381→          onGenerate={handleGenerate}
+   382→   382→        />
+   383→   383→      )}
+   384→   384→
+   385→   385→      {/* ─── Install Modal ─── */}
+   386→   386→      {showInstall && (
+   387→   387→        <InstallModal
+   388→   388→          onClose={() => setShowInstall(false)}
+   389→   389→          onInstall={handleInstall}
+   390→   390→        />
+   391→   391→      )}
+   392→   392→
+   393→   393→      {/* ─── Confirm regenerate ─── */}
+   394→   394→      <ConfirmDialog
+   395→   395→        isOpen={!!confirmRegen}
+   396→   396→        onClose={() => setConfirmRegen(null)}
+   397→   397→        onConfirm={() => {
+   398→   398→          confirmRegen?.();
+   399→   399→          setConfirmRegen(null);
+   400→   400→        }}
+   401→   401→        title="تأكيد إعادة توليد الشهادة"
+   402→   402→        description={
+   403→   403→          <div className="space-y-2">
+   404→   404→            <p>سيتم استبدال الشهادة الحالية بشهادة جديدة. قد تنقطع الخدمة لثوانٍ معدودة أثناء إعادة تحميل nginx.</p>
+   405→   405→            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2.5 text-xs">
+   406→   406→              <span className="text-yellow-400 font-medium">تحذير:</span>{" "}
+   407→   407→              <span className="text-muted-foreground">الشهادة الحالية ستحذف ولا يمكن استرجاعها. تأكد من عدم وجود مستخدمين نشطين.</span>
+   408→   408→            </div>
+   409→   409→          </div>
+   410→   410→        }
+   411→   411→        confirmLabel="نعم، أعد التوليد"
+   412→   412→        destructive
+   413→   413→      />
+   414→   414→    </div>
+   415→   415→  );
+   416→   416→}
+   417→   417→
+   418→   418→// ═══════════════════════════════════════════════════════════════════
+   419→   419→// GENERATE WIZARD MODAL
+   420→   420→// ═══════════════════════════════════════════════════════════════════
+   421→   421→
+   422→   422→function GenerateWizard({
+   423→   423→  editValues,
+   424→   424→  onClose,
+   425→   425→  onGenerate,
+   426→   426→}: {
+   427→   427→  editValues: Record<string, string>;
+   428→   428→  onClose: () => void;
+   429→   429→  onGenerate: (mode: GenerateMode, email?: string, staging?: boolean) => void;
+   430→   430→}) {
+   431→   431→  const [mode, setMode] = useState<GenerateMode | null>(null);
+   432→   432→  const [email, setEmail] = useState("");
+   433→   433→  const [staging, setStaging] = useState(false);
+   434→   434→
+   435→   435→  const detectedDomains = [
+   436→   436→    editValues.main_domain,
+   437→   437→    editValues.frontend_domain,
+   438→   438→    editValues.backend_domain,
+   439→   439→    editValues.admin_domain,
+   440→   440→  ].filter(Boolean);
+   441→   441→
+   442→   442→  const hasLocalDomain = detectedDomains.some((d) =>
+   443→   443→    [".local", ".localhost", ".test", "localhost", "127.", "192.168."].some((sfx) =>
+   444→   444→      d?.toLowerCase().includes(sfx)
+   445→   445→    )
+   446→   446→  );
+   447→   447→
+   448→   448→  return (
+   449→   449→    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fade-in" onClick={onClose}>
+   450→   450→      <div
+   451→   451→        className="relative max-w-2xl w-full mx-4 glass-panel-strong rounded-2xl shadow-2xl animate-scale-in max-h-[90vh] overflow-y-auto"
+   452→   452→        onClick={(e) => e.stopPropagation()}
+   453→   453→      >
+   454→   454→        {/* Header */}
+   455→   455→        <div className="flex items-center justify-between p-5 border-b border-border/30 sticky top-0 bg-card/95 backdrop-blur-xl z-10">
+   456→   456→          <div className="flex items-center gap-3">
+   457→   457→            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border border-primary/20">
+   458→   458→              <Sparkles className="h-4 w-4 text-primary" />
+   459→   459→            </div>
+   460→   460→            <h3 className="text-lg font-bold">توليد شهادة SSL جديدة</h3>
+   461→   461→          </div>
+   462→   462→          <button onClick={onClose} className="p-2 rounded-lg hover:bg-muted/20 transition-colors">
+   463→   463→            <X className="h-5 w-5" />
+   464→   464→          </button>
+   465→   465→        </div>
+   466→   466→
+   467→   467→        <div className="p-5 space-y-5">
+   468→   468→          {/* Detected domains */}
+   469→   469→          <div className="bg-muted/20 rounded-xl p-4">
+   470→   470→            <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+   471→   471→              <Globe className="h-3.5 w-3.5" />
+   472→   472→              النطاقات المُكتشفة تلقائياً من الإعدادات
+   473→   473→            </p>
+   474→   474→            <div className="flex flex-wrap gap-1.5">
+   475→   475→              {detectedDomains.length === 0 ? (
+   476→   476→                <span className="text-xs text-yellow-400">لا توجد نطاقات مُعدّة. اضبط النطاقات في تبويب الدومينات أولاً.</span>
+   477→   477→              ) : (
+   478→   478→                detectedDomains.map((d, i) => (
+   479→   479→                  <span key={i} className="chip chip-info" dir="ltr">
+   480→   480→                    {d}
+   481→   481→                  </span>
+   482→   482→                ))
+   483→   483→              )}
+   484→   484→            </div>
+   485→   485→          </div>
+   486→   486→
+   487→   487→          {/* Mode selection */}
+   488→   488→          {!mode && (
+   489→   489→            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+   490→   490→              <button
+   491→   491→                onClick={() => setMode("local")}
+   492→   492→                className="text-right p-5 rounded-xl border border-border/40 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all duration-200 group"
+   493→   493→              >
+   494→   494→                <div className="flex items-center gap-3 mb-3">
+   495→   495→                  <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20 transition-colors">
+   496→   496→                    <Rocket className="h-5 w-5" />
+   497→   497→                  </div>
+   498→   498→                  <div>
+   499→   499→                    <p className="font-semibold text-foreground">تنمية محلية</p>
+   500→   500→                    <p className="text-[11px] text-muted-foreground">Self-signed • RSA 2048</p>
+   501→   501→                  </div>
+   502→   502→                </div>
+   503→   503→                <ul className="text-xs text-muted-foreground space-y-1">
+   504→   504→                  <li className="flex items-center gap-1.5">
+   505→   505→                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+   506→   506→                    جاهز فوراً (5 ثوانٍ)
+   507→   507→                  </li>
+   508→   508→                  <li className="flex items-center gap-1.5">
+   509→   509→                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+   510→   510→                    صالحة لـ 365 يوم
+   511→   511→                  </li>
+   512→   512→                  <li className="flex items-center gap-1.5">
+   513→   513→                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+   514→   514→                    تعمل مع .local و localhost
+   515→   515→                  </li>
+   516→   516→                  <li className="flex items-center gap-1.5 text-yellow-400">
+   517→   517→                    <AlertTriangle className="h-3 w-3" />
+   518→   518→                    تحذير في المتصفح (يمكن تجاوزه)
+   519→   519→                  </li>
+   520→   520→                </ul>
+   521→   521→              </button>
+   522→   522→
+   523→   523→              <button
+   524→   524→                onClick={() => setMode("letsencrypt")}
+   525→   525→                className="text-right p-5 rounded-xl border border-border/40 hover:border-blue-500/40 hover:bg-blue-500/5 transition-all duration-200 group"
+   526→   526→              >
+   527→   527→                <div className="flex items-center gap-3 mb-3">
+   528→   528→                  <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors">
+   529→   529→                    <ShieldCheck className="h-5 w-5" />
+   530→   530→                  </div>
+   531→   531→                  <div>
+   532→   532→                    <p className="font-semibold text-foreground">Let's Encrypt</p>
+   533→   533→                    <p className="text-[11px] text-muted-foreground">إنتاجي • موثوق عالمياً</p>
+   534→   534→                  </div>
+   535→   535→                </div>
+   536→   536→                <ul className="text-xs text-muted-foreground space-y-1">
+   537→   537→                  <li className="flex items-center gap-1.5">
+   538→   538→                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+   539→   539→                    موثوق في جميع المتصفحات
+   540→   540→                  </li>
+   541→   541→                  <li className="flex items-center gap-1.5">
+   542→   542→                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+   543→   543→                    صالحة لـ 90 يوم + تجديد تلقائي
+   544→   544→                  </li>
+   545→   545→                  <li className="flex items-center gap-1.5">
+   546→   546→                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+   547→   547→                    مجاني تماماً
+   548→   548→                  </li>
+   549→   549→                  <li className="flex items-center gap-1.5 text-yellow-400">
+   550→   550→                    <AlertTriangle className="h-3 w-3" />
+   551→   551→                    يتطلب نطاقات حقيقية + Port 80
+   552→   552→                  </li>
+   553→   553→                </ul>
+   554→   554→              </button>
+   555→   555→            </div>
+   556→   556→          )}
+   557→   557→
+   558→   558→          {/* Mode-specific form */}
+   559→   559→          {mode === "local" && (
+   560→   560→            <div className="space-y-4 animate-fade-in">
+   561→   561→              {hasLocalDomain && (
+   562→   562→                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-start gap-2">
+   563→   563→                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+   564→   564→                  <p className="text-xs text-emerald-300">
+   565→   565→                    تم اكتشاف نطاقات محلية — هذا النوع مناسب لك. اضغط "توليد الآن" للمتابعة.
+   566→   566→                  </p>
+   567→   567→                </div>
+   568→   568→              )}
+   569→   569→              <div className="flex justify-end gap-2">
+   570→   570→                <button onClick={() => setMode(null)} className="btn-ghost text-sm">
+   571→   571→                  رجوع
+   572→   572→                </button>
+   573→   573→                <button onClick={() => onGenerate("local")} className="btn-primary gap-2">
+   574→   574→                  <Rocket className="h-4 w-4" />
+   575→   575→                  توليد الآن
+   576→   576→                </button>
+   577→   577→              </div>
+   578→   578→            </div>
+   579→   579→          )}
+   580→   580→
+   581→   581→          {mode === "letsencrypt" && (
+   582→   582→            <div className="space-y-4 animate-fade-in">
+   583→   583→              {hasLocalDomain && (
+   584→   584→                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex items-start gap-2">
+   585→   585→                  <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+   586→   586→                  <p className="text-xs text-red-300">
+   587→   587→                    تم اكتشاف نطاقات محلية (.local / localhost). Let's Encrypt لا يمكنه إصدار شهادات لها. استخدم "تنمية محلية" بدلاً من ذلك، أو عدّل النطاقات لتكون حقيقية.
+   588→   588→                  </p>
+   589→   589→                </div>
+   590→   590→              )}
+   591→   591→              <div>
+   592→   592→                <label className="block text-sm font-medium text-foreground mb-1.5">
+   593→   593→                  البريد الإلكتروني <span className="text-red-400">*</span>
+   594→   594→                </label>
+   595→   595→                <p className="text-xs text-muted-foreground mb-2">
+   596→   596→                  يُستخدم لتنبيهات انتهاء الشهادة من Let's Encrypt.
+   597→   597→                </p>
+   598→   598→                <input
+   599→   599→                  type="email"
+   600→   600→                  value={email}
+   601→   601→                  onChange={(e) => setEmail(e.target.value)}
+   602→   602→                  placeholder="admin@example.com"
+   603→   603→                  className="input-field"
+   604→   604→                  dir="ltr"
+   605→   605→                  required
+   606→   606→                />
+   607→   607→              </div>
+   608→   608→              <label className="flex items-start gap-2 cursor-pointer">
+   609→   609→                <input
+   610→   610→                  type="checkbox"
+   611→   611→                  checked={staging}
+   612→   612→                  onChange={(e) => setStaging(e.target.checked)}
+   613→   613→                  className="mt-0.5 w-4 h-4 rounded border-border accent-primary"
+   614→   614→                />
+   615→   615→                <div>
+   616→   616→                  <p className="text-sm font-medium text-foreground">استخدام بيئة الاختبار (Staging)</p>
+   617→   617→                  <p className="text-xs text-muted-foreground mt-0.5">
+   618→   618→                    يُصدر شهادة من بيئة اختبار Let's Encrypt (غير موثوقة في المتصفح). مفيد للاختبار بدون استهلاك حد المعدل.
+   619→   619→                  </p>
+   620→   620→                </div>
+   621→   621→              </label>
+   622→   622→              <div className="flex justify-end gap-2">
+   623→   623→                <button onClick={() => setMode(null)} className="btn-ghost text-sm">
+   624→   624→                  رجوع
+   625→   625→                </button>
+   626→   626→                <button
+   627→   627→                  onClick={() => onGenerate("letsencrypt", email, staging)}
+   628→   628→                  disabled={!email || hasLocalDomain}
+   629→   629→                  className="btn-primary gap-2 disabled:opacity-50"
+   630→   630→                >
+   631→   631→                  <ShieldCheck className="h-4 w-4" />
+   632→   632→                  إصدار شهادة Let's Encrypt
+   633→   633→                </button>
+   634→   634→              </div>
+   635→   635→            </div>
+   636→   636→          )}
+   637→   637→        </div>
+   638→   638→      </div>
+   639→   639→    </div>
+   640→   640→  );
+   641→   641→}
+   642→   642→
+   643→   643→// ═══════════════════════════════════════════════════════════════════
+   644→   644→// INSTALL MODAL
+   645→   645→// ═══════════════════════════════════════════════════════════════════
+   646→   646→
+   647→   647→function InstallModal({
+   648→   648→  onClose,
+   649→   649→  onInstall,
+   650→   650→}: {
+   651→   651→  onClose: () => void;
+   652→   652→  onInstall: (certPem: string, keyPem: string) => void;
+   653→   653→}) {
+   654→   654→  const [certPem, setCertPem] = useState("");
+   655→   655→  const [keyPem, setKeyPem] = useState("");
+   656→   656→  const [showValues, setShowValues] = useState(false);
+   657→   657→
+   658→   658→  const validPem = (s: string) => s.includes("-----BEGIN") && s.includes("-----END");
+   659→   659→
+   660→   660→  return (
+   661→   661→    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fade-in" onClick={onClose}>
+   662→   662→      <div
+   663→   663→        className="relative max-w-2xl w-full mx-4 glass-panel-strong rounded-2xl shadow-2xl animate-scale-in max-h-[90vh] overflow-y-auto"
+   664→   664→        onClick={(e) => e.stopPropagation()}
+   665→   665→      >
+   666→   666→        <div className="flex items-center justify-between p-5 border-b border-border/30 sticky top-0 bg-card/95 backdrop-blur-xl z-10">
+   667→   667→          <div className="flex items-center gap-3">
+   668→   668→            <div className="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center">
+   669→   669→              <Upload className="h-4 w-4 text-purple-400" />
+   670→   670→            </div>
+   671→   671→            <h3 className="text-lg font-bold">تثبيت شهادة موجودة</h3>
+   672→   672→          </div>
+   673→   673→          <div className="flex items-center gap-2">
+   674→   674→            <button
+   675→   675→              onClick={() => setShowValues((v) => !v)}
+   676→   676→              className="btn-ghost text-xs"
+   677→   677→              title={showValues ? "إخفاء" : "إظهار"}
+   678→   678→            >
+   679→   679→              {showValues ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+   680→   680→            </button>
+   681→   681→            <button onClick={onClose} className="p-2 rounded-lg hover:bg-muted/20 transition-colors">
+   682→   682→              <X className="h-5 w-5" />
+   683→   683→            </button>
+   684→   684→          </div>
+   685→   685→        </div>
+   686→   686→
+   687→   687→        <div className="p-5 space-y-4">
+   688→   688→          <div>
+   689→   689→            <label className="block text-sm font-medium text-foreground mb-1.5">
+   690→   690→              <FileText className="h-3.5 w-3.5 inline ml-1" />
+   691→   691→              الشهادة (Certificate PEM)
+   692→   692→            </label>
+   693→   693→            <p className="text-xs text-muted-foreground mb-2">
+   694→   694→              الصق محتوى الشهادة بصيغة PEM (يبدأ بـ <code className="bg-muted/30 px-1 rounded text-purple-300">-----BEGIN CERTIFICATE-----</code>).
+   695→   695→            </p>
+   696→   696→            <textarea
+   697→   697→              value={certPem}
+   698→   698→              onChange={(e) => setCertPem(e.target.value)}
+   699→   699→              placeholder={"-----BEGIN CERTIFICATE-----\nMIIFazCCBFOgAwIBAgISA2Q3N2Z4Q3p...\n-----END CERTIFICATE-----"}
+   700→   700→              rows={6}
+   701→   701→              className={`input-field font-mono text-xs ${showValues ? "" : "text-transparent bg-black/20"}`}
+   702→   702→              dir="ltr"
+   703→   703→              style={showValues ? {} : { WebkitTextSecurity: "disc" } as any}
+   704→   704→            />
+   705→   705→            {certPem && !validPem(certPem) && (
+   706→   706→              <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
+   707→   707→                <AlertTriangle className="h-3 w-3" />
+   708→   708→                صيغة PEM غير صحيحة
+   709→   709→              </p>
+   710→   710→            )}
+   711→   711→          </div>
+   712→   712→
+   713→   713→          <div>
+   714→   714→            <label className="block text-sm font-medium text-foreground mb-1.5">
+   715→   715→              <KeyRound className="h-3.5 w-3.5 inline ml-1" />
+   716→   716→              المفتاح الخاص (Private Key PEM)
+   717→   717→            </label>
+   718→   718→            <p className="text-xs text-muted-foreground mb-2">
+   719→   719→              الصق محتوى المفتاح بصيغة PEM (يبدأ بـ <code className="bg-muted/30 px-1 rounded text-purple-300">-----BEGIN PRIVATE KEY-----</code> أو <code className="bg-muted/30 px-1 rounded text-purple-300">RSA PRIVATE KEY</code>).
+   720→   720→            </p>
+   721→   721→            <textarea
+   722→   722→              value={keyPem}
+   723→   723→              onChange={(e) => setKeyPem(e.target.value)}
+   724→   724→              placeholder={"-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEF...\n-----END PRIVATE KEY-----"}
+   725→   725→              rows={6}
+   726→   726→              className={`input-field font-mono text-xs ${showValues ? "" : "text-transparent bg-black/20"}`}
+   727→   727→              dir="ltr"
+   728→   728→              style={showValues ? {} : { WebkitTextSecurity: "disc" } as any}
+   729→   729→            />
+   730→   730→            {keyPem && !validPem(keyPem) && (
+   731→   731→              <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
+   732→   732→                <AlertTriangle className="h-3 w-3" />
+   733→   733→                صيغة PEM غير صحيحة
+   734→   734→              </p>
+   735→   735→            )}
+   736→   736→          </div>
+   737→   737→
+   738→   738→          <div className="flex justify-end gap-2 pt-2 border-t border-border/30">
+   739→   739→            <button onClick={onClose} className="btn-ghost text-sm">
+   740→   740→              إلغاء
+   741→   741→            </button>
+   742→   742→            <button
+   743→   743→              onClick={() => onInstall(certPem, keyPem)}
+   744→   744→              disabled={!validPem(certPem) || !validPem(keyPem)}
+   745→   745→              className="btn-primary gap-2 disabled:opacity-50"
+   746→   746→            >
+   747→   747→              <Upload className="h-4 w-4" />
+   748→   748→              تثبيت الشهادة
+   749→   749→            </button>
+   750→   750→          </div>
+   751→   751→        </div>
+   752→   752→      </div>
+   753→   753→    </div>
+   754→   754→  );
+   755→   755→}
+   756→   756→
+   757→   757→// ═══════════════════════════════════════════════════════════════════
+   758→   758→// SHARED COMPONENTS
+   759→   759→// ═══════════════════════════════════════════════════════════════════
+   760→   760→
+   761→   761→function HealthBadge({ health, daysRemaining }: { health?: string; daysRemaining?: number }) {
+   762→   762→  if (health === "expired" || (daysRemaining !== undefined && daysRemaining < 0)) {
+   763→   763→    return (
+   764→   764→      <span className="chip chip-danger">
+   765→   765→        <XCircle className="h-3 w-3" />
+   766→   766→        منتهية الصلاحية
+   767→   767→      </span>
+   768→   768→    );
+   769→   769→  }
+   770→   770→  if (health === "critical" || (daysRemaining !== undefined && daysRemaining < 7)) {
+   771→   771→    return (
+   772→   772→      <span className="chip chip-danger">
+   773→   773→        <AlertTriangle className="h-3 w-3" />
+   774→   774→        حرجة ({daysRemaining} يوم)
+   775→   775→      </span>
+   776→   776→    );
+   777→   777→  }
+   778→   778→  if (health === "warning" || (daysRemaining !== undefined && daysRemaining < 30)) {
+   779→   779→    return (
+   780→   780→      <span className="chip chip-warning">
+   781→   781→        <Clock className="h-3 w-3" />
+   782→   782→        تنتهي قريباً ({daysRemaining} يوم)
+   783→   783→      </span>
+   784→   784→    );
+   785→   785→  }
+   786→   786→  return (
+   787→   787→    <span className="chip chip-success">
+   788→   788→      <CheckCircle2 className="h-3 w-3" />
+   789→   789→      سليمة
+   790→   790→    </span>
+   791→   791→  );
+   792→   792→}
+   793→   793→
+   794→   794→function DetailRow({
+   795→   795→  icon,
+   796→   796→  label,
+   797→   797→  value,
+   798→   798→  dir,
+   799→   799→  mono,
+   800→   800→  highlight,
+   801→   801→}: {
+   802→   802→  icon: React.ReactNode;
+   803→   803→  label: string;
+   804→   804→  value: string;
+   805→   805→  dir?: "rtl" | "ltr";
+   806→   806→  mono?: boolean;
+   807→   807→  highlight?: boolean;
+   808→   808→}) {
+   809→   809→  return (
+   810→   810→    <div className="bg-muted/20 rounded-lg p-3">
+   811→   811→      <div className="flex items-center gap-1.5 mb-1 text-muted-foreground">
+   812→   812→        {icon}
+   813→   813→        <span className="text-[11px] font-medium">{label}</span>
+   814→   814→      </div>
+   815→   815→      <p
+   816→   816→        className={`text-sm ${mono ? "font-mono" : ""} ${highlight ? "text-yellow-400" : "text-foreground"} truncate`}
+   817→   817→        dir={dir}
+   818→   818→        title={value}
+   819→   819→      >
+   820→   820→        {value}
+   821→   821→      </p>
+   822→   822→    </div>
+   823→   823→  );
+   824→   824→}
+   825→   825→
+   826→   826→function InfoCard({
+   827→   827→  icon,
+   828→   828→  title,
+   829→   829→  description,
+   830→   830→  color,
+   831→   831→  onClick,
+   832→   832→  disabled,
+   833→   833→}: {
+   834→   834→  icon: React.ReactNode;
+   835→   835→  title: string;
+   836→   836→  description: string;
+   837→   837→  color: "emerald" | "blue" | "purple";
+   838→   838→  onClick: () => void;
+   839→   839→  disabled?: boolean;
+   840→   840→}) {
+   841→   841→  const colorMap: Record<string, string> = {
+   842→   842→    emerald: "bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20",
+   843→   843→    blue: "bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20",
+   844→   844→    purple: "bg-purple-500/10 text-purple-400 group-hover:bg-purple-500/20",
+   845→   845→  };
+   846→   846→  return (
+   847→   847→    <button
+   848→   848→      onClick={onClick}
+   849→   849→      disabled={disabled}
+   850→   850→      className="preset-card text-right group disabled:opacity-50 disabled:cursor-not-allowed"
+   851→   851→    >
+   852→   852→      <div className="flex items-start gap-3">
+   853→   853→        <div className={`p-2 rounded-lg transition-colors ${colorMap[color]}`}>
+   854→   854→          {icon}
+   855→   855→        </div>
+   856→   856→        <div className="flex-1 min-w-0">
+   857→   857→          <p className="font-semibold text-sm text-foreground">{title}</p>
+   858→   858→          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
+   859→   859→        </div>
+   860→   860→      </div>
+   861→   861→    </button>
+   862→   862→  );
+   863→   863→}
+   864→   864→
+   865→   865→function getCertTypeLabel(type?: string): string {
+   866→   866→  switch (type) {
+   867→   867→    case "local":
+   868→   868→      return "تنمية محلية (Self-Signed)";
+   869→   869→    case "letsencrypt":
+   870→   870→      return "Let's Encrypt";
+   871→   871→    case "custom":
+   872→   872→      return "مخصصة (Custom Upload)";
+   873→   873→    default:
+   874→   874→      return "غير معروف";
+   875→   875→  }
+   876→   876→}
+   877→   877→

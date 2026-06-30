@@ -1,0 +1,702 @@
+     1→<script lang="ts">
+     2→  import { onMount } from 'svelte';
+     3→  import {
+     4→    Search,
+     5→    Filter,
+     6→    ArrowLeftRight,
+     7→    CheckCircle2,
+     8→    XCircle,
+     9→    Clock,
+    10→    Copy,
+    11→    Check,
+    12→    ChevronRight,
+    13→    ChevronLeft,
+    14→    AlertCircle,
+    15→    TrendingUp,
+    16→    TrendingDown,
+    17→    Hash,
+    18→    Wallet,
+    19→    BellRing,
+    20→    RefreshCw,
+    21→    Loader2
+    22→  } from 'lucide-svelte';
+    23→  import { authGet, authPut, API, getToken } from '$lib/api/client';
+    24→  import type { AdminTransaction } from '$lib/api/types';
+    25→  import { createAdminStream } from '$lib/api/types';
+    26→
+    27→  // ─── Types ───
+    28→  type StatusFilter = 'ALL' | 'PENDING' | 'COMPLETED' | 'REJECTED';
+    29→
+    30→  interface PaginationMeta {
+    31→    page: number;
+    32→    limit: number;
+    33→    total: number;
+    34→    totalPages: number;
+    35→  }
+    36→
+    37→  interface TransactionsResponse {
+    38→    success: boolean;
+    39→    data: AdminTransaction[];
+    40→    meta: PaginationMeta;
+    41→  }
+    42→
+    43→  // ─── State ───
+    44→  let transactions = $state<AdminTransaction[]>([]);
+    45→  let meta = $state<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 0 });
+    46→  let loading = $state(true);
+    47→  let error = $state<string | null>(null);
+    48→
+    49→  // Filters
+    50→  let searchQuery = $state('');
+    51→  let statusFilter = $state<StatusFilter>('ALL');
+    52→  let currentPage = $state(1);
+    53→  const limit = 20;
+    54→
+    55→  // Action state
+    56→  let approvingId = $state<number | null>(null);
+    57→  let rejectingId = $state<number | null>(null);
+    58→  let txIdInputs = $state<Record<number, string>>({});
+    59→  let actionError = $state<Record<number, string>>({});
+    60→
+    61→  // Copy feedback
+    62→  let copiedField = $state<string | null>(null);
+    63→
+    64→  // SSE live indicator
+    65→  let sseConnected = $state(false);
+    66→  let newTransactionCount = $state(0);
+    67→
+    68→  // Debounce timer
+    69→  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+    70→  let debouncedSearch = $state('');
+    71→
+    72→  // ─── Status config ───
+    73→  const statusConfig: Record<string, { label: string; pillClass: string; icon: typeof Clock }> = {
+    74→    PENDING: { label: 'معلق', pillClass: 'pill-gold', icon: Clock },
+    75→    COMPLETED: { label: 'مكتمل', pillClass: 'pill-mint', icon: CheckCircle2 },
+    76→    REJECTED: { label: 'مرفوض', pillClass: 'pill-rose', icon: XCircle }
+    77→  };
+    78→
+    79→  const filterOptions: { value: StatusFilter; label: string }[] = [
+    80→    { value: 'ALL', label: 'الكل' },
+    81→    { value: 'PENDING', label: 'معلق' },
+    82→    { value: 'COMPLETED', label: 'مكتمل' },
+    83→    { value: 'REJECTED', label: 'مرفوض' }
+    84→  ];
+    85→
+    86→  // ─── Derived ───
+    87→  let stats = $derived({
+    88→    pending: transactions.filter((t) => t.status === 'PENDING').length,
+    89→    completed: transactions.filter((t) => t.status === 'COMPLETED').length,
+    90→    rejected: transactions.filter((t) => t.status === 'REJECTED').length
+    91→  });
+    92→
+    93→  let pages = $derived.by(() => {
+    94→    const arr: number[] = [];
+    95→    const start = Math.max(1, currentPage - 2);
+    96→    const end = Math.min(meta.totalPages, currentPage + 2);
+    97→    for (let i = start; i <= end; i++) arr.push(i);
+    98→    return arr;
+    99→  });
+   100→
+   101→  // ─── Helpers ───
+   102→  function formatDate(iso: string): string {
+   103→    const d = new Date(iso);
+   104→    return d.toLocaleDateString('ar-EG', {
+   105→      year: 'numeric',
+   106→      month: 'short',
+   107→      day: 'numeric',
+   108→      hour: '2-digit',
+   109→      minute: '2-digit'
+   110→    });
+   111→  }
+   112→
+   113→  function formatAmount(n: number): string {
+   114→    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+   115→  }
+   116→
+   117→  function truncateMiddle(str: string, maxLen: number = 16): string {
+   118→    if (!str || str.length <= maxLen) return str || '—';
+   119→    const half = Math.floor(maxLen / 2);
+   120→    return str.slice(0, half) + '...' + str.slice(-half);
+   121→  }
+   122→
+   123→  async function copyToClipboard(text: string, fieldId: string) {
+   124→    if (!text) return;
+   125→    try {
+   126→      await navigator.clipboard.writeText(text);
+   127→      copiedField = fieldId;
+   128→      setTimeout(() => {
+   129→        copiedField = null;
+   130→      }, 2000);
+   131→    } catch {
+   132→      // fallback
+   133→      const ta = document.createElement('textarea');
+   134→      ta.value = text;
+   135→      document.body.appendChild(ta);
+   136→      ta.select();
+   137→      document.execCommand('copy');
+   138→      document.body.removeChild(ta);
+   139→      copiedField = fieldId;
+   140→      setTimeout(() => {
+   141→        copiedField = null;
+   142→      }, 2000);
+   143→    }
+   144→  }
+   145→
+   146→  // ─── Fetch ───
+   147→  async function fetchTransactions() {
+   148→    loading = true;
+   149→    error = null;
+   150→    try {
+   151→      const params = new URLSearchParams({
+   152→        page: String(currentPage),
+   153→        limit: String(limit)
+   154→      });
+   155→      if (debouncedSearch) params.set('search', debouncedSearch);
+   156→      if (statusFilter !== 'ALL') params.set('status', statusFilter);
+   157→
+   158→      const res = await authGet(`/api/v1/admin/transactions?${params}`);
+   159→      if (!res.ok) throw new Error('فشل تحميل المعاملات');
+   160→      const json: TransactionsResponse = await res.json();
+   161→      if (json.success) {
+   162→        transactions = json.data;
+   163→        meta = json.meta;
+   164→      }
+   165→    } catch (e: any) {
+   166→      error = e.message;
+   167→    } finally {
+   168→      loading = false;
+   169→    }
+   170→  }
+   171→
+   172→  // ─── Actions ───
+   173→  async function approveTransaction(id: number) {
+   174→    const txId = txIdInputs[id]?.trim();
+   175→    if (!txId) {
+   176→      actionError[id] = 'يرجى إدخال معرف المعاملة (TxID)';
+   177→      return;
+   178→    }
+   179→    approvingId = id;
+   180→    actionError[id] = '';
+   181→    try {
+   182→      const res = await authPut(`/api/v1/admin/transactions/${id}/review`, {
+   183→        action: 'approve',
+   184→        tx_id: txId
+   185→      });
+   186→      if (!res.ok) {
+   187→        const body = await res.json().catch(() => ({}));
+   188→        throw new Error(body.message || 'فشل قبول المعاملة');
+   189→      }
+   190→      // Update local state optimistically
+   191→      transactions = transactions.map((t) =>
+   192→        t.id === id ? { ...t, status: 'COMPLETED', tx_id: txId } : t
+   193→      );
+   194→      delete txIdInputs[id];
+   195→    } catch (e: any) {
+   196→      actionError[id] = e.message;
+   197→    } finally {
+   198→      approvingId = null;
+   199→    }
+   200→  }
+   201→
+   202→  async function rejectTransaction(id: number) {
+   203→    rejectingId = id;
+   204→    actionError[id] = '';
+   205→    try {
+   206→      const res = await authPut(`/api/v1/admin/transactions/${id}/review`, {
+   207→        action: 'reject'
+   208→      });
+   209→      if (!res.ok) {
+   210→        const body = await res.json().catch(() => ({}));
+   211→        throw new Error(body.message || 'فشل رفض المعاملة');
+   212→      }
+   213→      transactions = transactions.map((t) =>
+   214→        t.id === id ? { ...t, status: 'REJECTED' } : t
+   215→      );
+   216→    } catch (e: any) {
+   217→      actionError[id] = e.message;
+   218→    } finally {
+   219→      rejectingId = null;
+   220→    }
+   221→  }
+   222→
+   223→  // ─── Filter handlers ───
+   224→  function handleSearchInput() {
+   225→    if (searchTimer) clearTimeout(searchTimer);
+   226→    searchTimer = setTimeout(() => {
+   227→      debouncedSearch = searchQuery;
+   228→      currentPage = 1;
+   229→      fetchTransactions();
+   230→    }, 400);
+   231→  }
+   232→
+   233→  function handleStatusChange(status: StatusFilter) {
+   234→    statusFilter = status;
+   235→    currentPage = 1;
+   236→    fetchTransactions();
+   237→  }
+   238→
+   239→  function goToPage(page: number) {
+   240→    if (page < 1 || page > meta.totalPages || page === currentPage) return;
+   241→    currentPage = page;
+   242→    fetchTransactions();
+   243→  }
+   244→
+   245→  // ─── SSE ───
+   246→  function connectSSE() {
+   247→    const es = createAdminStream(['transaction']);
+   248→    if (!es) return null;
+   249→
+   250→    es.onopen = () => {
+   251→      sseConnected = true;
+   252→    };
+   253→
+   254→    es.addEventListener('transaction', () => {
+   255→      newTransactionCount++;
+   256→    });
+   257→
+   258→    es.onerror = () => {
+   259→      sseConnected = false;
+   260→      setTimeout(() => {
+   261→        es.close();
+   262→        connectSSE();
+   263→      }, 5000);
+   264→    };
+   265→
+   266→    return es;
+   267→  }
+   268→
+   269→  function refreshWithNew() {
+   270→    newTransactionCount = 0;
+   271→    fetchTransactions();
+   272→  }
+   273→
+   274→  // ─── Lifecycle ───
+   275→  let eventSource: EventSource | null = $state(null);
+   276→
+   277→  onMount(() => {
+   278→    fetchTransactions();
+   279→    eventSource = connectSSE();
+   280→
+   281→    return () => {
+   282→      eventSource?.close();
+   283→    };
+   284→  });
+   285→</script>
+   286→
+   287→<!-- ─── Page Content ─── -->
+   288→<div class="relative z-10 space-y-6">
+   289→
+   290→  <!-- ─── Header ─── -->
+   291→  <div class="flex items-center justify-between flex-wrap gap-4">
+   292→    <div>
+   293→      <h1 class="text-2xl lg:text-3xl font-extrabold text-gold-gradient">المعاملات</h1>
+   294→      <p class="text-sm mt-1" style="color: var(--text-tertiary);">إدارة الإيداعات والسحوبات</p>
+   295→    </div>
+   296→
+   297→    <div class="flex items-center gap-3">
+   298→      {#if sseConnected}
+   299→        <span class="pill-mint">
+   300→          <span class="relative flex h-2 w-2">
+   301→            <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style="background: #22d3a4;"></span>
+   302→            <span class="relative inline-flex rounded-full h-2 w-2" style="background: #22d3a4;"></span>
+   303→          </span>
+   304→          مباشر
+   305→        </span>
+   306→      {:else}
+   307→        <span class="pill-rose">
+   308→          <span class="inline-flex rounded-full h-2 w-2" style="background: #f43f7a;"></span>
+   309→          غير متصل
+   310→        </span>
+   311→      {/if}
+   312→
+   313→      {#if newTransactionCount > 0}
+   314→        <button
+   315→          class="pill-gold flex items-center gap-2 cursor-pointer animate-pulse-glow"
+   316→          onclick={refreshWithNew}
+   317→        >
+   318→          <BellRing size={14} />
+   319→          <span>{newTransactionCount} معاملة جديدة</span>
+   320→          <RefreshCw size={12} />
+   321→        </button>
+   322→      {/if}
+   323→    </div>
+   324→  </div>
+   325→
+   326→  <!-- ─── Error Banner ─── -->
+   327→  {#if error}
+   328→    <div class="panel p-4 flex items-center gap-3" style="border-color: rgba(244,63,122,0.3);">
+   329→      <AlertCircle size={20} style="color: #f43f7a;" />
+   330→      <p class="text-sm" style="color: #f43f7a;">{error}</p>
+   331→      <button class="btn-ghost mr-auto" onclick={() => fetchTransactions()}>
+   332→        <RefreshCw size={14} />
+   333→      </button>
+   334→    </div>
+   335→  {/if}
+   336→
+   337→  <!-- ─── Stats Row ─── -->
+   338→  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   339→    <div class="stat-card flex items-center gap-4">
+   340→      <div class="flex items-center justify-center w-11 h-11 rounded-xl" style="background: rgba(245,181,68,0.12);">
+   341→        <Clock size={20} style="color: #f5b544;" />
+   342→      </div>
+   343→      <div>
+   344→        <p class="text-xs font-medium" style="color: var(--text-tertiary);">معلق</p>
+   345→        <p class="text-2xl font-bold font-mono" style="color: #f5b544;">{stats.pending}</p>
+   346→      </div>
+   347→    </div>
+   348→
+   349→    <div class="stat-card flex items-center gap-4">
+   350→      <div class="flex items-center justify-center w-11 h-11 rounded-xl" style="background: rgba(34,211,164,0.12);">
+   351→        <CheckCircle2 size={20} style="color: #22d3a4;" />
+   352→      </div>
+   353→      <div>
+   354→        <p class="text-xs font-medium" style="color: var(--text-tertiary);">مكتمل</p>
+   355→        <p class="text-2xl font-bold font-mono" style="color: #22d3a4;">{stats.completed}</p>
+   356→      </div>
+   357→    </div>
+   358→
+   359→    <div class="stat-card flex items-center gap-4">
+   360→      <div class="flex items-center justify-center w-11 h-11 rounded-xl" style="background: rgba(244,63,122,0.12);">
+   361→        <XCircle size={20} style="color: #f43f7a;" />
+   362→      </div>
+   363→      <div>
+   364→        <p class="text-xs font-medium" style="color: var(--text-tertiary);">مرفوض</p>
+   365→        <p class="text-2xl font-bold font-mono" style="color: #f43f7a;">{stats.rejected}</p>
+   366→      </div>
+   367→    </div>
+   368→  </div>
+   369→
+   370→  <!-- ─── Filters ─── -->
+   371→  <div class="panel p-4">
+   372→    <div class="flex flex-col sm:flex-row gap-3">
+   373→      <!-- Search -->
+   374→      <div class="relative flex-1">
+   375→        <Search size={18} class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style="color: var(--text-quaternary);" />
+   376→        <input
+   377→          type="text"
+   378→          class="input-field pr-10"
+   379→          placeholder="بحث باسم المستخدم، البريد، أو العملة..."
+   380→          bind:value={searchQuery}
+   381→          oninput={handleSearchInput}
+   382→        />
+   383→      </div>
+   384→
+   385→      <!-- Status Filter -->
+   386→      <div class="flex items-center gap-1.5 flex-wrap">
+   387→        <Filter size={16} style="color: var(--text-quaternary);" class="shrink-0" />
+   388→        {#each filterOptions as opt}
+   389→          <button
+   390→            class="px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+   391→            class:ring-1={statusFilter === opt.value}
+   392→            style={statusFilter === opt.value
+   393→              ? 'background: rgba(245,181,68,0.12); color: #f5b544; ring-color: rgba(245,181,68,0.3);'
+   394→              : 'background: rgba(255,255,255,0.04); color: var(--text-secondary);'}
+   395→            onclick={() => handleStatusChange(opt.value)}
+   396→          >
+   397→            {opt.label}
+   398→          </button>
+   399→        {/each}
+   400→      </div>
+   401→    </div>
+   402→  </div>
+   403→
+   404→  <!-- ─── Data Table ─── -->
+   405→  <div class="panel overflow-hidden">
+   406→    <div class="overflow-x-auto scrollbar-none">
+   407→      <table class="w-full text-sm">
+   408→        <thead>
+   409→          <tr style="color: var(--text-tertiary); background: rgba(255,255,255,0.02);" class="text-xs">
+   410→            <th class="text-right py-3.5 px-4 font-medium">المستخدم</th>
+   411→            <th class="text-right py-3.5 px-4 font-medium">النوع</th>
+   412→            <th class="text-right py-3.5 px-4 font-medium">العملة</th>
+   413→            <th class="text-right py-3.5 px-4 font-medium">المبلغ</th>
+   414→            <th class="text-right py-3.5 px-4 font-medium">الحالة</th>
+   415→            <th class="text-right py-3.5 px-4 font-medium hidden lg:table-cell">العنوان</th>
+   416→            <th class="text-right py-3.5 px-4 font-medium hidden xl:table-cell">TxID</th>
+   417→            <th class="text-right py-3.5 px-4 font-medium">الإجراءات</th>
+   418→          </tr>
+   419→        </thead>
+   420→
+   421→        <tbody>
+   422→          {#if loading}
+   423→            <!-- Skeleton rows -->
+   424→            {#each Array(8) as _, i}
+   425→              <tr class="border-t" style="border-color: var(--border-subtle);">
+   426→                <td class="py-3.5 px-4" colspan="8">
+   427→                  <div class="flex items-center gap-4">
+   428→                    <div class="animate-shimmer h-8 w-8 rounded-full" style="background: rgba(255,255,255,0.06);"></div>
+   429→                    <div class="flex-1 space-y-2">
+   430→                      <div class="animate-shimmer h-3 w-1/4 rounded" style="background: rgba(255,255,255,0.06);"></div>
+   431→                      <div class="animate-shimmer h-3 w-1/6 rounded" style="background: rgba(255,255,255,0.04);"></div>
+   432→                    </div>
+   433→                  </div>
+   434→                </td>
+   435→              </tr>
+   436→            {/each}
+   437→          {:else if transactions.length === 0}
+   438→            <tr>
+   439→              <td colspan="8" class="py-16 text-center">
+   440→                <ArrowLeftRight size={48} class="mx-auto mb-4 opacity-20" style="color: var(--text-quaternary);" />
+   441→                <p class="text-sm font-medium" style="color: var(--text-quaternary);">لا توجد معاملات</p>
+   442→                <p class="text-xs mt-1" style="color: var(--text-quaternary);">قم بتغيير عوامل التصفية أو انتظر معاملات جديدة</p>
+   443→              </td>
+   444→            </tr>
+   445→          {:else}
+   446→            {#each transactions as tx (tx.id)}
+   447→              {@const cfg = statusConfig[tx.status] ?? statusConfig.PENDING}
+   448→              {@const isPending = tx.status === 'PENDING'}
+   449→              {@const isActing = approvingId === tx.id || rejectingId === tx.id}
+   450→              <tr
+   451→                class="border-t transition-colors hover:bg-white/[0.02]"
+   452→                style="border-color: var(--border-subtle);"
+   453→              >
+   454→                <!-- المستخدم -->
+   455→                <td class="py-3.5 px-4">
+   456→                  <div class="flex items-center gap-2.5">
+   457→                    <div
+   458→                      class="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold shrink-0"
+   459→                      style="background: rgba(168,85,247,0.12); color: #a855f7;"
+   460→                    >
+   461→                      {tx.username?.charAt(0)?.toUpperCase() || '?'}
+   462→                    </div>
+   463→                    <div class="min-w-0">
+   464→                      <p class="font-medium truncate max-w-[130px]">{tx.username || '—'}</p>
+   465→                      <p class="text-xs truncate max-w-[130px]" style="color: var(--text-quaternary);">{tx.email || '—'}</p>
+   466→                    </div>
+   467→                  </div>
+   468→                </td>
+   469→
+   470→                <!-- النوع -->
+   471→                <td class="py-3.5 px-4">
+   472→                  {#if tx.type === 'deposit'}
+   473→                    <span class="pill-mint">
+   474→                      <TrendingUp size={12} />
+   475→                      إيداع
+   476→                    </span>
+   477→                  {:else}
+   478→                    <span class="pill-rose">
+   479→                      <TrendingDown size={12} />
+   480→                      سحب
+   481→                    </span>
+   482→                  {/if}
+   483→                </td>
+   484→
+   485→                <!-- العملة -->
+   486→                <td class="py-3.5 px-4">
+   487→                  <span class="font-mono font-semibold text-xs" style="color: var(--accent-cyan);">
+   488→                    {tx.currency?.toUpperCase() || '—'}
+   489→                  </span>
+   490→                </td>
+   491→
+   492→                <!-- المبلغ -->
+   493→                <td class="py-3.5 px-4">
+   494→                  <span class="font-mono font-semibold tabular-nums">
+   495→                    {formatAmount(tx.amount)}
+   496→                  </span>
+   497→                </td>
+   498→
+   499→                <!-- الحالة -->
+   500→                <td class="py-3.5 px-4">
+   501→                  <span class={cfg.pillClass}>
+   502→                    <cfg.icon size={12} />
+   503→                    {cfg.label}
+   504→                  </span>
+   505→                </td>
+   506→
+   507→                <!-- العنوان -->
+   508→                <td class="py-3.5 px-4 hidden lg:table-cell">
+   509→                  {#if tx.address}
+   510→                    <div class="flex items-center gap-1.5">
+   511→                      <span
+   512→                        class="font-mono text-xs truncate max-w-[140px] cursor-pointer hover:underline"
+   513→                        style="color: var(--text-secondary);"
+   514→                        title={tx.address}
+   515→                        onclick={() => copyToClipboard(tx.address, `addr-${tx.id}`)}
+   516→                      >
+   517→                        {truncateMiddle(tx.address)}
+   518→                      </span>
+   519→                      <button
+   520→                        class="shrink-0 p-1 rounded transition-colors hover:bg-white/5 cursor-pointer"
+   521→                        onclick={() => copyToClipboard(tx.address, `addr-${tx.id}`)}
+   522→                        title="نسخ العنوان"
+   523→                      >
+   524→                        {#if copiedField === `addr-${tx.id}`}
+   525→                          <Check size={12} style="color: #22d3a4;" />
+   526→                        {:else}
+   527→                          <Copy size={12} style="color: var(--text-quaternary);" />
+   528→                        {/if}
+   529→                      </button>
+   530→                    </div>
+   531→                  {:else}
+   532→                    <span style="color: var(--text-quaternary);">—</span>
+   533→                  {/if}
+   534→                </td>
+   535→
+   536→                <!-- TxID -->
+   537→                <td class="py-3.5 px-4 hidden xl:table-cell">
+   538→                  {#if tx.tx_id}
+   539→                    <div class="flex items-center gap-1.5">
+   540→                      <span
+   541→                        class="font-mono text-xs truncate max-w-[140px] cursor-pointer hover:underline"
+   542→                        style="color: var(--text-secondary);"
+   543→                        title={tx.tx_id}
+   544→                        onclick={() => copyToClipboard(tx.tx_id, `txid-${tx.id}`)}
+   545→                      >
+   546→                        {truncateMiddle(tx.tx_id)}
+   547→                      </span>
+   548→                      <button
+   549→                        class="shrink-0 p-1 rounded transition-colors hover:bg-white/5 cursor-pointer"
+   550→                        onclick={() => copyToClipboard(tx.tx_id, `txid-${tx.id}`)}
+   551→                        title="نسخ TxID"
+   552→                      >
+   553→                        {#if copiedField === `txid-${tx.id}`}
+   554→                          <Check size={12} style="color: #22d3a4;" />
+   555→                        {:else}
+   556→                          <Copy size={12} style="color: var(--text-quaternary);" />
+   557→                        {/if}
+   558→                      </button>
+   559→                    </div>
+   560→                  {:else}
+   561→                    <span style="color: var(--text-quaternary);">—</span>
+   562→                  {/if}
+   563→                </td>
+   564→
+   565→                <!-- الإجراءات -->
+   566→                <td class="py-3.5 px-4">
+   567→                  {#if isPending}
+   568→                    <div class="space-y-2 min-w-[200px]">
+   569→                      <!-- Inline TxID input for approve -->
+   570→                      <div class="flex items-center gap-2">
+   571→                        <div class="relative flex-1">
+   572→                          <Hash size={12} class="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style="color: var(--text-quaternary);" />
+   573→                          <input
+   574→                            type="text"
+   575→                            class="w-full px-3 py-1.5 pr-8 rounded-lg text-xs font-mono outline-none transition-all"
+   576→                            style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--text-primary);"
+   577→                            placeholder="أدخل TxID..."
+   578→                            bind:value={txIdInputs[tx.id]}
+   579→                            onfocus={(e) => {
+   580→                              (e.target as HTMLInputElement).style.borderColor = 'rgba(245,181,68,0.5)';
+   581→                              (e.target as HTMLInputElement).style.boxShadow = '0 0 0 3px rgba(245,181,68,0.1)';
+   582→                            }}
+   583→                            onblur={(e) => {
+   584→                              (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.08)';
+   585→                              (e.target as HTMLInputElement).style.boxShadow = 'none';
+   586→                            }}
+   587→                          />
+   588→                        </div>
+   589→                        <button
+   590→                          class="btn-buy px-3 py-1.5 text-xs flex items-center gap-1 shrink-0"
+   591→                          onclick={() => approveTransaction(tx.id)}
+   592→                          disabled={isActing}
+   593→                        >
+   594→                          {#if approvingId === tx.id}
+   595→                            <Loader2 size={12} class="animate-spin" />
+   596→                          {:else}
+   597→                            <CheckCircle2 size={12} />
+   598→                          {/if}
+   599→                          قبول
+   600→                        </button>
+   601→                      </div>
+   602→
+   603→                      <!-- Reject button -->
+   604→                      <div class="flex items-center gap-2">
+   605→                        <button
+   606→                          class="btn-danger px-3 py-1.5 text-xs flex items-center gap-1"
+   607→                          onclick={() => rejectTransaction(tx.id)}
+   608→                          disabled={isActing}
+   609→                        >
+   610→                          {#if rejectingId === tx.id}
+   611→                            <Loader2 size={12} class="animate-spin" />
+   612→                          {:else}
+   613→                            <XCircle size={12} />
+   614→                          {/if}
+   615→                          رفض
+   616→                        </button>
+   617→
+   618→                        {#if actionError[tx.id]}
+   619→                          <span class="text-xs" style="color: #f43f7a;">{actionError[tx.id]}</span>
+   620→                        {/if}
+   621→                      </div>
+   622→                    </div>
+   623→                  {:else}
+   624→                    <span class="text-xs" style="color: var(--text-quaternary);">—</span>
+   625→                  {/if}
+   626→                </td>
+   627→              </tr>
+   628→            {/each}
+   629→          {/if}
+   630→        </tbody>
+   631→      </table>
+   632→    </div>
+   633→
+   634→    <!-- ─── Pagination ─── -->
+   635→    {#if !loading && meta.totalPages > 1}
+   636→      <div class="glass-divider"></div>
+   637→      <div class="flex items-center justify-between px-4 py-3">
+   638→        <p class="text-xs" style="color: var(--text-quaternary);">
+   639→          عرض {((currentPage - 1) * limit) + 1}–{Math.min(currentPage * limit, meta.total)} من {meta.total}
+   640→        </p>
+   641→
+   642→        <div class="flex items-center gap-1">
+   643→          <button
+   644→            class="p-1.5 rounded-lg transition-colors cursor-pointer hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+   645→            onclick={() => goToPage(currentPage - 1)}
+   646→            disabled={currentPage <= 1}
+   647→          >
+   648→            <ChevronRight size={16} style="color: var(--text-secondary);" />
+   649→          </button>
+   650→
+   651→          {#if pages[0] > 1}
+   652→            <button
+   653→              class="w-8 h-8 rounded-lg text-xs font-medium transition-colors cursor-pointer hover:bg-white/5"
+   654→              style="color: var(--text-secondary);"
+   655→              onclick={() => goToPage(1)}
+   656→            >
+   657→              1
+   658→            </button>
+   659→            {#if pages[0] > 2}
+   660→              <span class="w-8 text-center text-xs" style="color: var(--text-quaternary);">...</span>
+   661→            {/if}
+   662→          {/if}
+   663→
+   664→          {#each pages as p}
+   665→            <button
+   666→              class="w-8 h-8 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+   667→              style={p === currentPage
+   668→                ? 'background: rgba(245,181,68,0.15); color: #f5b544;'
+   669→                : 'color: var(--text-secondary);'}
+   670→              onclick={() => goToPage(p)}
+   671→              class:hover:bg-white/5={p !== currentPage}
+   672→            >
+   673→              {p}
+   674→            </button>
+   675→          {/each}
+   676→
+   677→          {#if pages[pages.length - 1] < meta.totalPages}
+   678→            {#if pages[pages.length - 1] < meta.totalPages - 1}
+   679→              <span class="w-8 text-center text-xs" style="color: var(--text-quaternary);">...</span>
+   680→            {/if}
+   681→            <button
+   682→              class="w-8 h-8 rounded-lg text-xs font-medium transition-colors cursor-pointer hover:bg-white/5"
+   683→              style="color: var(--text-secondary);"
+   684→              onclick={() => goToPage(meta.totalPages)}
+   685→            >
+   686→              {meta.totalPages}
+   687→            </button>
+   688→          {/if}
+   689→
+   690→          <button
+   691→            class="p-1.5 rounded-lg transition-colors cursor-pointer hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+   692→            onclick={() => goToPage(currentPage + 1)}
+   693→            disabled={currentPage >= meta.totalPages}
+   694→          >
+   695→            <ChevronLeft size={16} style="color: var(--text-secondary);" />
+   696→          </button>
+   697→        </div>
+   698→      </div>
+   699→    {/if}
+   700→  </div>
+   701→</div>
+   702→
