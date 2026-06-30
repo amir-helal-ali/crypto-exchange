@@ -1,0 +1,983 @@
+     1→<script lang="ts">
+     2→  import { onMount } from 'svelte';
+     3→  import {
+     4→    Megaphone,
+     5→    Plus,
+     6→    Search,
+     7→    Pencil,
+     8→    Trash2,
+     9→    ToggleLeft,
+    10→    ToggleRight,
+    11→    Loader2,
+    12→    AlertCircle,
+    13→    X,
+    14→    ImagePlus,
+    15→    Link,
+    16→    Sparkles,
+    17→    ArrowUpDown,
+    18→    Eye,
+    19→    EyeOff,
+    20→    Upload,
+    21→    ExternalLink,
+    22→    MousePointerClick,
+    23→    LayoutGrid,
+    24→    LayoutList,
+    25→    Hash
+    26→  } from 'lucide-svelte';
+    27→  import { authGet, authPost, authPut, authDelete, authUpload, API } from '$lib/api/client';
+    28→  import type { Ad } from '$lib/api/types';
+    29→
+    30→  // ─── Types ───
+    31→  type Position = 'hero' | 'section' | 'bottom' | 'floating';
+    32→
+    33→  interface AdFormData {
+    34→    title: string;
+    35→    image_url: string;
+    36→    position: Position;
+    37→    sort_order: number;
+    38→    link: string;
+    39→    button_text: string;
+    40→    button_link: string;
+    41→    active: boolean;
+    42→  }
+    43→
+    44→  const emptyForm: AdFormData = {
+    45→    title: '',
+    46→    image_url: '',
+    47→    position: 'hero',
+    48→    sort_order: 0,
+    49→    link: '',
+    50→    button_text: '',
+    51→    button_link: '',
+    52→    active: true
+    53→  };
+    54→
+    55→  // ─── Position labels & colors ───
+    56→  const positionConfig: Record<Position, { label: string; pillClass: string; color: string; bg: string }> = {
+    57→    hero: { label: 'رئيسي', pillClass: 'pill-gold', color: '#f5b544', bg: 'rgba(245,181,68,0.12)' },
+    58→    section: { label: 'قسم', pillClass: 'pill-azure', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+    59→    bottom: { label: 'سفلي', pillClass: 'pill-mint', color: '#22d3a4', bg: 'rgba(34,211,164,0.12)' },
+    60→    floating: { label: 'عائم', pillClass: 'pill-violet', color: '#a855f7', bg: 'rgba(168,85,247,0.12)' }
+    61→  };
+    62→
+    63→  const positions: Position[] = ['hero', 'section', 'bottom', 'floating'];
+    64→
+    65→  // ─── State ───
+    66→  let ads = $state<Ad[]>([]);
+    67→  let loading = $state(true);
+    68→  let error = $state<string | null>(null);
+    69→  let searchQuery = $state('');
+    70→  let positionFilter = $state<string>('');
+    71→
+    72→  // ─── Modal state ───
+    73→  let modalOpen = $state(false);
+    74→  let editingAd = $state<Ad | null>(null);
+    75→  let form = $state<AdFormData>({ ...emptyForm });
+    76→  let formLoading = $state(false);
+    77→  let formError = $state<string | null>(null);
+    78→
+    79→  // ─── Image upload state ───
+    80→  let imageUploadLoading = $state(false);
+    81→  let imageUploadError = $state<string | null>(null);
+    82→  let imageSourceTab = $state<'upload' | 'url'>('upload');
+    83→  let imageFileInput: HTMLInputElement | undefined = $state();
+    84→
+    85→  // ─── AI suggestion state ───
+    86→  let suggestLoading = $state(false);
+    87→  let suggestTopic = $state('');
+    88→  let suggestError = $state<string | null>(null);
+    89→
+    90→  // ─── Delete confirmation ───
+    91→  let deleteDialogOpen = $state(false);
+    92→  let deleteTarget = $state<Ad | null>(null);
+    93→  let deleteLoading = $state(false);
+    94→
+    95→  // ─── Toggle loading ───
+    96→  let togglingIds = $state<Set<number>>(new Set());
+    97→
+    98→  // ─── Stats ───
+    99→  let totalCount = $derived(ads.length);
+   100→  let activeCount = $derived(ads.filter(a => a.active).length);
+   101→  let inactiveCount = $derived(ads.filter(a => !a.active).length);
+   102→
+   103→  // ─── Filtered ads ───
+   104→  let filteredAds = $derived(() => {
+   105→    let result = ads;
+   106→    if (positionFilter) {
+   107→      result = result.filter(a => a.position === positionFilter);
+   108→    }
+   109→    if (searchQuery.trim()) {
+   110→      const q = searchQuery.trim().toLowerCase();
+   111→      result = result.filter(a =>
+   112→        a.title.toLowerCase().includes(q) ||
+   113→        a.position.toLowerCase().includes(q) ||
+   114→        a.link.toLowerCase().includes(q)
+   115→      );
+   116→    }
+   117→    return result.sort((a, b) => a.sort_order - b.sort_order);
+   118→  });
+   119→
+   120→  // ─── Stat cards config ───
+   121→  const statCards = $derived([
+   122→    {
+   123→      label: 'إجمالي الإعلانات',
+   124→      count: totalCount,
+   125→      icon: Megaphone,
+   126→      iconBg: 'rgba(245,181,68,0.12)',
+   127→      iconColor: '#f5b544'
+   128→    },
+   129→    {
+   130→      label: 'نشط',
+   131→      count: activeCount,
+   132→      icon: ToggleRight,
+   133→      iconBg: 'rgba(34,211,164,0.12)',
+   134→      iconColor: '#22d3a4'
+   135→    },
+   136→    {
+   137→      label: 'غير نشط',
+   138→      count: inactiveCount,
+   139→      icon: ToggleLeft,
+   140→      iconBg: 'rgba(244,63,122,0.12)',
+   141→      iconColor: '#f43f7a'
+   142→    }
+   143→  ]);
+   144→
+   145→  // ─── Fetch ads ───
+   146→  async function fetchAds() {
+   147→    loading = true;
+   148→    error = null;
+   149→    try {
+   150→      const res = await authGet('/api/v1/admin/ads');
+   151→      if (!res.ok) throw new Error('فشل تحميل الإعلانات');
+   152→      const json = await res.json();
+   153→      ads = json.data || json;
+   154→    } catch (e: any) {
+   155→      error = e.message;
+   156→    } finally {
+   157→      loading = false;
+   158→    }
+   159→  }
+   160→
+   161→  // ─── Open create modal ───
+   162→  function openCreateModal() {
+   163→    editingAd = null;
+   164→    form = { ...emptyForm };
+   165→    formError = null;
+   166→    imageUploadError = null;
+   167→    imageSourceTab = 'upload';
+   168→    suggestTopic = '';
+   169→    suggestError = null;
+   170→    modalOpen = true;
+   171→  }
+   172→
+   173→  // ─── Open edit modal ───
+   174→  function openEditModal(ad: Ad) {
+   175→    editingAd = ad;
+   176→    form = {
+   177→      title: ad.title,
+   178→      image_url: ad.image_url,
+   179→      position: ad.position as Position,
+   180→      sort_order: ad.sort_order,
+   181→      link: ad.link,
+   182→      button_text: ad.button_text,
+   183→      button_link: ad.button_link,
+   184→      active: ad.active
+   185→    };
+   186→    formError = null;
+   187→    imageUploadError = null;
+   188→    imageSourceTab = ad.image_url ? 'url' : 'upload';
+   189→    suggestTopic = '';
+   190→    suggestError = null;
+   191→    modalOpen = true;
+   192→  }
+   193→
+   194→  // ─── Close modal ───
+   195→  function closeModal() {
+   196→    modalOpen = false;
+   197→    editingAd = null;
+   198→    form = { ...emptyForm };
+   199→    formError = null;
+   200→  }
+   201→
+   202→  // ─── Handle image file upload ───
+   203→  async function handleImageUpload(files: FileList | null) {
+   204→    if (!files || files.length === 0) return;
+   205→    const file = files[0];
+   206→
+   207→    // Max 5MB
+   208→    if (file.size > 5 * 1024 * 1024) {
+   209→      imageUploadError = 'حجم الصورة يتجاوز 5 ميجابايت';
+   210→      return;
+   211→    }
+   212→
+   213→    imageUploadLoading = true;
+   214→    imageUploadError = null;
+   215→    try {
+   216→      const fd = new FormData();
+   217→      fd.append('image', file);
+   218→      const res = await authUpload('/api/v1/admin/ads/upload', fd);
+   219→      if (!res.ok) {
+   220→        const errJson = await res.json().catch(() => null);
+   221→        throw new Error(errJson?.message || 'فشل رفع الصورة');
+   222→      }
+   223→      const json = await res.json();
+   224→      form.image_url = json.data?.url || json.url || json.data?.image_url || '';
+   225→    } catch (e: any) {
+   226→      imageUploadError = e.message;
+   227→    } finally {
+   228→      imageUploadLoading = false;
+   229→    }
+   230→  }
+   231→
+   232→  // ─── AI suggestion ───
+   233→  async function getAISuggestion() {
+   234→    if (!suggestTopic.trim()) return;
+   235→    suggestLoading = true;
+   236→    suggestError = null;
+   237→    try {
+   238→      const res = await authPost('/api/v1/admin/ads/suggest', {
+   239→        topic: suggestTopic.trim(),
+   240→        position: form.position
+   241→      });
+   242→      if (!res.ok) {
+   243→        const errJson = await res.json().catch(() => null);
+   244→        throw new Error(errJson?.message || 'فشل اقتراح المحتوى');
+   245→      }
+   246→      const json = await res.json();
+   247→      const suggestion = json.data || json;
+   248→      if (suggestion.title) form.title = suggestion.title;
+   249→      if (suggestion.button_text) form.button_text = suggestion.button_text;
+   250→      if (suggestion.link) form.link = suggestion.link;
+   251→      if (suggestion.button_link) form.button_link = suggestion.button_link;
+   252→    } catch (e: any) {
+   253→      suggestError = e.message;
+   254→    } finally {
+   255→      suggestLoading = false;
+   256→    }
+   257→  }
+   258→
+   259→  // ─── Submit form (create or update) ───
+   260→  async function submitForm() {
+   261→    if (!form.title.trim()) {
+   262→      formError = 'عنوان الإعلان مطلوب';
+   263→      return;
+   264→    }
+   265→    formLoading = true;
+   266→    formError = null;
+   267→    try {
+   268→      const payload = {
+   269→        title: form.title.trim(),
+   270→        image_url: form.image_url.trim(),
+   271→        position: form.position,
+   272→        sort_order: form.sort_order,
+   273→        link: form.link.trim(),
+   274→        button_text: form.button_text.trim(),
+   275→        button_link: form.button_link.trim(),
+   276→        active: form.active
+   277→      };
+   278→
+   279→      let res: Response;
+   280→      if (editingAd) {
+   281→        res = await authPut(`/api/v1/admin/ads/${editingAd.id}`, payload);
+   282→      } else {
+   283→        res = await authPost('/api/v1/admin/ads', payload);
+   284→      }
+   285→
+   286→      if (!res.ok) {
+   287→        const errJson = await res.json().catch(() => null);
+   288→        throw new Error(errJson?.message || 'فشل حفظ الإعلان');
+   289→      }
+   290→
+   291→      await fetchAds();
+   292→      closeModal();
+   293→    } catch (e: any) {
+   294→      formError = e.message;
+   295→    } finally {
+   296→      formLoading = false;
+   297→    }
+   298→  }
+   299→
+   300→  // ─── Toggle active ───
+   301→  async function toggleActive(ad: Ad) {
+   302→    togglingIds = new Set([...togglingIds, ad.id]);
+   303→    try {
+   304→      const res = await authPut(`/api/v1/admin/ads/${ad.id}`, { active: !ad.active });
+   305→      if (!res.ok) throw new Error('فشل تغيير حالة الإعلان');
+   306→      ads = ads.map(a => a.id === ad.id ? { ...a, active: !a.active } : a);
+   307→    } catch (e: any) {
+   308→      error = e.message;
+   309→    } finally {
+   310→      togglingIds = new Set([...togglingIds].filter(id => id !== ad.id));
+   311→    }
+   312→  }
+   313→
+   314→  // ─── Delete ───
+   315→  function openDeleteDialog(ad: Ad) {
+   316→    deleteTarget = ad;
+   317→    deleteDialogOpen = true;
+   318→  }
+   319→
+   320→  async function confirmDelete() {
+   321→    if (!deleteTarget) return;
+   322→    deleteLoading = true;
+   323→    try {
+   324→      const res = await authDelete(`/api/v1/admin/ads/${deleteTarget.id}`);
+   325→      if (!res.ok) throw new Error('فشل حذف الإعلان');
+   326→      ads = ads.filter(a => a.id !== deleteTarget!.id);
+   327→      deleteDialogOpen = false;
+   328→      deleteTarget = null;
+   329→    } catch (e: any) {
+   330→      error = e.message;
+   331→    } finally {
+   332→      deleteLoading = false;
+   333→    }
+   334→  }
+   335→
+   336→  // ─── Lifecycle ───
+   337→  onMount(() => {
+   338→    fetchAds();
+   339→  });
+   340→</script>
+   341→
+   342→<!-- ─── Create / Edit Modal ─── -->
+   343→{#if modalOpen}
+   344→  <div
+   345→    class="fixed inset-0 z-[100] flex items-center justify-center p-4"
+   346→    onkeydown={(e) => e.key === 'Escape' && closeModal()}
+   347→  >
+   348→    <!-- Backdrop -->
+   349→    <div
+   350→      class="absolute inset-0 bg-black/80 backdrop-blur-md"
+   351→      onclick={closeModal}
+   352→      role="presentation"
+   353→    ></div>
+   354→
+   355→    <!-- Modal content -->
+   356→    <div class="relative z-10 w-full max-w-2xl max-h-[90vh] panel overflow-hidden flex flex-col">
+   357→      <!-- Header -->
+   358→      <div class="flex items-center justify-between p-5 border-b" style="border-color: var(--border-subtle);">
+   359→        <div class="flex items-center gap-3">
+   360→          <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(245,181,68,0.12);">
+   361→            <Megaphone size={20} style="color: #f5b544;" />
+   362→          </div>
+   363→          <div>
+   364→            <h3 class="font-bold">{editingAd ? 'تعديل الإعلان' : 'إنشاء إعلان جديد'}</h3>
+   365→            <p class="text-xs mt-0.5" style="color: var(--text-tertiary);">
+   366→              {editingAd ? 'تعديل بيانات الإعلان' : 'إضافة إعلان جديد للمنصة'}
+   367→            </p>
+   368→          </div>
+   369→        </div>
+   370→        <button
+   371→          class="btn-ghost rounded-lg p-2"
+   372→          onclick={closeModal}
+   373→          aria-label="إغلاق"
+   374→        >
+   375→          <X size={20} />
+   376→        </button>
+   377→      </div>
+   378→
+   379→      <!-- Body -->
+   380→      <div class="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-none">
+   381→        <!-- Form error -->
+   382→        {#if formError}
+   383→          <div class="p-3 rounded-xl flex items-center gap-2" style="background: rgba(244,63,122,0.06); border: 1px solid rgba(244,63,122,0.12);">
+   384→            <AlertCircle size={16} style="color: #f43f7a;" />
+   385→            <p class="text-xs" style="color: #f43f7a;">{formError}</p>
+   386→          </div>
+   387→        {/if}
+   388→
+   389→        <!-- AI Suggestion Section -->
+   390→        <div class="p-4 rounded-xl" style="background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.12);">
+   391→          <div class="flex items-center gap-2 mb-3">
+   392→            <Sparkles size={16} style="color: #a855f7;" />
+   393→            <span class="text-sm font-semibold" style="color: #a855f7;">اقتراح ذكي بالذكاء الاصطناعي</span>
+   394→          </div>
+   395→          <div class="flex gap-2">
+   396→            <input
+   397→              type="text"
+   398→              class="input-field flex-1 text-xs"
+   399→              placeholder="أدخل الموضوع للاقتراح (مثلاً: عرض تداول جديد)..."
+   400→              bind:value={suggestTopic}
+   401→              dir="rtl"
+   402→            />
+   403→            <button
+   404→              class="px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+   405→              style="background: linear-gradient(135deg, #a855f7, #7c3aed); color: #fff;"
+   406→              onclick={getAISuggestion}
+   407→              disabled={suggestLoading || !suggestTopic.trim()}
+   408→            >
+   409→              {#if suggestLoading}
+   410→                <Loader2 size={14} class="animate-spin" />
+   411→              {:else}
+   412→                <Sparkles size={14} />
+   413→              {/if}
+   414→              اقتراح
+   415→            </button>
+   416→          </div>
+   417→          {#if suggestError}
+   418→            <p class="text-xs mt-2" style="color: #f43f7a;">{suggestError}</p>
+   419→          {/if}
+   420→        </div>
+   421→
+   422→        <!-- Title -->
+   423→        <div>
+   424→          <label class="block text-xs font-medium mb-2" style="color: var(--text-secondary);">
+   425→            عنوان الإعلان <span style="color: #f43f7a;">*</span>
+   426→          </label>
+   427→          <input
+   428→            type="text"
+   429→            class="input-field"
+   430→            placeholder="أدخل عنوان الإعلان..."
+   431→            bind:value={form.title}
+   432→            dir="rtl"
+   433→          />
+   434→        </div>
+   435→
+   436→        <!-- Image -->
+   437→        <div>
+   438→          <label class="block text-xs font-medium mb-2" style="color: var(--text-secondary);">
+   439→            صورة الإعلان
+   440→          </label>
+   441→          <!-- Tabs -->
+   442→          <div class="flex gap-1 p-1 rounded-xl mb-3" style="background: rgba(255,255,255,0.04);">
+   443→            <button
+   444→              class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer"
+   445→              style={imageSourceTab === 'upload'
+   446→                ? 'background: rgba(245,181,68,0.12); color: #f5b544;'
+   447→                : 'color: var(--text-tertiary);'}
+   448→              onclick={() => (imageSourceTab = 'upload')}
+   449→            >
+   450→              <Upload size={13} />
+   451→              رفع ملف
+   452→            </button>
+   453→            <button
+   454→              class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer"
+   455→              style={imageSourceTab === 'url'
+   456→                ? 'background: rgba(245,181,68,0.12); color: #f5b544;'
+   457→                : 'color: var(--text-tertiary);'}
+   458→              onclick={() => (imageSourceTab = 'url')}
+   459→            >
+   460→              <Link size={13} />
+   461→              رابط URL
+   462→            </button>
+   463→          </div>
+   464→
+   465→          {#if imageSourceTab === 'upload'}
+   466→            <div
+   467→              class="relative flex flex-col items-center justify-center p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all"
+   468→              style="border-color: var(--border-subtle); background: rgba(255,255,255,0.02);"
+   469→              onclick={() => imageFileInput?.click()}
+   470→              onkeydown={(e) => e.key === 'Enter' && imageFileInput?.click()}
+   471→              role="button"
+   472→              tabindex="0"
+   473→            >
+   474→              {#if imageUploadLoading}
+   475→                <Loader2 size={24} class="animate-spin mb-2" style="color: var(--text-quaternary);" />
+   476→                <p class="text-xs" style="color: var(--text-tertiary);">جارٍ الرفع...</p>
+   477→              {:else if form.image_url}
+   478→                <img
+   479→                  src={form.image_url}
+   480→                  alt="معاينة"
+   481→                  class="w-full max-h-40 object-contain rounded-lg mb-2"
+   482→                />
+   483→                <p class="text-xs" style="color: var(--accent-mint);">تم الرفع بنجاح — انقر لاستبدال</p>
+   484→              {:else}
+   485→                <ImagePlus size={28} class="mb-2" style="color: var(--text-quaternary);" />
+   486→                <p class="text-xs" style="color: var(--text-tertiary);">انقر لرفع صورة</p>
+   487→                <p class="text-xs mt-1" style="color: var(--text-quaternary);">الحد الأقصى 5 ميجابايت</p>
+   488→              {/if}
+   489→              <input
+   490→                type="file"
+   491→                accept="image/*"
+   492→                class="hidden"
+   493→                bind:this={imageFileInput}
+   494→                onchange={(e) => handleImageUpload((e.target as HTMLInputElement).files)}
+   495→              />
+   496→            </div>
+   497→            {#if imageUploadError}
+   498→              <p class="text-xs mt-2" style="color: #f43f7a;">{imageUploadError}</p>
+   499→            {/if}
+   500→          {:else}
+   501→            <input
+   502→              type="text"
+   503→              class="input-field"
+   504→              placeholder="https://example.com/image.jpg"
+   505→              bind:value={form.image_url}
+   506→              dir="ltr"
+   507→            />
+   508→            {#if form.image_url && imageSourceTab === 'url'}
+   509→              <div class="mt-2 rounded-xl overflow-hidden border" style="border-color: var(--border-subtle);">
+   510→                <img
+   511→                  src={form.image_url}
+   512→                  alt="معاينة"
+   513→                  class="w-full max-h-40 object-contain"
+   514→                  style="background: rgba(255,255,255,0.02);"
+   515→                  onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+   516→                />
+   517→              </div>
+   518→            {/if}
+   519→          {/if}
+   520→        </div>
+   521→
+   522→        <!-- Position & Sort Order -->
+   523→        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   524→          <div>
+   525→            <label class="block text-xs font-medium mb-2" style="color: var(--text-secondary);">
+   526→              الموضع
+   527→            </label>
+   528→            <div class="grid grid-cols-2 gap-2">
+   529→              {#each positions as pos}
+   530→                {@const cfg = positionConfig[pos]}
+   531→                <button
+   532→                  class="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer border"
+   533→                  style={form.position === pos
+   534→                    ? `background: ${cfg.bg}; border-color: ${cfg.color}; color: ${cfg.color};`
+   535→                    : 'background: rgba(255,255,255,0.03); border-color: var(--border-subtle); color: var(--text-tertiary);'}
+   536→                  onclick={() => (form.position = pos)}
+   537→                >
+   538→                  {cfg.label}
+   539→                </button>
+   540→              {/each}
+   541→            </div>
+   542→          </div>
+   543→
+   544→          <div>
+   545→            <label class="block text-xs font-medium mb-2" style="color: var(--text-secondary);">
+   546→              ترتيب الفرز
+   547→            </label>
+   548→            <input
+   549→              type="number"
+   550→              class="input-field"
+   551→              placeholder="0"
+   552→              bind:value={form.sort_order}
+   553→              min="0"
+   554→              dir="ltr"
+   555→            />
+   556→            <p class="text-xs mt-1" style="color: var(--text-quaternary);">الأرقام الأقل تظهر أولاً</p>
+   557→          </div>
+   558→        </div>
+   559→
+   560→        <!-- Link -->
+   561→        <div>
+   562→          <label class="block text-xs font-medium mb-2" style="color: var(--text-secondary);">
+   563→            رابط الإعلان
+   564→          </label>
+   565→          <input
+   566→            type="text"
+   567→            class="input-field"
+   568→            placeholder="https://example.com/promo"
+   569→            bind:value={form.link}
+   570→            dir="ltr"
+   571→          />
+   572→        </div>
+   573→
+   574→        <!-- Button text & link -->
+   575→        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   576→          <div>
+   577→            <label class="block text-xs font-medium mb-2" style="color: var(--text-secondary);">
+   578→              نص الزر
+   579→            </label>
+   580→            <input
+   581→              type="text"
+   582→              class="input-field"
+   583→              placeholder="تداول الآن"
+   584→              bind:value={form.button_text}
+   585→              dir="rtl"
+   586→            />
+   587→          </div>
+   588→          <div>
+   589→            <label class="block text-xs font-medium mb-2" style="color: var(--text-secondary);">
+   590→              رابط الزر
+   591→            </label>
+   592→            <input
+   593→              type="text"
+   594→              class="input-field"
+   595→              placeholder="https://example.com/action"
+   596→              bind:value={form.button_link}
+   597→              dir="ltr"
+   598→            />
+   599→          </div>
+   600→        </div>
+   601→
+   602→        <!-- Active toggle -->
+   603→        <div class="flex items-center justify-between p-4 rounded-xl" style="background: rgba(255,255,255,0.03);">
+   604→          <div class="flex items-center gap-3">
+   605→            {#if form.active}
+   606→              <ToggleRight size={22} style="color: #22d3a4;" />
+   607→            {:else}
+   608→              <ToggleLeft size={22} style="color: var(--text-quaternary);" />
+   609→            {/if}
+   610→            <div>
+   611→              <p class="text-sm font-medium">حالة الإعلان</p>
+   612→              <p class="text-xs" style="color: var(--text-tertiary);">
+   613→                {form.active ? 'الإعلان نشط ومرئي للمستخدمين' : 'الإعلان غير نشط ومخفي'}
+   614→              </p>
+   615→            </div>
+   616→          </div>
+   617→          <button
+   618→            class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer shrink-0"
+   619→            style="background: {form.active ? '#22d3a4' : 'rgba(255,255,255,0.12)'};"
+   620→            onclick={() => (form.active = !form.active)}
+   621→            role="switch"
+   622→            aria-checked={form.active}
+   623→          >
+   624→            <span
+   625→              class="inline-block h-5 w-5 rounded-full bg-white transition-transform shadow-md"
+   626→              style="transform: translateX({form.active ? '22px' : '3px'});"
+   627→            ></span>
+   628→          </button>
+   629→        </div>
+   630→      </div>
+   631→
+   632→      <!-- Footer -->
+   633→      <div class="flex items-center justify-end gap-3 p-5 border-t" style="border-color: var(--border-subtle);">
+   634→        <button
+   635→          class="btn-secondary"
+   636→          onclick={closeModal}
+   637→          disabled={formLoading}
+   638→        >
+   639→          إلغاء
+   640→        </button>
+   641→        <button
+   642→          class="btn-primary flex items-center gap-2"
+   643→          onclick={submitForm}
+   644→          disabled={formLoading}
+   645→        >
+   646→          {#if formLoading}
+   647→            <Loader2 size={16} class="animate-spin" />
+   648→          {:else}
+   649→            <Megaphone size={16} />
+   650→          {/if}
+   651→          {editingAd ? 'حفظ التعديلات' : 'إنشاء الإعلان'}
+   652→        </button>
+   653→      </div>
+   654→    </div>
+   655→  </div>
+   656→{/if}
+   657→
+   658→<!-- ─── Delete Confirmation Dialog ─── -->
+   659→{#if deleteDialogOpen}
+   660→  <div
+   661→    class="fixed inset-0 z-[100] flex items-center justify-center p-4"
+   662→    onkeydown={(e) => e.key === 'Escape' && (deleteDialogOpen = false)}
+   663→  >
+   664→    <!-- Backdrop -->
+   665→    <div
+   666→      class="absolute inset-0 bg-black/80 backdrop-blur-md"
+   667→      onclick={() => (deleteDialogOpen = false)}
+   668→      role="presentation"
+   669→    ></div>
+   670→
+   671→    <!-- Dialog -->
+   672→    <div class="relative z-10 w-full max-w-md panel p-6 space-y-5">
+   673→      <div class="flex items-center justify-between">
+   674→        <div class="flex items-center gap-3">
+   675→          <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(239,68,68,0.12);">
+   676→            <Trash2 size={20} style="color: #ef4444;" />
+   677→          </div>
+   678→          <div>
+   679→            <h3 class="font-bold">حذف الإعلان</h3>
+   680→            <p class="text-xs mt-0.5" style="color: var(--text-tertiary);">هذا الإجراء لا يمكن التراجع عنه</p>
+   681→          </div>
+   682→        </div>
+   683→        <button
+   684→          class="btn-ghost rounded-lg p-1.5"
+   685→          onclick={() => (deleteDialogOpen = false)}
+   686→          aria-label="إغلاق"
+   687→        >
+   688→          <X size={18} />
+   689→        </button>
+   690→      </div>
+   691→
+   692→      {#if deleteTarget}
+   693→        <div class="p-4 rounded-xl" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle);">
+   694→          <div class="flex items-center gap-3">
+   695→            {#if deleteTarget.image_url}
+   696→              <img
+   697→                src={deleteTarget.image_url}
+   698→                alt={deleteTarget.title}
+   699→                class="w-12 h-12 rounded-lg object-cover"
+   700→                onerror={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
+   701→              />
+   702→            {:else}
+   703→              <div class="flex items-center justify-center w-12 h-12 rounded-lg" style="background: rgba(255,255,255,0.05);">
+   704→                <Megaphone size={20} style="color: var(--text-quaternary);" />
+   705→              </div>
+   706→            {/if}
+   707→            <div class="min-w-0">
+   708→              <p class="font-semibold text-sm truncate">{deleteTarget.title}</p>
+   709→              <p class="text-xs" style="color: var(--text-tertiary);">
+   710→                {positionConfig[deleteTarget.position as Position]?.label || deleteTarget.position} · ترتيب {deleteTarget.sort_order}
+   711→              </p>
+   712→            </div>
+   713→          </div>
+   714→        </div>
+   715→      {/if}
+   716→
+   717→      <div class="flex items-center gap-3 justify-end">
+   718→        <button
+   719→          class="btn-secondary"
+   720→          onclick={() => (deleteDialogOpen = false)}
+   721→          disabled={deleteLoading}
+   722→        >
+   723→          إلغاء
+   724→        </button>
+   725→        <button
+   726→          class="btn-danger flex items-center gap-2"
+   727→          onclick={confirmDelete}
+   728→          disabled={deleteLoading}
+   729→        >
+   730→          {#if deleteLoading}
+   731→            <Loader2 size={16} class="animate-spin" />
+   732→          {:else}
+   733→            <Trash2 size={16} />
+   734→          {/if}
+   735→          حذف نهائي
+   736→        </button>
+   737→      </div>
+   738→    </div>
+   739→  </div>
+   740→{/if}
+   741→
+   742→<!-- ─── Main Content ─── -->
+   743→<div class="space-y-6">
+   744→  <!-- Header -->
+   745→  <div class="flex items-center justify-between flex-wrap gap-4">
+   746→    <div>
+   747→      <h1 class="text-2xl lg:text-3xl font-extrabold text-gold-gradient">إدارة الإعلانات</h1>
+   748→      <p class="text-sm mt-1" style="color: var(--text-tertiary);">إنشاء وإدارة الإعلانات المعروضة على المنصة</p>
+   749→    </div>
+   750→    <button class="btn-primary flex items-center gap-2" onclick={openCreateModal}>
+   751→      <Plus size={18} />
+   752→      إعلان جديد
+   753→    </button>
+   754→  </div>
+   755→
+   756→  <!-- Error Banner -->
+   757→  {#if error}
+   758→    <div class="panel p-4 flex items-center gap-3" style="border-color: rgba(244,63,122,0.3);">
+   759→      <AlertCircle size={20} style="color: #f43f7a;" />
+   760→      <p class="text-sm" style="color: #f43f7a;">{error}</p>
+   761→      <button class="mr-auto btn-ghost text-xs" onclick={() => (error = null)}>إغلاق</button>
+   762→    </div>
+   763→  {/if}
+   764→
+   765→  <!-- Stats Cards -->
+   766→  <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+   767→    {#each statCards as card}
+   768→      <div class="stat-card group">
+   769→        <div class="flex items-center justify-between">
+   770→          <div class="space-y-1">
+   771→            <p class="text-xs font-medium" style="color: var(--text-tertiary);">{card.label}</p>
+   772→            <p class="text-3xl font-bold font-mono tabular-nums" style="color: {card.iconColor};">
+   773→              {card.count.toLocaleString('ar-EG')}
+   774→            </p>
+   775→          </div>
+   776→          <div
+   777→            class="flex items-center justify-center w-12 h-12 rounded-xl transition-transform duration-300 group-hover:scale-110"
+   778→            style="background: {card.iconBg};"
+   779→          >
+   780→            <card.icon size={22} style="color: {card.iconColor};" />
+   781→          </div>
+   782→        </div>
+   783→      </div>
+   784→    {/each}
+   785→  </div>
+   786→
+   787→  <!-- Search & Filter Bar -->
+   788→  <div class="panel p-4">
+   789→    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+   790→      <!-- Search -->
+   791→      <div class="relative flex-1">
+   792→        <Search
+   793→          size={18}
+   794→          class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+   795→          style="color: var(--text-quaternary);"
+   796→        />
+   797→        <input
+   798→          type="text"
+   799→          class="input-field pr-10"
+   800→          placeholder="بحث بالعنوان أو الرابط..."
+   801→          bind:value={searchQuery}
+   802→          dir="rtl"
+   803→        />
+   804→      </div>
+   805→
+   806→      <!-- Position Filter -->
+   807→      <div class="flex items-center gap-2 flex-wrap">
+   808→        <button
+   809→          class="px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer border"
+   810→          style={!positionFilter
+   811→            ? 'background: rgba(245,181,68,0.12); border-color: #f5b544; color: #f5b544;'
+   812→            : 'background: rgba(255,255,255,0.03); border-color: var(--border-subtle); color: var(--text-tertiary);'}
+   813→          onclick={() => (positionFilter = '')}
+   814→        >
+   815→          الكل
+   816→        </button>
+   817→        {#each positions as pos}
+   818→          {@const cfg = positionConfig[pos]}
+   819→          <button
+   820→            class="px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer border"
+   821→            style={positionFilter === pos
+   822→              ? `background: ${cfg.bg}; border-color: ${cfg.color}; color: ${cfg.color};`
+   823→              : 'background: rgba(255,255,255,0.03); border-color: var(--border-subtle); color: var(--text-tertiary);'}
+   824→            onclick={() => (positionFilter = positionFilter === pos ? '' : pos)}
+   825→          >
+   826→            {cfg.label}
+   827→          </button>
+   828→        {/each}
+   829→      </div>
+   830→    </div>
+   831→  </div>
+   832→
+   833→  <!-- Ads Grid -->
+   834→  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+   835→    {#if loading}
+   836→      <!-- Skeleton -->
+   837→      {#each Array(6) as _}
+   838→        <div class="panel overflow-hidden">
+   839→          <div class="animate-shimmer h-40 w-full" style="background: rgba(255,255,255,0.04);"></div>
+   840→          <div class="p-4 space-y-3">
+   841→            <div class="flex items-center justify-between">
+   842→              <div class="animate-shimmer h-4 w-32 rounded" style="background: rgba(255,255,255,0.06);"></div>
+   843→              <div class="animate-shimmer h-6 w-16 rounded-full" style="background: rgba(255,255,255,0.06);"></div>
+   844→            </div>
+   845→            <div class="animate-shimmer h-3 w-20 rounded" style="background: rgba(255,255,255,0.04);"></div>
+   846→            <div class="flex gap-2 justify-end">
+   847→              <div class="animate-shimmer h-8 w-8 rounded-lg" style="background: rgba(255,255,255,0.06);"></div>
+   848→              <div class="animate-shimmer h-8 w-8 rounded-lg" style="background: rgba(255,255,255,0.06);"></div>
+   849→            </div>
+   850→          </div>
+   851→        </div>
+   852→      {/each}
+   853→    {:else if filteredAds().length === 0}
+   854→      <!-- Empty state -->
+   855→      <div class="col-span-full panel p-16 text-center">
+   856→        <Megaphone size={48} class="mx-auto mb-4 opacity-20" style="color: var(--text-quaternary);" />
+   857→        <p class="text-lg font-bold" style="color: var(--text-secondary);">لا توجد إعلانات</p>
+   858→        <p class="text-sm mt-1" style="color: var(--text-quaternary);">
+   859→          {positionFilter || searchQuery ? 'جرّب تغيير عوامل التصفية' : 'أنشئ إعلانك الأول بالنقر على الزر أعلاه'}
+   860→        </p>
+   861→        <button
+   862→          class="btn-primary mt-5 inline-flex items-center gap-2"
+   863→          onclick={openCreateModal}
+   864→        >
+   865→          <Plus size={16} />
+   866→          إعلان جديد
+   867→        </button>
+   868→      </div>
+   869→    {:else}
+   870→      {#each filteredAds() as ad (ad.id)}
+   871→        {@const cfg = positionConfig[ad.position as Position] || positionConfig.hero}
+   872→        {@const isToggling = togglingIds.has(ad.id)}
+   873→
+   874→        <div class="panel overflow-hidden transition-all duration-300 hover:border-white/[0.12] group">
+   875→          <!-- Image Preview -->
+   876→          <div class="relative h-40 overflow-hidden" style="background: rgba(255,255,255,0.03);">
+   877→            {#if ad.image_url}
+   878→              <img
+   879→                src={ad.image_url}
+   880→                alt={ad.title}
+   881→                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+   882→                onerror={(e) => {
+   883→                  (e.target as HTMLImageElement).style.display = 'none';
+   884→                }}
+   885→              />
+   886→            {:else}
+   887→              <div class="flex items-center justify-center h-full">
+   888→                <ImagePlus size={36} style="color: var(--text-quaternary);" />
+   889→              </div>
+   890→            {/if}
+   891→
+   892→            <!-- Position badge overlay -->
+   893→            <div class="absolute top-3 right-3">
+   894→              <span class={cfg.pillClass}>
+   895→                {cfg.label}
+   896→              </span>
+   897→            </div>
+   898→
+   899→            <!-- Active/Inactive overlay indicator -->
+   900→            {#if !ad.active}
+   901→              <div class="absolute inset-0 flex items-center justify-center" style="background: rgba(4,6,15,0.6);">
+   902→                <span class="pill-rose">
+   903→                  <EyeOff size={12} />
+   904→                  غير نشط
+   905→                </span>
+   906→              </div>
+   907→            {/if}
+   908→          </div>
+   909→
+   910→          <!-- Card body -->
+   911→          <div class="p-4 space-y-3">
+   912→            <!-- Title + Sort order -->
+   913→            <div class="flex items-start justify-between gap-2">
+   914→              <h3 class="font-bold text-sm truncate min-w-0">{ad.title}</h3>
+   915→              <div class="flex items-center gap-1 shrink-0" style="color: var(--text-quaternary);">
+   916→                <ArrowUpDown size={12} />
+   917→                <span class="text-xs font-mono">{ad.sort_order}</span>
+   918→              </div>
+   919→            </div>
+   920→
+   921→            <!-- Link preview -->
+   922→            {#if ad.link}
+   923→              <div class="flex items-center gap-1.5 min-w-0">
+   924→                <ExternalLink size={12} class="shrink-0" style="color: var(--text-quaternary);" />
+   925→                <span class="text-xs truncate" style="color: var(--text-tertiary);" dir="ltr">{ad.link}</span>
+   926→              </div>
+   927→            {/if}
+   928→
+   929→            <!-- Button text -->
+   930→            {#if ad.button_text}
+   931→              <div class="flex items-center gap-1.5">
+   932→                <MousePointerClick size={12} style="color: var(--text-quaternary);" />
+   933→                <span class="text-xs" style="color: var(--text-tertiary);">{ad.button_text}</span>
+   934→              </div>
+   935→            {/if}
+   936→
+   937→            <!-- Actions row -->
+   938→            <div class="flex items-center justify-between pt-2 border-t" style="border-color: var(--border-subtle);">
+   939→              <!-- Active toggle -->
+   940→              <button
+   941→                class="btn-ghost flex items-center gap-1.5 text-xs"
+   942→                onclick={() => toggleActive(ad)}
+   943→                disabled={isToggling}
+   944→              >
+   945→                {#if isToggling}
+   946→                  <Loader2 size={14} class="animate-spin" />
+   947→                {:else if ad.active}
+   948→                  <ToggleRight size={16} style="color: #22d3a4;" />
+   949→                  <span style="color: #22d3a4;">نشط</span>
+   950→                {:else}
+   951→                  <ToggleLeft size={16} style="color: var(--text-quaternary);" />
+   952→                  <span style="color: var(--text-quaternary);">معطل</span>
+   953→                {/if}
+   954→              </button>
+   955→
+   956→              <!-- Edit & Delete -->
+   957→              <div class="flex items-center gap-1">
+   958→                <button
+   959→                  class="btn-ghost p-2 rounded-lg"
+   960→                  onclick={() => openEditModal(ad)}
+   961→                  aria-label="تعديل"
+   962→                  title="تعديل"
+   963→                >
+   964→                  <Pencil size={15} />
+   965→                </button>
+   966→                <button
+   967→                  class="btn-ghost p-2 rounded-lg"
+   968→                  style="color: #f43f7a;"
+   969→                  onclick={() => openDeleteDialog(ad)}
+   970→                  aria-label="حذف"
+   971→                  title="حذف"
+   972→                >
+   973→                  <Trash2 size={15} />
+   974→                </button>
+   975→              </div>
+   976→            </div>
+   977→          </div>
+   978→        </div>
+   979→      {/each}
+   980→    {/if}
+   981→  </div>
+   982→</div>
+   983→
