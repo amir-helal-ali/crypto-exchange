@@ -16,7 +16,6 @@
   import Toaster from '$lib/components/Toaster.svelte';
   import ChangeBadge from '$lib/components/ChangeBadge.svelte';
   import BottomNav from '$lib/components/BottomNav.svelte';
-  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import {
     LayoutDashboard,
@@ -51,7 +50,8 @@
     Grid2x2,
     FlaskConical,
     Copy,
-    Bot
+    Bot,
+    ArrowLeft
   } from 'lucide-svelte';
   import type { Snippet } from 'svelte';
 
@@ -323,11 +323,16 @@
 
 <div class="min-h-screen flex flex-col bg-ink-950">
   <!-- Top Ticker Tape -->
-  <div class="h-9 bg-ink-900/80 border-b border-white/5 overflow-hidden flex items-center">
-    <div class="flex items-center gap-1 shrink-0 px-3 ml-1 border-l border-white/5 h-full">
+  <div class="h-9 bg-ink-950/90 border-b border-white/5 overflow-hidden flex items-center relative">
+    <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(90deg, var(--bg-ink-950-95) 0%, transparent 5%, transparent 95%, var(--bg-ink-950-95) 100%);"></div>
+    <div class="relative flex items-center gap-1 shrink-0 px-3 ml-1 border-l border-accent-gold/15 h-full">
+      <span class="relative flex h-1.5 w-1.5">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-gold opacity-60"></span>
+        <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-gold"></span>
+      </span>
       <span class="text-[10px] uppercase tracking-wider text-accent-gold font-bold">ج.م</span>
     </div>
-    <div class="flex items-center gap-6 px-4 animate-shimmer whitespace-nowrap" style="animation: tickerScroll 60s linear infinite;">
+    <div class="relative flex items-center gap-6 px-4 whitespace-nowrap" style="animation: tickerScroll 60s linear infinite;">
       {#each [...tickerSymbols, ...tickerSymbols] as sym}
         {@const t = tickerData[sym]}
         <div class="flex items-center gap-2 text-xs">
@@ -347,7 +352,9 @@
   </div>
 
   <!-- Topbar -->
-  <header class="sticky top-0 z-40 h-16 border-b border-white/5 bg-ink-950/85 backdrop-blur-xl">
+  <header class="sticky top-0 z-40 h-16 border-b border-white/5 bg-ink-950/85 backdrop-blur-2xl relative">
+    <!-- Subtle bottom highlight line -->
+    <div class="absolute bottom-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.25), rgba(168, 85, 247, 0.2), transparent);"></div>
     <div class="h-full flex items-center justify-between px-4 sm:px-6">
       <!-- Right: logo + mobile menu -->
       <div class="flex items-center gap-3">
@@ -361,11 +368,14 @@
         >
           {#if sidebarOpen}<X size={20} />{:else}<Menu size={20} />{/if}
         </button>
-        <a href="/dashboard" class="flex items-center gap-2">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-gold to-accent-rose flex items-center justify-center font-black text-ink-950">
-            N
+        <a href="/dashboard" class="flex items-center gap-2 group">
+          <div class="relative w-9 h-9 rounded-xl bg-gradient-to-br from-accent-gold via-accent-rose to-accent-violet flex items-center justify-center font-black text-ink-950 transition-transform group-hover:scale-105">
+            <span class="absolute inset-0 rounded-xl opacity-50 blur-md bg-gradient-to-br from-accent-gold to-accent-violet"></span>
+            <span class="relative">N</span>
           </div>
-          <span class="text-lg font-bold text-white hidden sm:block">NEXUS</span>
+          <span class="text-lg font-bold text-white hidden sm:block tracking-tight">
+            NEXUS
+          </span>
         </a>
       </div>
 
@@ -406,8 +416,14 @@
 
       <!-- Left: actions -->
       <div class="flex items-center gap-2">
-        <!-- Theme toggle -->
-        <ThemeToggle size={20} />
+        <!-- Live status pill -->
+        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-accent-mint/8 border border-accent-mint/20" title="اتصال مباشر بالأسواق">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-mint opacity-60"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-mint"></span>
+          </span>
+          <span class="text-[11px] font-bold text-accent-mint tracking-wide">LIVE</span>
+        </div>
 
         <!-- Notifications -->
         <div class="relative" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
@@ -510,11 +526,13 @@
   <div class="flex-1 flex">
     <!-- Sidebar -->
     <aside
-      class="fixed lg:sticky top-0 lg:top-[6.25rem] right-0 z-30 h-screen lg:h-[calc(100vh-6.25rem)] w-64 bg-ink-900/95 backdrop-blur-xl border-l border-white/5 transition-transform duration-300 lg:translate-x-0 {sidebarOpen
+      class="fixed lg:sticky top-0 lg:top-[6.25rem] right-0 z-30 h-screen lg:h-[calc(100vh-6.25rem)] w-64 bg-ink-900/95 backdrop-blur-2xl border-l border-white/5 transition-transform duration-300 lg:translate-x-0 {sidebarOpen
         ? 'translate-x-0'
         : 'translate-x-full lg:translate-x-0'}"
     >
-      <div class="h-full flex flex-col">
+      <!-- Subtle top fade for sidebar nav -->
+      <div class="absolute top-0 inset-x-0 h-24 pointer-events-none" style="background: linear-gradient(180deg, rgba(245, 181, 68, 0.04), transparent);"></div>
+      <div class="h-full flex flex-col relative">
         <!-- Mobile close -->
         <div class="lg:hidden flex items-center justify-between p-4 border-b border-white/5">
           <span class="text-sm font-bold text-white">القائمة</span>
@@ -523,7 +541,7 @@
           </button>
         </div>
 
-        <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-none">
+        <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-none relative">
           {#each navSections as section, i}
             <div>
               {#if section.title}
@@ -574,13 +592,19 @@
 
         <!-- Footer: upgrade card -->
         <div class="p-3">
-          <div class="panel-glow p-4 text-center">
-            <Star size={20} class="text-accent-gold mx-auto mb-1.5" />
-            <p class="text-xs font-bold text-white mb-1">حساب VIP</p>
-            <p class="text-[10px] text-slate-400 mb-2 leading-relaxed">رسوم أقل وامتيازات حصرية</p>
-            <a href="/dashboard/fees" class="text-[11px] text-accent-gold hover:underline font-medium">
-              ترقية الآن ←
-            </a>
+          <div class="panel-glow p-4 text-center relative overflow-hidden">
+            <div class="absolute -top-8 left-1/2 -translate-x-1/2 w-32 h-32 rounded-full bg-accent-gold/15 blur-2xl pointer-events-none"></div>
+            <div class="relative">
+              <div class="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-accent-gold/20 to-accent-rose/10 border border-accent-gold/30 mb-2">
+                <Star size={18} class="text-accent-gold" />
+              </div>
+              <p class="text-xs font-bold text-white mb-1">حساب VIP</p>
+              <p class="text-[10px] text-slate-400 mb-2 leading-relaxed">رسوم أقل وامتيازات حصرية</p>
+              <a href="/dashboard/fees" class="inline-flex items-center gap-1 text-[11px] text-accent-gold hover:gap-1.5 transition-all font-medium">
+                ترقية الآن
+                <ArrowLeft size={10} />
+              </a>
+            </div>
           </div>
         </div>
       </div>

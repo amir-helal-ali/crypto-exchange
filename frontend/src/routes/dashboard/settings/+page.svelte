@@ -1,13 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { theme, type ThemeMode } from '$lib/stores/theme';
   import { toasts } from '$lib/stores/toast';
   import { usdEgpRate } from '$lib/utils/currency';
   import {
     Settings as SettingsIcon,
-    Sun,
     Moon,
-    Monitor,
     Bell,
     Globe,
     DollarSign,
@@ -23,14 +20,14 @@
     Eye,
     Lock,
     ChevronLeft,
-    Info
+    Info,
+    FileText
   } from 'lucide-svelte';
 
   let saving = $state(false);
   let activeTab = $state<'appearance' | 'notifications' | 'trading' | 'security' | 'currency'>('appearance');
 
-  // Appearance settings
-  let themeMode = $state<ThemeMode>('dark');
+  // Appearance settings — dark-only mode (no theme picker)
   let accentColor = $state('gold');
   let density = $state<'comfortable' | 'compact'>('comfortable');
   let chartType = $state<'candles' | 'line' | 'area'>('candles');
@@ -77,7 +74,6 @@
       const raw = localStorage.getItem('nexus-settings');
       if (raw) {
         const s = JSON.parse(raw);
-        if (s.themeMode) themeMode = s.themeMode;
         if (s.accentColor) accentColor = s.accentColor;
         if (s.density) density = s.density;
         if (s.chartType) chartType = s.chartType;
@@ -95,11 +91,6 @@
         if (s.displayCurrency) displayCurrency = s.displayCurrency;
         if (s.autoUpdateRate !== undefined) autoUpdateRate = s.autoUpdateRate;
       }
-      // Sync theme mode
-      const tRaw = localStorage.getItem('nexus-theme');
-      if (tRaw) {
-        try { themeMode = JSON.parse(tRaw).mode; } catch {}
-      }
     } catch {}
   }
 
@@ -107,7 +98,7 @@
     saving = true;
     try {
       const settings = {
-        themeMode, accentColor, density, chartType, animationsEnabled,
+        accentColor, density, chartType, animationsEnabled,
         emailNotifs, pushNotifs, smsNotifs, soundEnabled, vibrateEnabled,
         defaultOrderType, confirmOrders, showOrderBook, slippageTolerance, defaultLeverage,
         displayCurrency, autoUpdateRate
@@ -120,11 +111,6 @@
     } finally {
       saving = false;
     }
-  }
-
-  function setThemeMode(mode: ThemeMode) {
-    themeMode = mode;
-    theme.setMode(mode);
   }
 
   function resetSettings() {
@@ -143,15 +129,22 @@
   ] as const;
 </script>
 
-<div class="space-y-6">
+<div class="relative space-y-6">
+  <!-- Ambient aurora background -->
+  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div class="absolute top-[-10%] left-[-5%] w-[480px] h-[480px] rounded-full bg-accent-gold/[0.08] blur-[120px] animate-pulse-glow"></div>
+    <div class="absolute bottom-[-10%] right-[-5%] w-[440px] h-[440px] rounded-full bg-accent-violet/[0.07] blur-[120px] animate-pulse-glow" style="animation-delay:1.5s"></div>
+  </div>
+
   <!-- Header -->
   <div class="flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-3">
-      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold to-accent-violet flex items-center justify-center">
-        <SettingsIcon size={22} class="text-ink-950" />
+      <div class="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold to-accent-violet flex items-center justify-center shadow-lg shadow-accent-gold/20">
+        <div class="absolute inset-0 rounded-2xl bg-accent-gold/30 blur-md"></div>
+        <SettingsIcon size={22} class="relative text-ink-950" />
       </div>
       <div>
-        <h1 class="text-2xl font-bold text-white">الإعدادات</h1>
+        <h1 class="text-2xl font-bold text-white tracking-tight">الإعدادات</h1>
         <p class="text-sm text-slate-400">خصص تجربتك على NEXUS Exchange</p>
       </div>
     </div>
@@ -179,7 +172,8 @@
   </div>
 
   <!-- Tabs -->
-  <div class="panel p-2">
+  <div class="panel relative p-2">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
     <div class="flex gap-1 overflow-x-auto scrollbar-none">
       {#each tabs as tab}
         <button
@@ -196,38 +190,37 @@
   </div>
 
   <!-- Tab Content -->
-  <div class="panel p-6">
+  <div class="panel relative p-6">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
     <!-- APPEARANCE -->
     {#if activeTab === 'appearance'}
       <div class="space-y-8">
         <div>
           <div class="flex items-center gap-2 mb-1">
             <Palette size={18} class="text-accent-gold" />
-            <h2 class="text-base font-bold text-white">المظهر</h2>
+            <h2 class="text-base font-bold text-white tracking-tight">المظهر</h2>
           </div>
           <p class="text-xs text-slate-400 mb-5">خصص شكل وألوان المنصة</p>
         </div>
 
-        <!-- Theme Mode -->
+        <!-- Theme Mode — Dark-only badge -->
         <div>
-          <label class="block text-sm font-semibold text-white mb-3">وضع الثيم</label>
-          <div class="grid grid-cols-3 gap-3">
-            {#each [['dark', 'داكن', Moon], ['light', 'فاتح', Sun], ['system', 'النظام', Monitor]] as [val, label, Icon]}
-              <button
-                onclick={() => setThemeMode(val as ThemeMode)}
-                class="relative p-4 rounded-xl border-2 transition-all {themeMode === val
-                  ? 'border-accent-gold bg-accent-gold/5'
-                  : 'border-white/5 bg-ink-900/40 hover:border-white/10'}"
-              >
-                <Icon size={20} class="mx-auto mb-2 {themeMode === val ? 'text-accent-gold' : 'text-slate-400'}" />
-                <p class="text-sm font-medium {themeMode === val ? 'text-accent-gold' : 'text-slate-300'}">{label}</p>
-                {#if themeMode === val}
-                  <div class="absolute top-2 left-2 w-4 h-4 rounded-full bg-accent-gold flex items-center justify-center">
-                    <Check size={10} class="text-ink-950" />
-                  </div>
-                {/if}
-              </button>
-            {/each}
+          <label class="block text-sm font-semibold text-white mb-3">وضع العرض</label>
+          <div class="relative p-4 rounded-xl border-2 border-accent-gold bg-accent-gold/5 overflow-hidden">
+            <div class="absolute -top-8 -left-8 w-32 h-32 rounded-full bg-accent-gold/15 blur-2xl pointer-events-none"></div>
+            <div class="relative flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-violet/20 to-accent-gold/20 border border-accent-gold/30 flex items-center justify-center">
+                <Moon size={20} class="text-accent-gold" />
+              </div>
+              <div class="flex-1">
+                <p class="text-sm font-semibold text-white">الوضع الداكن</p>
+                <p class="text-xs text-slate-400 mt-0.5">الوضع الافتراضي والوحيد — مصمم لتقليل إجهاد العين أثناء جلسات التداول الطويلة</p>
+              </div>
+              <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent-mint/10 border border-accent-mint/25">
+                <span class="w-1.5 h-1.5 rounded-full bg-accent-mint animate-pulse"></span>
+                <span class="text-[10px] font-bold text-accent-mint">نشط</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -587,7 +580,7 @@
               <p class="text-sm font-medium text-white">العربية</p>
               <p class="text-[10px] text-slate-400">اللغة الحالية</p>
             </div>
-            <span class="text-[10px] px-2 py-1 rounded bg-amber-500/10 text-amber-400">قريباً: English</span>
+            <span class="text-[10px] px-2 py-1 rounded bg-accent-violet/10 text-accent-violet">قريباً: English</span>
           </div>
         </div>
       </div>
@@ -664,7 +657,7 @@
             <p class="text-sm font-medium text-white">قائمة IP المسموح بها</p>
             <p class="text-[11px] text-slate-400">تقييد الدخول على عناوين IP معينة فقط</p>
           </div>
-          <span class="text-[10px] px-2 py-1 rounded bg-amber-500/10 text-amber-400">يتطلب KYC</span>
+          <span class="text-[10px] px-2 py-1 rounded bg-accent-gold/10 text-accent-gold">يتطلب KYC</span>
         </div>
       </div>
     {/if}

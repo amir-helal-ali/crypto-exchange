@@ -1,14 +1,11 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
-  import { theme } from '$lib/stores/theme';
   let { children } = $props();
 
-  // Initialize theme from localStorage on client mount
-  // (the actual data-theme attribute is also set inline in app.html to prevent FOUC)
-  onMount(() => {
-    theme.init();
-  });
+  // Dark mode is the only mode — no theme init needed.
+  // data-theme="dark" is set inline in app.html before first paint.
+  onMount(() => {});
 </script>
 
 {@render children()}

@@ -20,7 +20,8 @@
     Power,
     Lock,
     Webhook,
-    BookOpen
+    BookOpen,
+    Calendar
   } from 'lucide-svelte';
 
   interface ApiKey {
@@ -183,108 +184,158 @@
 
 <svelte:head><title>مفاتيح API — NEXUS</title></svelte:head>
 
-<div class="space-y-4">
+<div class="space-y-5 relative">
+  <!-- Ambient aurora -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+    <div class="absolute -top-20 right-1/4 w-80 h-80 bg-accent-gold/6 blur-[120px] rounded-full animate-pulse-glow"></div>
+    <div class="absolute bottom-0 -left-32 w-80 h-80 bg-accent-violet/5 blur-[120px] rounded-full animate-pulse-glow" style="animation-delay: 2s;"></div>
+  </div>
+
   <!-- Header -->
-  <div class="panel p-5">
-    <div class="flex items-start justify-between gap-4 flex-wrap">
+  <div class="panel p-5 relative overflow-hidden">
+    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+    <div class="absolute -top-12 -right-12 w-32 h-32 bg-accent-gold/8 blur-3xl rounded-full"></div>
+    <div class="relative flex items-start justify-between gap-4 flex-wrap">
       <div>
-        <div class="flex items-center gap-2 mb-1">
-          <Key size={22} class="text-accent-gold" />
-          <h1 class="text-xl font-bold text-white">مفاتيح API</h1>
+        <div class="flex items-center gap-3 mb-1">
+          <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold/20 to-accent-violet/10 border border-accent-gold/20 flex items-center justify-center">
+            <Key size={22} class="text-accent-gold" />
+          </div>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight">مفاتيح API</h1>
+            <p class="text-xs text-slate-400 mt-0.5">وصول برمجي آمن إلى حسابك عبر REST API و WebSocket</p>
+          </div>
         </div>
-        <p class="text-sm text-slate-400">أنشئ مفاتيح API للوصول البرمجي إلى حسابك عبر REST API و WebSocket. استخدم المفاتيح بحذر وأبقِ السر آمناً.</p>
       </div>
       <button onclick={() => (showCreateModal = true)} class="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent-gold text-white text-sm font-semibold hover:bg-accent-gold/90 transition-colors">
         <Plus size={15} /> مفتاح جديد
       </button>
     </div>
 
-    <!-- Quick stats -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-      <div class="bg-ink-900/50 rounded-lg p-3 border border-white/5">
-        <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1"><Key size={10} /> إجمالي المفاتيح</div>
-        <div class="text-lg font-bold text-white font-mono">{keys.length}</div>
+    <!-- Quick stats — premium -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
+      <div class="bg-ink-900/40 rounded-xl p-3 border border-white/5 relative overflow-hidden group hover:border-white/10 transition-colors">
+        <div class="absolute -top-4 -right-4 w-12 h-12 bg-accent-gold/10 blur-2xl rounded-full group-hover:bg-accent-gold/15 transition-all"></div>
+        <div class="relative">
+          <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1.5">
+            <Key size={10} /> إجمالي المفاتيح
+          </div>
+          <div class="text-lg font-bold text-white font-mono tabular-nums">{keys.length}</div>
+        </div>
       </div>
-      <div class="bg-ink-900/50 rounded-lg p-3 border border-white/5">
-        <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1"><CheckCircle2 size={10} /> نشطة</div>
-        <div class="text-lg font-bold text-accent-mint font-mono">{keys.filter((k) => k.status === 'active').length}</div>
+      <div class="bg-ink-900/40 rounded-xl p-3 border border-white/5 relative overflow-hidden group hover:border-white/10 transition-colors">
+        <div class="absolute -top-4 -right-4 w-12 h-12 bg-accent-mint/10 blur-2xl rounded-full group-hover:bg-accent-mint/15 transition-all"></div>
+        <div class="relative">
+          <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1.5">
+            <CheckCircle2 size={10} /> نشطة
+          </div>
+          <div class="text-lg font-bold text-accent-mint font-mono tabular-nums">{keys.filter((k) => k.status === 'active').length}</div>
+        </div>
       </div>
-      <div class="bg-ink-900/50 rounded-lg p-3 border border-white/5">
-        <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1"><Activity size={10} /> طلبات اليوم</div>
-        <div class="text-lg font-bold text-accent-gold font-mono">{keys.reduce((s, k) => s + k.requestsToday, 0).toLocaleString()}</div>
+      <div class="bg-ink-900/40 rounded-xl p-3 border border-white/5 relative overflow-hidden group hover:border-white/10 transition-colors">
+        <div class="absolute -top-4 -right-4 w-12 h-12 bg-accent-azure/10 blur-2xl rounded-full group-hover:bg-accent-azure/15 transition-all"></div>
+        <div class="relative">
+          <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1.5">
+            <Activity size={10} /> طلبات اليوم
+          </div>
+          <div class="text-lg font-bold text-accent-azure font-mono tabular-nums">{keys.reduce((s, k) => s + k.requestsToday, 0).toLocaleString()}</div>
+        </div>
       </div>
-      <div class="bg-ink-900/50 rounded-lg p-3 border border-white/5">
-        <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1"><AlertTriangle size={10} /> صلاحية سحب</div>
-        <div class="text-lg font-bold text-accent-rose font-mono">{keys.filter((k) => k.permissions.includes('withdraw') && k.status === 'active').length}</div>
+      <div class="bg-ink-900/40 rounded-xl p-3 border border-white/5 relative overflow-hidden group hover:border-white/10 transition-colors">
+        <div class="absolute -top-4 -right-4 w-12 h-12 bg-accent-rose/10 blur-2xl rounded-full group-hover:bg-accent-rose/15 transition-all"></div>
+        <div class="relative">
+          <div class="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1.5">
+            <AlertTriangle size={10} /> صلاحية سحب
+          </div>
+          <div class="text-lg font-bold text-accent-rose font-mono tabular-nums">{keys.filter((k) => k.permissions.includes('withdraw') && k.status === 'active').length}</div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- API keys list -->
-  <div class="panel overflow-hidden">
-    <div class="px-4 py-3 border-b border-white/5">
+  <div class="panel overflow-hidden relative">
+    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.3), transparent);"></div>
+    <div class="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+      <div class="w-7 h-7 rounded-lg bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
+        <Key size={14} class="text-accent-gold" />
+      </div>
       <h2 class="text-sm font-semibold text-white">مفاتيحك</h2>
+      <span class="text-xs text-slate-500 mr-auto">{keys.length} مفتاح</span>
     </div>
     <div class="divide-y divide-white/5">
       {#each keys as k}
-        <div class="p-4 hover:bg-white/[0.02] transition-colors">
+        <div class="p-4 hover:bg-white/[0.02] transition-colors group">
           <div class="flex items-start justify-between gap-4 flex-wrap mb-3">
             <div class="flex-1 min-w-[200px]">
-              <div class="flex items-center gap-2 mb-1">
+              <div class="flex items-center gap-2 mb-1.5 flex-wrap">
                 <h3 class="font-semibold text-white">{k.name}</h3>
-                <span class="pill {k.status === 'active' ? 'pill-mint' : 'pill-rose'}">
+                <span class="pill {k.status === 'active' ? 'pill-mint' : 'pill-rose'} text-[10px]">
+                  {#if k.status === 'active'}
+                    <span class="w-1.5 h-1.5 rounded-full bg-accent-mint animate-pulse"></span>
+                  {/if}
                   {k.status === 'active' ? 'نشط' : 'معطّل'}
                 </span>
                 {#each k.permissions as p}
-                  <span class="pill {p === 'withdraw' ? 'pill-rose' : p === 'trade' ? 'pill-gold' : 'pill-mint'}">{permLabel(p)}</span>
+                  <span class="pill {p === 'withdraw' ? 'pill-rose' : p === 'trade' ? 'pill-gold' : 'pill-mint'} text-[10px]">{permLabel(p)}</span>
                 {/each}
               </div>
-              <div class="flex items-center gap-2 text-xs font-mono text-slate-400 bg-ink-900/40 rounded px-2 py-1">
-                <span class="text-slate-500">KEY:</span>
+              <div class="flex items-center gap-2 text-xs font-mono text-slate-400 bg-ink-900/40 rounded-lg px-3 py-2 border border-white/5">
+                <span class="text-slate-500 font-sans text-[10px]">KEY:</span>
                 <span class="text-accent-gold">{k.key}</span>
-                <button onclick={() => copyToClipboard(k.key)} class="p-0.5 text-slate-500 hover:text-white" aria-label="نسخ">
+                <button onclick={() => copyToClipboard(k.key)} class="p-1 text-slate-500 hover:text-white hover:bg-white/5 rounded transition-colors" aria-label="نسخ">
                   <Copy size={11} />
                 </button>
               </div>
               {#if showSecrets[k.id]}
-                <div class="flex items-center gap-2 text-xs font-mono text-slate-400 bg-accent-rose/5 rounded px-2 py-1 mt-1">
-                  <span class="text-slate-500">SECRET:</span>
+                <div class="flex items-center gap-2 text-xs font-mono text-slate-400 bg-accent-rose/5 border border-accent-rose/15 rounded-lg px-3 py-2 mt-1.5">
+                  <span class="text-slate-500 font-sans text-[10px]">SECRET:</span>
                   <span class="text-accent-rose">{k.secret}</span>
-                  <button onclick={() => copyToClipboard(k.secret)} class="p-0.5 text-slate-500 hover:text-white" aria-label="نسخ">
+                  <button onclick={() => copyToClipboard(k.secret)} class="p-1 text-slate-500 hover:text-white hover:bg-white/5 rounded transition-colors" aria-label="نسخ">
                     <Copy size={11} />
                   </button>
-                  <span class="text-[10px] text-accent-rose mr-auto">احفظه الآن — لن يظهر مرة أخرى</span>
+                  <span class="text-[10px] text-accent-rose mr-auto font-sans flex items-center gap-1">
+                    <AlertTriangle size={10} /> احفظه الآن — لن يظهر مرة أخرى
+                  </span>
                 </div>
               {/if}
               <div class="text-[10px] text-slate-500 mt-2 flex items-center gap-3 flex-wrap">
-                <span>أُنشئ: {timeAgoStr(k.createdAt)}</span>
-                <span>آخر استخدام: {timeAgoStr(k.lastUsed)}</span>
+                <span class="flex items-center gap-1"><Calendar size={9} /> أُنشئ: {timeAgoStr(k.createdAt)}</span>
+                <span class="flex items-center gap-1"><Activity size={9} /> آخر استخدام: {timeAgoStr(k.lastUsed)}</span>
                 {#if k.ipWhitelist.length > 0}
-                  <span>IP: {k.ipWhitelist.join(', ')}</span>
+                  <span class="flex items-center gap-1 text-accent-mint"><Lock size={9} /> IP: {k.ipWhitelist.join(', ')}</span>
                 {:else}
-                  <span class="text-accent-rose">IP: أي عنوان ⚠</span>
+                  <span class="flex items-center gap-1 text-accent-rose"><AlertTriangle size={9} /> IP: أي عنوان</span>
                 {/if}
               </div>
             </div>
 
-            <!-- Usage bar -->
+            <!-- Usage bar — premium -->
             <div class="shrink-0 text-right">
-              <div class="text-[10px] text-slate-500 mb-1">استخدام اليوم</div>
-              <div class="text-sm font-mono font-semibold text-white">{k.requestsToday.toLocaleString()} / {k.rateLimit.toLocaleString()}</div>
-              <div class="w-32 h-1.5 bg-ink-900 rounded-full overflow-hidden mt-1">
-                <div class="h-full {k.requestsToday / k.rateLimit > 0.8 ? 'bg-accent-rose' : 'bg-accent-gold'}" style="width: {Math.min(100, (k.requestsToday / k.rateLimit) * 100)}%"></div>
+              <div class="text-[10px] text-slate-500 mb-1 flex items-center justify-end gap-1">
+                <Activity size={9} /> استخدام اليوم
               </div>
+              <div class="text-sm font-mono font-bold text-white tabular-nums">
+                {k.requestsToday.toLocaleString()} <span class="text-slate-500">/ {k.rateLimit.toLocaleString()}</span>
+              </div>
+              <div class="w-32 h-1.5 bg-ink-900 rounded-full overflow-hidden mt-1 border border-white/5">
+                <div
+                  class="h-full transition-all duration-500 {k.requestsToday / k.rateLimit > 0.8 ? 'bg-gradient-to-r from-accent-rose to-accent-rose' : 'bg-gradient-to-r from-accent-gold to-accent-mint'}"
+                  style="width: {Math.min(100, (k.requestsToday / k.rateLimit) * 100)}%"
+                ></div>
+              </div>
+              <p class="text-[9px] text-slate-600 mt-0.5 tabular-nums">{((k.requestsToday / k.rateLimit) * 100).toFixed(1)}%</p>
             </div>
 
             <!-- Actions -->
             <div class="flex items-center gap-1 shrink-0">
-              <button onclick={() => toggleSecret(k.id)} class="p-1.5 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" title="إظهار/إخفاء السر">
+              <button onclick={() => toggleSecret(k.id)} class="p-2 rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="إظهار/إخفاء السر">
                 {#if showSecrets[k.id]}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
               </button>
-              <button onclick={() => toggleStatus(k.id)} class="p-1.5 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" title="تفعيل/تعطيل">
+              <button onclick={() => toggleStatus(k.id)} class="p-2 rounded-lg text-slate-400 hover:bg-white/5 hover:text-white transition-colors" title="تفعيل/تعطيل">
                 <Power size={14} />
               </button>
-              <button onclick={() => revokeKey(k.id)} class="p-1.5 rounded-md text-slate-400 hover:bg-accent-rose/10 hover:text-accent-rose" title="حذف">
+              <button onclick={() => revokeKey(k.id)} class="p-2 rounded-lg text-slate-400 hover:bg-accent-rose/10 hover:text-accent-rose transition-colors" title="حذف">
                 <Trash2 size={14} />
               </button>
             </div>
@@ -292,7 +343,17 @@
         </div>
       {/each}
       {#if keys.length === 0}
-        <div class="py-10 text-center text-slate-500 text-sm">لا توجد مفاتيح API. أنشئ مفتاحك الأول.</div>
+        <div class="py-16 text-center">
+          <div class="relative inline-block mb-4">
+            <div class="absolute inset-0 bg-accent-gold/10 blur-3xl rounded-full"></div>
+            <Key size={48} class="relative text-slate-600 mx-auto" />
+          </div>
+          <p class="text-sm font-medium text-slate-300">لا توجد مفاتيح API</p>
+          <p class="text-xs text-slate-500 mt-1">أنشئ مفتاحك الأول للوصول البرمجي</p>
+          <button onclick={() => (showCreateModal = true)} class="btn-primary text-xs mt-4">
+            <Plus size={14} /> إنشاء مفتاح
+          </button>
+        </div>
       {/if}
     </div>
   </div>
@@ -399,33 +460,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  :global([data-theme='light']) .text-slate-500 {
-    color: #94a3b8 !important;
-  }
-  :global([data-theme='light']) .text-slate-400 {
-    color: #64748b !important;
-  }
-  :global([data-theme='light']) .text-slate-300 {
-    color: #475569 !important;
-  }
-  :global([data-theme='light']) .text-white {
-    color: #0f172a !important;
-  }
-  :global([data-theme='light']) .bg-white\/5,
-  :global([data-theme='light']) .bg-white\/10 {
-    background-color: rgba(15, 23, 42, 0.05) !important;
-  }
-  :global([data-theme='light']) .bg-ink-900\/40,
-  :global([data-theme='light']) .bg-ink-900\/50,
-  :global([data-theme='light']) .bg-ink-900\/30 {
-    background-color: rgba(15, 23, 42, 0.03) !important;
-  }
-  :global([data-theme='light']) .border-white\/5 {
-    border-color: rgba(15, 23, 42, 0.08) !important;
-  }
-  :global([data-theme='light']) .divide-white\/5 > * {
-    border-color: rgba(15, 23, 42, 0.08) !important;
-  }
-</style>

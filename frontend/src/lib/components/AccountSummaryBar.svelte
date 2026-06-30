@@ -189,15 +189,3 @@
     <div class="text-[10px] text-accent-gold font-mono">≈ {formatEGP(usdToEgp(tickerPrice, currentRate))}</div>
   </div>
 </div>
-
-<style>
-  :global([data-theme='light']) .text-slate-500 {
-    color: #94a3b8 !important;
-  }
-  :global([data-theme='light']) .text-white {
-    color: #0f172a !important;
-  }
-  :global([data-theme='light']) .bg-white\/5 {
-    background-color: rgba(15, 23, 42, 0.08) !important;
-  }
-</style>

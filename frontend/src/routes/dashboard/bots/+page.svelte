@@ -251,47 +251,71 @@
   function logColor(t: string): string {
     switch (t) {
       case 'success': return 'text-accent-mint';
-      case 'warn': return 'text-amber-400';
+      case 'warn': return 'text-accent-gold';
       case 'error': return 'text-accent-rose';
       default: return 'text-slate-400';
     }
   }
 
+  // Bot types — accent palette only (no external hex)
   const botTypes = [
-    { v: 'GRID', l: 'الشبكة (Grid)', icon: Grid3x3, desc: 'يضع أوامر شراء/بيع في نطاق سعري — يربح من التذبذب', color: '#f5b544' },
-    { v: 'DCA', l: 'المتوسط (DCA)', icon: Repeat, desc: 'يشتري كميات ثابتة على فترات منتظمة — يقلل متوسط التكلفة', color: '#22d3a4' },
-    { v: 'SIGNAL', l: 'الإشارة (Signal)', icon: Zap, desc: 'ينفذ الصفقات بناءً على إشارات المؤشرات الفنية', color: '#a855f7' }
+    { v: 'GRID', l: 'الشبكة (Grid)', icon: Grid3x3, desc: 'يضع أوامر شراء/بيع في نطاق سعري — يربح من التذبذب', accent: 'gold' as const },
+    { v: 'DCA', l: 'المتوسط (DCA)', icon: Repeat, desc: 'يشتري كميات ثابتة على فترات منتظمة — يقلل متوسط التكلفة', accent: 'mint' as const },
+    { v: 'SIGNAL', l: 'الإشارة (Signal)', icon: Zap, desc: 'ينفذ الصفقات بناءً على إشارات المؤشرات الفنية', accent: 'violet' as const }
   ];
+
+  // Static class lookup for bot types (Tailwind JIT-safe)
+  const botAccent: Record<string, { text: string; bg: string; border: string; glow: string }> = {
+    gold: { text: 'text-accent-gold', bg: 'bg-accent-gold/15', border: 'border-accent-gold/30', glow: 'bg-accent-gold/10' },
+    mint: { text: 'text-accent-mint', bg: 'bg-accent-mint/15', border: 'border-accent-mint/30', glow: 'bg-accent-mint/10' },
+    violet: { text: 'text-accent-violet', bg: 'bg-accent-violet/15', border: 'border-accent-violet/30', glow: 'bg-accent-violet/10' },
+    azure: { text: 'text-accent-azure', bg: 'bg-accent-azure/15', border: 'border-accent-azure/30', glow: 'bg-accent-azure/10' },
+    rose: { text: 'text-accent-rose', bg: 'bg-accent-rose/15', border: 'border-accent-rose/30', glow: 'bg-accent-rose/10' }
+  };
 </script>
 
 <svelte:head><title>Trading Bots — NEXUS</title></svelte:head>
 
-<div class="space-y-4 pb-20 lg:pb-0">
+<div class="space-y-4 pb-20 lg:pb-0 relative">
+  <!-- Ambient aurora -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+    <div class="absolute -top-20 right-1/4 w-96 h-96 bg-accent-gold/7 blur-[120px] rounded-full animate-pulse-glow"></div>
+    <div class="absolute bottom-0 -left-32 w-96 h-96 bg-accent-violet/5 blur-[120px] rounded-full animate-pulse-glow" style="animation-delay: 2s;"></div>
+    <div class="absolute top-1/2 right-1/3 w-80 h-80 bg-accent-mint/4 blur-[120px] rounded-full animate-pulse-glow" style="animation-delay: 4s;"></div>
+  </div>
+
   <!-- Hero header -->
-  <div class="panel p-4 bg-gradient-to-l from-accent-gold/10 via-transparent to-transparent">
-    <div class="flex items-center justify-between flex-wrap gap-3">
+  <div class="panel p-4 relative overflow-hidden">
+    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+    <div class="absolute -top-12 -right-12 w-32 h-32 bg-accent-gold/10 blur-3xl rounded-full"></div>
+    <div class="absolute -bottom-12 -left-12 w-32 h-32 bg-accent-violet/8 blur-3xl rounded-full"></div>
+    <div class="relative flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-2xl bg-accent-gold/15 flex items-center justify-center">
-          <Bot size={24} class="text-accent-gold" />
+        <div class="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-gold/20 to-accent-violet/10 border border-accent-gold/25 flex items-center justify-center shrink-0">
+          <div class="absolute inset-0 bg-accent-gold/15 blur-xl rounded-2xl"></div>
+          <Bot size={24} class="relative text-accent-gold" />
         </div>
         <div>
-          <h1 class="text-xl font-bold text-white">بوتات التداول</h1>
+          <h1 class="text-xl font-bold text-white tracking-tight">بوتات التداول</h1>
           <p class="text-xs text-slate-400 mt-0.5">أتمتة استراتيجياتك — تعمل 24/7 حتى أثناء نومك</p>
         </div>
       </div>
       <div class="flex items-center gap-2 text-xs">
-        <div class="px-3 py-1.5 rounded-lg bg-accent-mint/10 border border-accent-mint/20 flex items-center gap-1.5">
-          <div class="w-2 h-2 rounded-full bg-accent-mint animate-pulse"></div>
-          <span class="text-accent-mint font-bold">{stats.running}</span>
-          <span class="text-slate-400">نشط</span>
+        <div class="px-3 py-1.5 rounded-lg bg-accent-mint/10 border border-accent-mint/20 flex items-center gap-1.5 relative overflow-hidden group hover:border-accent-mint/30 transition-colors">
+          <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-mint/10 blur-2xl rounded-full group-hover:bg-accent-mint/15 transition-all"></div>
+          <div class="relative w-2 h-2 rounded-full bg-accent-mint animate-pulse"></div>
+          <span class="relative text-accent-mint font-bold tabular-nums">{stats.running}</span>
+          <span class="relative text-slate-400">نشط</span>
         </div>
-        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
-          <span class="text-slate-400">متوقف مؤقت:</span>
-          <span class="text-amber-400 font-bold mr-1">{stats.paused}</span>
+        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 relative overflow-hidden group hover:border-accent-gold/20 transition-colors">
+          <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-gold/8 blur-2xl rounded-full group-hover:bg-accent-gold/12 transition-all"></div>
+          <span class="relative text-slate-400">متوقف مؤقت:</span>
+          <span class="relative text-accent-gold font-bold mr-1 tabular-nums">{stats.paused}</span>
         </div>
-        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
-          <span class="text-slate-400">صفقات منفذة:</span>
-          <span class="text-white font-bold mr-1 tabular-nums">{stats.totalTrades}</span>
+        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 relative overflow-hidden group hover:border-accent-violet/20 transition-colors">
+          <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-violet/8 blur-2xl rounded-full group-hover:bg-accent-violet/12 transition-all"></div>
+          <span class="relative text-slate-400">صفقات منفذة:</span>
+          <span class="relative text-white font-bold mr-1 tabular-nums">{stats.totalTrades}</span>
         </div>
       </div>
     </div>
@@ -299,48 +323,55 @@
 
   <!-- Portfolio summary -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-    <div class="panel p-3">
-      <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+    <div class="panel p-3 relative overflow-hidden group">
+      <div class="absolute -top-6 -right-6 w-16 h-16 bg-accent-gold/10 blur-2xl rounded-full group-hover:bg-accent-gold/15 transition-all"></div>
+      <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
         <DollarSign size={10} /> إجمالي الاستثمار
       </div>
-      <div class="text-lg font-bold text-white tabular-nums">${stats.totalInvested.toFixed(2)}</div>
-      <div class="text-[10px] text-slate-400 mt-0.5">≈ {egpCompact(usdToEgp(stats.totalInvested, currentRate))}</div>
+      <div class="relative text-lg font-bold text-white tabular-nums">${stats.totalInvested.toFixed(2)}</div>
+      <div class="relative text-[10px] text-slate-400 mt-0.5 tabular-nums">≈ {egpCompact(usdToEgp(stats.totalInvested, currentRate))}</div>
     </div>
-    <div class="panel p-3">
-      <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+    <div class="panel p-3 relative overflow-hidden group">
+      <div class="absolute -top-6 -right-6 w-16 h-16 bg-accent-azure/10 blur-2xl rounded-full group-hover:bg-accent-azure/15 transition-all"></div>
+      <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
         <Activity size={10} /> القيمة الحالية
       </div>
-      <div class="text-lg font-bold text-white tabular-nums">${stats.totalValue.toFixed(2)}</div>
-      <div class="text-[10px] text-slate-400 mt-0.5">≈ {egpCompact(usdToEgp(stats.totalValue, currentRate))}</div>
+      <div class="relative text-lg font-bold text-white tabular-nums">${stats.totalValue.toFixed(2)}</div>
+      <div class="relative text-[10px] text-slate-400 mt-0.5 tabular-nums">≈ {egpCompact(usdToEgp(stats.totalValue, currentRate))}</div>
     </div>
-    <div class="panel p-3">
-      <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+    <div class="panel p-3 relative overflow-hidden group">
+      <div class="absolute -top-6 -right-6 w-16 h-16 blur-2xl rounded-full group-hover:opacity-100 transition-all {stats.totalPnL >= 0 ? 'bg-accent-mint/10' : 'bg-accent-rose/10'}"></div>
+      <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
         <Percent size={10} /> إجمالي الربح/الخسارة
       </div>
-      <div class="text-lg font-bold tabular-nums {stats.totalPnL >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
+      <div class="relative text-lg font-bold tabular-nums {stats.totalPnL >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
         {stats.totalPnL >= 0 ? '+' : ''}{stats.totalPnL.toFixed(2)}$
       </div>
-      <div class="text-[10px] tabular-nums mt-0.5 {stats.totalPnLPct >= 0 ? 'text-accent-mint/70' : 'text-accent-rose/70'}">
+      <div class="relative text-[10px] tabular-nums mt-0.5 {stats.totalPnLPct >= 0 ? 'text-accent-mint/70' : 'text-accent-rose/70'}">
         {stats.totalPnLPct >= 0 ? '+' : ''}{stats.totalPnLPct.toFixed(2)}%
       </div>
     </div>
-    <div class="panel p-3">
-      <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+    <div class="panel p-3 relative overflow-hidden group">
+      <div class="absolute -top-6 -right-6 w-16 h-16 bg-accent-violet/10 blur-2xl rounded-full group-hover:bg-accent-violet/15 transition-all"></div>
+      <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
         <Cpu size={10} /> البوتات النشطة
       </div>
-      <div class="text-lg font-bold text-white tabular-nums">{stats.running}/{stats.total}</div>
-      <div class="text-[10px] text-slate-400 mt-0.5">تعمل الآن</div>
+      <div class="relative text-lg font-bold text-white tabular-nums">{stats.running}/{stats.total}</div>
+      <div class="relative text-[10px] text-slate-400 mt-0.5">تعمل الآن</div>
     </div>
   </div>
 
   <!-- Create bot button -->
   <div class="flex items-center justify-between">
-    <h2 class="text-sm font-bold text-white flex items-center gap-1.5">
-      <Layers size={14} class="text-accent-gold" /> بوتاتي
+    <h2 class="text-sm font-bold text-white flex items-center gap-2 tracking-tight">
+      <div class="w-7 h-7 rounded-lg bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
+        <Layers size={14} class="text-accent-gold" />
+      </div>
+      بوتاتي
     </h2>
     <button
       onclick={() => (createOpen = true)}
-      class="px-4 py-2 text-xs font-bold bg-accent-gold text-ink-950 rounded-md hover:bg-accent-gold/90 transition-colors flex items-center gap-1.5"
+      class="btn-primary text-xs"
     >
       <Plus size={14} /> إنشاء بوت جديد
     </button>
@@ -349,17 +380,21 @@
   <!-- Bots grid -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
     {#each bots as bot (bot.id)}
+      {@const bt = botTypes.find((t) => t.v === bot.type) || botTypes[0]}
+      {@const ac = botAccent[bt.accent]}
       <div class="panel p-4 relative overflow-hidden">
         <!-- Status indicator -->
         <div class="absolute top-0 right-0 px-2 py-1 text-[10px] font-bold rounded-bl-md
-          {bot.status === 'running' ? 'bg-accent-mint/20 text-accent-mint' : bot.status === 'paused' ? 'bg-amber-500/20 text-amber-400' : 'bg-accent-rose/20 text-accent-rose'}">
+          {bot.status === 'running' ? 'bg-accent-mint/20 text-accent-mint' : bot.status === 'paused' ? 'bg-accent-gold/20 text-accent-gold' : 'bg-accent-rose/20 text-accent-rose'}">
           {#if bot.status === 'running'}<span class="inline-block w-1.5 h-1.5 rounded-full bg-accent-mint mr-1 animate-pulse"></span>{/if}
           {bot.status === 'running' ? 'نشط' : bot.status === 'paused' ? 'متوقف مؤقت' : 'متوقف'}
         </div>
+        <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, {bot.status === 'running' ? 'rgba(34, 211, 164, 0.4)' : bot.status === 'paused' ? 'rgba(245, 181, 68, 0.4)' : 'rgba(244, 63, 122, 0.4)'}, transparent);"></div>
+        <div class="absolute -top-8 -right-8 w-24 h-24 blur-3xl rounded-full {ac.glow}"></div>
 
-        <div class="flex items-start gap-3 mb-3">
-          <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background: {botTypes.find((t) => t.v === bot.type)?.color}30;">
-            <svelte:component this={botTypes.find((t) => t.v === bot.type)?.icon || Bot} size={18} style="color: {botTypes.find((t) => t.v === bot.type)?.color};" />
+        <div class="relative flex items-start gap-3 mb-3">
+          <div class="w-10 h-10 rounded-lg {ac.bg} border {ac.border} flex items-center justify-center flex-shrink-0">
+            <svelte:component this={bt.icon} size={18} class={ac.text} />
           </div>
           <div class="flex-1 min-w-0">
             <h3 class="text-sm font-bold text-white truncate">{bot.name}</h3>
@@ -429,7 +464,7 @@
             onclick={() => toggleStatus(bot)}
             disabled={bot.status === 'stopped'}
             class="flex-1 py-1.5 text-xs font-bold rounded-md transition-colors disabled:opacity-30
-              {bot.status === 'running' ? 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25' : 'bg-accent-mint/15 text-accent-mint hover:bg-accent-mint/25'}"
+              {bot.status === 'running' ? 'bg-accent-gold/15 text-accent-gold hover:bg-accent-gold/25' : 'bg-accent-mint/15 text-accent-mint hover:bg-accent-mint/25'}"
           >
             {#if bot.status === 'running'}<Pause size={11} class="inline ml-1" /> إيقاف مؤقت{:else}<Play size={11} class="inline ml-1" /> تفعيل{/if}
           </button>
@@ -480,9 +515,10 @@
     </h3>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       {#each botTypes as bt}
-        <div class="bg-white/[0.02] rounded-lg p-3 border-l-2" style="border-color: {bt.color};">
+        {@const ac = botAccent[bt.accent]}
+        <div class="bg-white/[0.02] rounded-lg p-3 border-l-2 {ac.border}">
           <div class="flex items-center gap-2 mb-2">
-            <svelte:component this={bt.icon} size={14} style="color: {bt.color};" />
+            <svelte:component this={bt.icon} size={14} class={ac.text} />
             <h4 class="text-xs font-bold text-white">{bt.l}</h4>
           </div>
           <p class="text-[10px] text-slate-400 leading-relaxed">{bt.desc}</p>
@@ -495,13 +531,14 @@
 <!-- Create bot modal -->
 {#if createOpen}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" dir="rtl">
-    <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-ink-900 border border-white/10 rounded-2xl shadow-2xl">
-      <div class="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-accent-gold/10">
-        <div class="flex items-center gap-2">
+    <div class="panel-glow w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div class="relative flex items-center justify-between px-5 py-3 border-b border-white/5 bg-accent-gold/5">
+        <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+        <div class="relative flex items-center gap-2">
           <Plus size={16} class="text-accent-gold" />
-          <h3 class="text-sm font-bold text-white">إنشاء بوت جديد</h3>
+          <h3 class="text-sm font-bold text-white tracking-tight">إنشاء بوت جديد</h3>
         </div>
-        <button onclick={() => (createOpen = false)} class="text-slate-400 hover:text-white">✕</button>
+        <button onclick={() => (createOpen = false)} class="relative text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors" aria-label="إغلاق"><X size={16} /></button>
       </div>
       <div class="p-4 space-y-3">
         <!-- Bot type selector -->
@@ -509,13 +546,13 @@
           <label class="text-[11px] text-slate-400 block mb-1.5">نوع البوت</label>
           <div class="grid grid-cols-3 gap-2">
             {#each botTypes as bt}
+              {@const ac = botAccent[bt.accent]}
               <button
                 onclick={() => (newType = bt.v as BotType)}
                 class="p-3 rounded-lg border-2 transition-all text-center
-                  {newType === bt.v ? 'bg-white/[0.05]' : 'border-white/5 hover:border-white/10'}"
-                style={newType === bt.v ? `border-color: ${bt.color};` : ''}
+                  {newType === bt.v ? `bg-white/[0.05] ${ac.border}` : 'border-white/5 hover:border-white/10'}"
               >
-                <svelte:component this={bt.icon} size={18} class="mx-auto mb-1" style="color: {bt.color};" />
+                <svelte:component this={bt.icon} size={18} class={`mx-auto mb-1 ${ac.text}`} />
                 <div class="text-[11px] font-bold text-white">{bt.l.split(' ')[0]}</div>
               </button>
             {/each}
@@ -591,9 +628,9 @@
           </div>
         {/if}
 
-        <div class="bg-amber-500/5 border border-amber-500/20 rounded-md p-2 flex items-start gap-1.5">
-          <AlertTriangle size={12} class="text-amber-500 flex-shrink-0 mt-0.5" />
-          <p class="text-[10px] text-amber-200/80 leading-relaxed">
+        <div class="bg-accent-gold/5 border border-accent-gold/20 rounded-md p-2 flex items-start gap-1.5">
+          <AlertTriangle size={12} class="text-accent-gold flex-shrink-0 mt-0.5" />
+          <p class="text-[10px] text-accent-gold/80 leading-relaxed">
             البوتات تنطوي على مخاطر. تأكد من فهمك للاستراتيجية قبل الإطلاق. يُنصح بالبدء بمبلغ صغير للاختبار.
           </p>
         </div>
@@ -611,14 +648,17 @@
 
 <!-- Bot detail modal -->
 {#if detailOpen && selectedBot}
+  {@const sBt = botTypes.find((t) => t.v === selectedBot.type) || botTypes[0]}
+  {@const sAc = botAccent[sBt.accent]}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" dir="rtl">
-    <div class="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-ink-900 border border-white/10 rounded-2xl shadow-2xl">
-      <div class="flex items-center justify-between px-5 py-3 border-b border-white/5 sticky top-0 bg-ink-900 z-10">
-        <div class="flex items-center gap-2">
-          <svelte:component this={botTypes.find((t) => t.v === selectedBot.type)?.icon || Bot} size={16} style="color: {botTypes.find((t) => t.v === selectedBot.type)?.color};" />
-          <h3 class="text-sm font-bold text-white">{selectedBot.name}</h3>
+    <div class="panel-glow w-full max-w-xl max-h-[90vh] overflow-y-auto">
+      <div class="relative flex items-center justify-between px-5 py-3 border-b border-white/5 sticky top-0 bg-ink-900/80 backdrop-blur-xl z-10">
+        <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+        <div class="relative flex items-center gap-2">
+          <svelte:component this={sBt.icon} size={16} class={sAc.text} />
+          <h3 class="text-sm font-bold text-white tracking-tight">{selectedBot.name}</h3>
         </div>
-        <button onclick={() => (detailOpen = false)} class="text-slate-400 hover:text-white">✕</button>
+        <button onclick={() => (detailOpen = false)} class="relative text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors" aria-label="إغلاق"><X size={18} /></button>
       </div>
       <div class="p-4 space-y-3">
         <!-- Big P&L -->
@@ -722,7 +762,7 @@
         <div class="flex items-center gap-1.5 pt-2">
           <button
             onclick={() => toggleStatus(selectedBot)}
-            class="flex-1 py-2 text-xs font-bold rounded-md {selectedBot.status === 'running' ? 'bg-amber-500/15 text-amber-400' : 'bg-accent-mint/15 text-accent-mint'}"
+            class="flex-1 py-2 text-xs font-bold rounded-md {selectedBot.status === 'running' ? 'bg-accent-gold/15 text-accent-gold' : 'bg-accent-mint/15 text-accent-mint'}"
           >
             {#if selectedBot.status === 'running'}<Pause size={12} class="inline ml-1" /> إيقاف مؤقت{:else}<Play size={12} class="inline ml-1" /> تفعيل{/if}
           </button>

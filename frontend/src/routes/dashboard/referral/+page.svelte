@@ -56,14 +56,22 @@
     { id: '7', username: 'yousef_t', joinedAt: '2025-05-15', status: 'active', trades: 15, earned: 28.60, avatar: 'ي' }
   ]);
 
-  // Tier system
+  // Tier system — accent palette only (no external hex)
   let currentTier = $state({ name: 'Silver', level: 2, commission: 25, nextTier: 'Gold', required: 25 });
   let tiers = [
-    { name: 'Bronze', level: 1, commission: 15, color: '#cd7f32', icon: Medal, minInvites: 0, perks: ['15% عمولة', 'حد أقصى 50 دعوة'] },
-    { name: 'Silver', level: 2, commission: 25, color: '#c0c0c0', icon: Award, minInvites: 10, perks: ['25% عمولة', 'حد أقصى 200 دعوة', 'دعم ذو أولوية'] },
-    { name: 'Gold', level: 3, commission: 35, color: '#ffd700', icon: Crown, minInvites: 25, perks: ['35% عمولة', 'دعوات غير محدودة', 'مكافأة ترحيبية VIP', 'دعم مخصص'] },
-    { name: 'Platinum', level: 4, commission: 45, color: '#e5e4e2', icon: Trophy, minInvites: 100, perks: ['45% عمولة', 'دعوات غير محدودة', 'مدير حساب شخصي', 'دعوات لفعاليات حصرية'] }
+    { name: 'Bronze', level: 1, commission: 15, accent: 'rose', icon: Medal, minInvites: 0, perks: ['15% عمولة', 'حد أقصى 50 دعوة'] },
+    { name: 'Silver', level: 2, commission: 25, accent: 'slate', icon: Award, minInvites: 10, perks: ['25% عمولة', 'حد أقصى 200 دعوة', 'دعم ذو أولوية'] },
+    { name: 'Gold', level: 3, commission: 35, accent: 'gold', icon: Crown, minInvites: 25, perks: ['35% عمولة', 'دعوات غير محدودة', 'مكافأة ترحيبية VIP', 'دعم مخصص'] },
+    { name: 'Platinum', level: 4, commission: 45, accent: 'azure', icon: Trophy, minInvites: 100, perks: ['45% عمولة', 'دعوات غير محدودة', 'مدير حساب شخصي', 'دعوات لفعاليات حصرية'] }
   ];
+
+  // Static tier classes (Tailwind JIT-safe)
+  const tierAccent: Record<string, { text: string; bg: string; border: string; pill: string; glow: string }> = {
+    rose: { text: 'text-accent-rose', bg: 'bg-accent-rose/15', border: 'border-accent-rose/30', pill: 'bg-accent-rose/15 text-accent-rose border border-accent-rose/30', glow: 'bg-accent-rose/10' },
+    slate: { text: 'text-slate-300', bg: 'bg-slate-300/10', border: 'border-slate-300/20', pill: 'bg-slate-300/10 text-slate-300 border border-slate-300/20', glow: 'bg-slate-300/5' },
+    gold: { text: 'text-accent-gold', bg: 'bg-accent-gold/15', border: 'border-accent-gold/30', pill: 'bg-accent-gold/15 text-accent-gold border border-accent-gold/30', glow: 'bg-accent-gold/10' },
+    azure: { text: 'text-accent-azure', bg: 'bg-accent-azure/15', border: 'border-accent-azure/30', pill: 'bg-accent-azure/15 text-accent-azure border border-accent-azure/30', glow: 'bg-accent-azure/10' }
+  };
 
   let filterStatus = $state<'all' | 'active' | 'pending' | 'inactive'>('all');
   let canNativeShare = $state(false);
@@ -93,7 +101,7 @@
   }
 
   function shareOnPlatform(platform: string) {
-    const text = encodeURIComponent('انضم إلى NEXUS Exchange واربح مكافآت حصرية! 🚀');
+    const text = encodeURIComponent('انضم إلى NEXUS Exchange واربح مكافآت حصرية');
     const url = encodeURIComponent(referralLink);
     const links: Record<string, string> = {
       twitter: `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
@@ -124,15 +132,23 @@
   );
 </script>
 
-<div class="space-y-6">
+<div class="relative space-y-6">
+  <!-- Ambient aurora background -->
+  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div class="absolute top-[-10%] left-[-5%] w-[480px] h-[480px] rounded-full bg-accent-violet/[0.08] blur-[120px] animate-pulse-glow"></div>
+    <div class="absolute bottom-[-10%] right-[-5%] w-[440px] h-[440px] rounded-full bg-accent-rose/[0.06] blur-[120px] animate-pulse-glow" style="animation-delay:1.5s"></div>
+    <div class="absolute top-[40%] right-[35%] w-[320px] h-[320px] rounded-full bg-accent-gold/[0.05] blur-[120px] animate-pulse-glow" style="animation-delay:0.8s"></div>
+  </div>
+
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-violet to-accent-rose flex items-center justify-center">
-        <Gift size={22} class="text-white" />
+      <div class="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-violet to-accent-rose flex items-center justify-center shadow-lg shadow-accent-rose/20">
+        <div class="absolute inset-0 rounded-2xl bg-accent-rose/30 blur-md"></div>
+        <Gift size={22} class="relative text-white" />
       </div>
       <div>
-        <h1 class="text-2xl font-bold text-white">برنامج الإحالة</h1>
+        <h1 class="text-2xl font-bold text-white tracking-tight">برنامج الإحالة</h1>
         <p class="text-sm text-slate-400">ادعُ أصدقاءك واربح 25% من رسوم تداولاتهم</p>
       </div>
     </div>
@@ -145,7 +161,8 @@
   <!-- Hero: Referral Link + Stats -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Referral Link Card -->
-    <div class="panel p-6 lg:col-span-2 relative overflow-hidden">
+    <div class="panel relative p-6 lg:col-span-2 overflow-hidden">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
       <!-- Decorative gradient -->
       <div class="absolute -top-20 -left-20 w-64 h-64 bg-accent-violet/20 rounded-full blur-3xl"></div>
       <div class="absolute -bottom-20 -right-20 w-64 h-64 bg-accent-gold/15 rounded-full blur-3xl"></div>
@@ -228,33 +245,36 @@
 
     <!-- Quick Stats -->
     <div class="space-y-4">
-      <div class="panel p-4">
+      <div class="panel relative p-4">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
         <div class="flex items-center gap-2 mb-2">
-          <div class="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-            <DollarSign size={14} class="text-emerald-400" />
+          <div class="w-8 h-8 rounded-lg bg-accent-mint/15 flex items-center justify-center">
+            <DollarSign size={14} class="text-accent-mint" />
           </div>
           <span class="text-xs text-slate-400">إجمالي الأرباح</span>
         </div>
-        <p class="text-xl font-bold text-emerald-400 font-mono tabular-nums">
+        <p class="text-xl font-bold text-accent-mint font-mono tabular-nums">
           ${stats.totalEarned.toFixed(2)}
         </p>
         <p class="text-[10px] text-slate-500 mt-0.5">≈ {egpCompact(usdToEgp(stats.totalEarned, currentRate))}</p>
       </div>
 
-      <div class="panel p-4">
+      <div class="panel relative p-4">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
         <div class="flex items-center gap-2 mb-2">
-          <div class="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
-            <Clock size={14} class="text-amber-400" />
+          <div class="w-8 h-8 rounded-lg bg-accent-gold/15 flex items-center justify-center">
+            <Clock size={14} class="text-accent-gold" />
           </div>
           <span class="text-xs text-slate-400">مكافآت معلقة</span>
         </div>
-        <p class="text-xl font-bold text-amber-400 font-mono tabular-nums">
+        <p class="text-xl font-bold text-accent-gold font-mono tabular-nums">
           ${stats.pendingRewards.toFixed(2)}
         </p>
         <p class="text-[10px] text-slate-500 mt-0.5">سيتم إضافتها خلال 24 ساعة</p>
       </div>
 
-      <div class="panel p-4">
+      <div class="panel relative p-4">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
         <div class="flex items-center gap-2 mb-2">
           <div class="w-8 h-8 rounded-lg bg-accent-violet/15 flex items-center justify-center">
             <TrendingUp size={14} class="text-accent-violet" />
@@ -264,45 +284,54 @@
         <p class="text-xl font-bold text-accent-violet font-mono tabular-nums">
           ${stats.thisMonthEarned.toFixed(2)}
         </p>
-        <p class="text-[10px] text-emerald-400 mt-0.5">+12% عن الشهر الماضي</p>
+        <p class="text-[10px] text-accent-mint mt-0.5">+12% عن الشهر الماضي</p>
       </div>
     </div>
   </div>
 
   <!-- Stats Row -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    <div class="panel p-5 text-center">
-      <div class="w-10 h-10 mx-auto rounded-xl bg-accent-gold/10 flex items-center justify-center mb-3">
+    <div class="panel relative p-5 text-center group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
+      <div class="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-accent-gold/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      <div class="relative w-10 h-10 mx-auto rounded-xl bg-accent-gold/10 flex items-center justify-center mb-3">
         <UserPlus size={18} class="text-accent-gold" />
       </div>
-      <p class="text-2xl font-bold text-white font-mono">{stats.totalInvited}</p>
+      <p class="text-2xl font-bold text-white font-mono tabular-nums">{stats.totalInvited}</p>
       <p class="text-xs text-slate-400 mt-1">إجمالي المدعوين</p>
     </div>
-    <div class="panel p-5 text-center">
-      <div class="w-10 h-10 mx-auto rounded-xl bg-emerald-500/10 flex items-center justify-center mb-3">
-        <Users size={18} class="text-emerald-400" />
+    <div class="panel relative p-5 text-center group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
+      <div class="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-accent-mint/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      <div class="relative w-10 h-10 mx-auto rounded-xl bg-accent-mint/10 flex items-center justify-center mb-3">
+        <Users size={18} class="text-accent-mint" />
       </div>
-      <p class="text-2xl font-bold text-emerald-400 font-mono">{stats.activeUsers}</p>
+      <p class="text-2xl font-bold text-accent-mint font-mono tabular-nums">{stats.activeUsers}</p>
       <p class="text-xs text-slate-400 mt-1">مستخدمين نشطين</p>
     </div>
-    <div class="panel p-5 text-center">
-      <div class="w-10 h-10 mx-auto rounded-xl bg-accent-violet/10 flex items-center justify-center mb-3">
+    <div class="panel relative p-5 text-center group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
+      <div class="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-accent-violet/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      <div class="relative w-10 h-10 mx-auto rounded-xl bg-accent-violet/10 flex items-center justify-center mb-3">
         <Percent size={18} class="text-accent-violet" />
       </div>
-      <p class="text-2xl font-bold text-white font-mono">{stats.conversionRate}%</p>
+      <p class="text-2xl font-bold text-white font-mono tabular-nums">{stats.conversionRate}%</p>
       <p class="text-xs text-slate-400 mt-1">معدل التحويل</p>
     </div>
-    <div class="panel p-5 text-center">
-      <div class="w-10 h-10 mx-auto rounded-xl bg-accent-rose/10 flex items-center justify-center mb-3">
+    <div class="panel relative p-5 text-center group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-rose/40 to-transparent"></div>
+      <div class="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-accent-rose/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      <div class="relative w-10 h-10 mx-auto rounded-xl bg-accent-rose/10 flex items-center justify-center mb-3">
         <TrendingUp size={18} class="text-accent-rose" />
       </div>
-      <p class="text-2xl font-bold text-white font-mono">${(stats.totalEarned / stats.activeUsers).toFixed(2)}</p>
+      <p class="text-2xl font-bold text-white font-mono tabular-nums">${(stats.totalEarned / stats.activeUsers).toFixed(2)}</p>
       <p class="text-xs text-slate-400 mt-1">متوسط الأرباح / مستخدم</p>
     </div>
   </div>
 
   <!-- Tier Progress -->
-  <div class="panel p-6">
+  <div class="panel relative p-6">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
     <div class="flex items-center justify-between mb-5">
       <div class="flex items-center gap-2">
         <Sparkles size={18} class="text-accent-gold" />
@@ -310,7 +339,7 @@
       </div>
       <div class="flex items-center gap-2 text-xs">
         <span class="text-slate-400">المستوى الحالي:</span>
-        <span class="px-2 py-1 rounded-md font-bold" style="background-color: {currentTier && (tiers.find(t => t.name === currentTier.name)?.color || '#c0c0c0')}20; color: {tiers.find(t => t.name === currentTier.name)?.color || '#c0c0c0'}">
+        <span class="px-2 py-1 rounded-md font-bold {tierAccent[tiers.find((t) => t.name === currentTier.name)?.accent || 'slate'].pill}">
           {currentTier.name}
         </span>
       </div>
@@ -338,37 +367,36 @@
       {#each tiers as tier}
         {@const isCurrent = tier.name === currentTier.name}
         {@const isPassed = stats.totalInvited >= tier.minInvites}
+        {@const ac = tierAccent[tier.accent]}
         <div
-          class="relative rounded-xl p-4 border-2 transition-all {isCurrent
+          class="relative rounded-xl p-4 border-2 transition-all overflow-hidden {isCurrent
             ? 'border-accent-gold bg-accent-gold/5'
             : isPassed
               ? 'border-white/10 bg-ink-900/40'
               : 'border-white/5 bg-ink-900/20 opacity-60'}"
         >
           {#if isCurrent}
+            <div class="absolute -top-12 -right-12 w-32 h-32 {ac.glow} blur-3xl rounded-full"></div>
             <div class="absolute -top-2 right-3 px-2 py-0.5 rounded-full bg-accent-gold text-ink-950 text-[9px] font-bold">
               الحالي
             </div>
           {/if}
-          <div class="flex items-center gap-2 mb-3">
-            <div
-              class="w-9 h-9 rounded-full flex items-center justify-center"
-              style="background-color: {tier.color}20; color: {tier.color}"
-            >
-              <tier.icon size={18} />
+          <div class="relative flex items-center gap-2 mb-3">
+            <div class="w-9 h-9 rounded-full {ac.bg} {ac.border} border flex items-center justify-center">
+              <tier.icon size={18} class={ac.text} />
             </div>
             <div>
-              <p class="text-sm font-bold" style="color: {tier.color}">{tier.name}</p>
+              <p class="text-sm font-bold {ac.text}">{tier.name}</p>
               <p class="text-[10px] text-slate-500">من {tier.minInvites} دعوة</p>
             </div>
           </div>
-          <div class="text-2xl font-bold text-white mb-2">
+          <div class="text-2xl font-bold text-white mb-2 tabular-nums">
             {tier.commission}<span class="text-sm text-slate-400">%</span>
           </div>
           <ul class="space-y-1">
             {#each tier.perks as perk}
               <li class="text-[10px] text-slate-400 flex items-start gap-1">
-                <Check size={10} class="text-emerald-400 mt-0.5 shrink-0" />
+                <Check size={10} class="text-accent-mint mt-0.5 shrink-0" />
                 <span>{perk}</span>
               </li>
             {/each}
@@ -379,7 +407,8 @@
   </div>
 
   <!-- Invited Users Table -->
-  <div class="panel p-6">
+  <div class="panel relative p-6">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
     <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
       <div class="flex items-center gap-2">
         <Users size={18} class="text-accent-violet" />
@@ -427,13 +456,13 @@
               <td class="py-3 px-2 text-xs text-slate-400 hidden sm:table-cell">{inv.joinedAt}</td>
               <td class="py-3 px-2 text-center">
                 {#if inv.status === 'active'}
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">
-                    <span class="w-1 h-1 rounded-full bg-emerald-400"></span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-mint/10 text-accent-mint text-[10px] font-bold">
+                    <span class="w-1 h-1 rounded-full bg-accent-mint"></span>
                     نشط
                   </span>
                 {:else if inv.status === 'pending'}
-                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold">
-                    <span class="w-1 h-1 rounded-full bg-amber-400"></span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-gold/10 text-accent-gold text-[10px] font-bold">
+                    <span class="w-1 h-1 rounded-full bg-accent-gold"></span>
                     بانتظار
                   </span>
                 {:else}
@@ -443,9 +472,9 @@
                   </span>
                 {/if}
               </td>
-              <td class="py-3 px-2 text-center text-sm text-slate-300 font-mono hidden md:table-cell">{inv.trades}</td>
+              <td class="py-3 px-2 text-center text-sm text-slate-300 font-mono hidden md:table-cell tabular-nums">{inv.trades}</td>
               <td class="py-3 px-2 text-left">
-                <span class="text-sm font-bold text-emerald-400 font-mono">
+                <span class="text-sm font-bold text-accent-mint font-mono tabular-nums">
                   ${inv.earned.toFixed(2)}
                 </span>
               </td>
@@ -454,13 +483,23 @@
         </tbody>
       </table>
       {#if filteredInvitees.length === 0}
-        <div class="py-12 text-center text-sm text-slate-500">لا يوجد مدعوون في هذه الفئة</div>
+        <div class="py-14 text-center relative">
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="w-24 h-24 rounded-2xl bg-accent-violet/5 blur-3xl"></div>
+          </div>
+          <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-violet/10 to-accent-rose/10 border border-white/5 mb-3">
+            <Users size={24} class="text-slate-500" />
+          </div>
+          <p class="text-sm text-slate-300 mb-1">لا يوجد مدعوون في هذه الفئة</p>
+          <p class="text-xs text-slate-500">جرّب فلتراً آخر أو شارك رابطك مع المزيد من الأصدقاء</p>
+        </div>
       {/if}
     </div>
   </div>
 
   <!-- How it works -->
-  <div class="panel p-6">
+  <div class="panel relative p-6">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
     <div class="flex items-center gap-2 mb-5">
       <Sparkles size={18} class="text-accent-gold" />
       <h2 class="text-base font-bold text-white">كيف يعمل برنامج الإحالة؟</h2>

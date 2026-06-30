@@ -4,7 +4,6 @@
   import Button from '$lib/components/Button.svelte';
   import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-svelte';
   import ParticleBackground from '$lib/components/ParticleBackground.svelte';
-  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
   let email = $state('');
   let loading = $state(false);
@@ -36,13 +35,6 @@
 </script>
 
 <ParticleBackground />
-
-<!-- Floating theme toggle -->
-<div class="fixed top-4 left-4 z-50">
-  <div class="panel p-1 rounded-xl">
-    <ThemeToggle size={20} />
-  </div>
-</div>
 
 <div class="min-h-screen flex items-center justify-center p-4">
   <div class="w-full max-w-md panel-glow p-8 sm:p-10">

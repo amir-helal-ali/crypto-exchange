@@ -28,7 +28,8 @@
     MinusCircle,
     Wallet,
     ArrowUp,
-    ArrowDown
+    ArrowDown,
+    Clock
   } from 'lucide-svelte';
 
   let symbol = $state('BTCUSDT');
@@ -251,17 +252,32 @@
 
 <svelte:head><title>العقود — {symbol} — NEXUS</title></svelte:head>
 
-<div class="space-y-3 pb-32 lg:pb-4">
+<div class="relative space-y-3 pb-32 lg:pb-4">
+  <!-- Ambient aurora background -->
+  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div class="absolute top-[-10%] right-[-5%] w-[480px] h-[480px] rounded-full bg-accent-violet/[0.08] blur-[120px] animate-pulse-glow"></div>
+    <div class="absolute bottom-[-10%] left-[-5%] w-[420px] h-[420px] rounded-full bg-accent-rose/[0.06] blur-[120px] animate-pulse-glow" style="animation-delay:1.5s"></div>
+    <div class="absolute top-[40%] right-[20%] w-[320px] h-[320px] rounded-full bg-accent-gold/[0.05] blur-[120px] animate-pulse-glow" style="animation-delay:0.8s"></div>
+  </div>
+
   <!-- Top bar: pair + price + stats -->
-  <div class="panel p-4 flex flex-wrap items-center justify-between gap-4">
+  <div class="panel relative p-4 flex flex-wrap items-center justify-between gap-4">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
     <div class="flex items-center gap-3">
       <button onclick={() => favorites.toggle(symbol)} class="p-1 hover:scale-110 transition-transform" aria-label="إضافة للمفضلة">
         <Star size={20} class="text-slate-500" />
       </button>
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-xl font-bold text-white">{base}<span class="text-slate-500">/{quote}</span></h1>
+          <h1 class="text-xl font-bold text-white tracking-tight">{base}<span class="text-slate-500">/{quote}</span></h1>
           <span class="pill-gold">PERP</span>
+          <span class="pill bg-accent-rose/10 text-accent-rose border border-accent-rose/20 flex items-center gap-1 text-[10px]">
+            <span class="relative flex h-1.5 w-1.5">
+              <span class="absolute inline-flex h-full w-full rounded-full bg-accent-rose opacity-75 animate-ping"></span>
+              <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-rose"></span>
+            </span>
+            مباشر
+          </span>
         </div>
         <div class="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
           <span class="flex items-center gap-1"><Zap size={10} class="text-accent-gold" />رافعة حتى 125x</span>
@@ -299,7 +315,8 @@
   </div>
 
   <!-- Account health bar -->
-  <div class="panel p-3 flex items-center gap-3 text-xs flex-wrap">
+  <div class="panel relative p-3 flex items-center gap-3 text-xs flex-wrap">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
     <Wallet size={14} class="text-accent-gold" />
     <span class="text-slate-400">رصيد الهامش:</span>
     <span class="font-mono font-semibold text-white">{formatPrice(marginBalance)} <span class="text-slate-500 text-[10px]">USDT</span></span>
@@ -318,13 +335,15 @@
 
   <!-- Main grid -->
   <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr_320px] gap-3">
-    <div class="panel hidden lg:flex flex-col overflow-hidden" style="height: 700px;">
+    <div class="panel relative hidden lg:flex flex-col overflow-hidden" style="height: 700px;">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
       <MarketList selectedSymbol={symbol} onSelect={(s) => (symbol = s)} />
     </div>
 
     <!-- Center: Chart + Positions -->
     <div class="flex flex-col gap-3">
-      <div class="panel overflow-hidden">
+      <div class="panel relative overflow-hidden">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent z-10"></div>
         <div class="flex items-center justify-between border-b border-white/5 px-3 py-2">
           <div class="flex items-center gap-1 overflow-x-auto scrollbar-none">
             {#each timeframes as tf}
@@ -351,7 +370,8 @@
         </div>
       </div>
 
-      <div class="panel overflow-hidden">
+      <div class="panel relative overflow-hidden">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
         <div class="px-4 pt-3 pb-0 border-b border-white/5">
           <NavTabs
             value={tab}
@@ -370,7 +390,16 @@
         <div class="overflow-x-auto max-h-80">
           {#if tab === 'positions'}
             {#if positions.length === 0}
-              <div class="py-10 text-center text-slate-500 text-sm">لا توجد مراكز مفتوحة</div>
+              <div class="py-14 text-center relative">
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div class="w-24 h-24 rounded-2xl bg-accent-violet/5 blur-3xl"></div>
+                </div>
+                <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-violet/10 to-accent-rose/10 border border-white/5 mb-3">
+                  <Wallet size={24} class="text-slate-500" />
+                </div>
+                <p class="text-sm text-slate-300 mb-1">لا توجد مراكز مفتوحة</p>
+                <p class="text-xs text-slate-500">افتح مركز لونج أو شورت من اللوحة اليمنى</p>
+              </div>
             {:else}
               <table class="w-full text-xs">
                 <thead>
@@ -421,7 +450,16 @@
             {/if}
           {:else if tab === 'openOrders'}
             {#if openOrders.length === 0}
-              <div class="py-10 text-center text-slate-500 text-sm">لا توجد أوامر مفتوحة</div>
+              <div class="py-14 text-center relative">
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div class="w-24 h-24 rounded-2xl bg-accent-gold/5 blur-3xl"></div>
+                </div>
+                <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-gold/10 to-accent-mint/10 border border-white/5 mb-3">
+                  <Clock size={24} class="text-slate-500" />
+                </div>
+                <p class="text-sm text-slate-300 mb-1">لا توجد أوامر مفتوحة</p>
+                <p class="text-xs text-slate-500">الأوامر المعلّقة ستظهر هنا</p>
+              </div>
             {:else}
               <table class="w-full text-xs">
                 <thead>
@@ -457,7 +495,16 @@
               </table>
             {/if}
           {:else}
-            <div class="py-10 text-center text-slate-500 text-sm">لا توجد بيانات</div>
+            <div class="py-14 text-center relative">
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-24 h-24 rounded-2xl bg-accent-mint/5 blur-3xl"></div>
+              </div>
+              <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-mint/10 to-accent-gold/10 border border-white/5 mb-3">
+                <Info size={24} class="text-slate-500" />
+              </div>
+              <p class="text-sm text-slate-300 mb-1">لا توجد بيانات</p>
+              <p class="text-xs text-slate-500">سيتم تسجيل النشاط هنا عند حدوثه</p>
+            </div>
           {/if}
         </div>
       </div>
@@ -465,7 +512,8 @@
 
     <!-- Right: Trade form + info -->
     <div class="flex flex-col gap-3">
-      <div class="panel p-4 space-y-3">
+      <div class="panel relative p-4 space-y-3">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
         <div class="flex items-center justify-between">
           <h3 class="text-sm font-semibold text-white">أمر جديد</h3>
           <div class="flex items-center gap-1 text-[10px]">
@@ -596,7 +644,8 @@
         </button>
       </div>
 
-      <div class="panel p-3 text-[11px] space-y-2">
+      <div class="panel relative p-3 text-[11px] space-y-2">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
         <div class="flex items-center gap-1.5 text-slate-300 font-semibold">
           <Info size={12} class="text-accent-gold" />
           معلومات الرافعة
@@ -621,29 +670,3 @@
     </div>
   </div>
 </div>
-
-<style>
-  :global([data-theme='light']) .text-slate-500 {
-    color: #94a3b8 !important;
-  }
-  :global([data-theme='light']) .text-slate-400 {
-    color: #64748b !important;
-  }
-  :global([data-theme='light']) .text-slate-300 {
-    color: #475569 !important;
-  }
-  :global([data-theme='light']) .text-white {
-    color: #0f172a !important;
-  }
-  :global([data-theme='light']) .bg-white\/5,
-  :global([data-theme='light']) .bg-white\/10 {
-    background-color: rgba(15, 23, 42, 0.05) !important;
-  }
-  :global([data-theme='light']) .border-white\/5 {
-    border-color: rgba(15, 23, 42, 0.08) !important;
-  }
-  :global([data-theme='light']) .bg-ink-900\/40,
-  :global([data-theme='light']) .bg-ink-900\/50 {
-    background-color: rgba(15, 23, 42, 0.03) !important;
-  }
-</style>

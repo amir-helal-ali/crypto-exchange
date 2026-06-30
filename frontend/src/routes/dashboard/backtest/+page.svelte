@@ -395,15 +395,24 @@
 
 <svelte:head><title>اختبار الاستراتيجيات — NEXUS</title></svelte:head>
 
-<div class="space-y-4 pb-20 lg:pb-0">
+<div class="space-y-4 pb-20 lg:pb-0 relative">
+  <!-- Ambient aurora -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+    <div class="absolute -top-20 right-1/4 w-96 h-96 bg-accent-gold/7 blur-[120px] rounded-full animate-pulse-glow"></div>
+    <div class="absolute bottom-0 -left-32 w-96 h-96 bg-accent-violet/5 blur-[120px] rounded-full animate-pulse-glow" style="animation-delay: 2s;"></div>
+  </div>
+
   <!-- Header -->
-  <div class="panel p-4">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-accent-gold/15 flex items-center justify-center">
-        <FlaskConical size={20} class="text-accent-gold" />
+  <div class="panel p-4 relative overflow-hidden">
+    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+    <div class="absolute -top-12 -right-12 w-32 h-32 bg-accent-gold/10 blur-3xl rounded-full"></div>
+    <div class="relative flex items-center gap-3">
+      <div class="relative w-10 h-10 rounded-xl bg-gradient-to-br from-accent-gold/20 to-accent-violet/10 border border-accent-gold/25 flex items-center justify-center shrink-0">
+        <div class="absolute inset-0 bg-accent-gold/15 blur-xl rounded-xl"></div>
+        <FlaskConical size={20} class="relative text-accent-gold" />
       </div>
       <div>
-        <h1 class="text-lg font-bold text-white">اختبار الاستراتيجيات</h1>
+        <h1 class="text-lg font-bold text-white tracking-tight">اختبار الاستراتيجيات</h1>
         <p class="text-[11px] text-slate-400 mt-0.5">اختبر استراتيجيات التداول على بيانات تاريخية حقيقية واحسب الأداء</p>
       </div>
     </div>
@@ -411,9 +420,13 @@
 
   <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-3">
     <!-- Config panel -->
-    <div class="panel p-4 space-y-3">
-      <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
-        <Settings2 size={14} class="text-accent-gold" /> إعدادات الاختبار
+    <div class="panel p-4 space-y-3 relative overflow-hidden">
+      <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.3), transparent);"></div>
+      <h3 class="relative text-sm font-bold text-white flex items-center gap-2 tracking-tight">
+        <div class="w-7 h-7 rounded-lg bg-accent-violet/10 border border-accent-violet/20 flex items-center justify-center">
+          <Settings2 size={14} class="text-accent-violet" />
+        </div>
+        إعدادات الاختبار
       </h3>
 
       <div>
@@ -435,7 +448,7 @@
           {#each ['15m', '1H', '4H', '1D'] as tf}
             <button
               onclick={() => (timeframe = tf)}
-              class="py-1.5 text-xs rounded-md {timeframe === tf ? 'bg-accent-gold/15 text-accent-gold' : 'bg-white/[0.03] text-slate-400 hover:bg-white/5'}"
+              class="py-1.5 text-xs rounded-md transition-colors {timeframe === tf ? 'bg-accent-gold/15 text-accent-gold border border-accent-gold/30' : 'bg-white/[0.03] text-slate-400 hover:bg-white/5 border border-transparent'}"
             >{tf}</button>
           {/each}
         </div>
@@ -524,7 +537,7 @@
       <button
         onclick={runBacktest}
         disabled={running}
-        class="w-full py-2.5 mt-2 text-sm font-bold bg-accent-gold text-ink-950 rounded-md hover:bg-accent-gold/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+        class="btn-primary w-full py-2.5 mt-2 text-sm"
       >
         {#if running}
           <div class="w-4 h-4 border-2 border-ink-950 border-t-transparent rounded-full animate-spin"></div>
@@ -540,43 +553,51 @@
       {#if hasRun}
         <!-- KPI cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div class="panel p-3">
-            <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+          <div class="panel p-3 relative overflow-hidden group">
+            <div class="absolute -top-6 -right-6 w-16 h-16 bg-accent-mint/10 blur-2xl rounded-full group-hover:bg-accent-mint/15 transition-all"></div>
+            <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
               <DollarSign size={10} /> العائد الإجمالي
             </div>
-            <div class="text-lg font-bold {totalReturnPct >= 0 ? 'text-accent-mint' : 'text-accent-rose'} tabular-nums">
+            <div class="relative text-lg font-bold {totalReturnPct >= 0 ? 'text-accent-mint' : 'text-accent-rose'} tabular-nums">
               {totalReturnPct >= 0 ? '+' : ''}{totalReturnPct.toFixed(2)}%
             </div>
-            <div class="text-[10px] text-slate-400 mt-0.5 font-mono">${finalEquity.toFixed(2)}</div>
+            <div class="relative text-[10px] text-slate-400 mt-0.5 font-mono tabular-nums">${finalEquity.toFixed(2)}</div>
           </div>
-          <div class="panel p-3">
-            <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+          <div class="panel p-3 relative overflow-hidden group">
+            <div class="absolute -top-6 -right-6 w-16 h-16 bg-accent-gold/10 blur-2xl rounded-full group-hover:bg-accent-gold/15 transition-all"></div>
+            <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
               <Target size={10} /> معدل الربح
             </div>
-            <div class="text-lg font-bold text-white tabular-nums">{winRate.toFixed(1)}%</div>
-            <div class="text-[10px] text-slate-400 mt-0.5">{winCount}W / {lossCount}L</div>
+            <div class="relative text-lg font-bold text-white tabular-nums">{winRate.toFixed(1)}%</div>
+            <div class="relative text-[10px] text-slate-400 mt-0.5 tabular-nums">{winCount}W / {lossCount}L</div>
           </div>
-          <div class="panel p-3">
-            <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+          <div class="panel p-3 relative overflow-hidden group">
+            <div class="absolute -top-6 -right-6 w-16 h-16 bg-accent-rose/10 blur-2xl rounded-full group-hover:bg-accent-rose/15 transition-all"></div>
+            <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
               <AlertTriangle size={10} /> أقصى تراجع
             </div>
-            <div class="text-lg font-bold text-accent-rose tabular-nums">-{maxDrawdown.toFixed(2)}%</div>
-            <div class="text-[10px] text-slate-400 mt-0.5">Max Drawdown</div>
+            <div class="relative text-lg font-bold text-accent-rose tabular-nums">-{maxDrawdown.toFixed(2)}%</div>
+            <div class="relative text-[10px] text-slate-400 mt-0.5">Max Drawdown</div>
           </div>
-          <div class="panel p-3">
-            <div class="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase mb-1">
+          <div class="panel p-3 relative overflow-hidden group">
+            <div class="absolute -top-6 -right-6 w-16 h-16 bg-accent-violet/10 blur-2xl rounded-full group-hover:bg-accent-violet/15 transition-all"></div>
+            <div class="relative flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
               <Award size={10} /> عامل الربح
             </div>
-            <div class="text-lg font-bold text-white tabular-nums">{profitFactor === Infinity ? '∞' : profitFactor.toFixed(2)}</div>
-            <div class="text-[10px] text-slate-400 mt-0.5">Profit Factor</div>
+            <div class="relative text-lg font-bold text-white tabular-nums">{profitFactor === Infinity ? '∞' : profitFactor.toFixed(2)}</div>
+            <div class="relative text-[10px] text-slate-400 mt-0.5">Profit Factor</div>
           </div>
         </div>
 
         <!-- Equity curve + price chart -->
-        <div class="panel p-4">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
-              <BarChart3 size={14} class="text-accent-gold" /> منحنى رأس المال
+        <div class="panel p-4 relative overflow-hidden">
+          <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.3), transparent);"></div>
+          <div class="relative flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2 tracking-tight">
+              <div class="w-7 h-7 rounded-lg bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
+                <BarChart3 size={14} class="text-accent-gold" />
+              </div>
+              منحنى رأس المال
             </h3>
             <div class="flex items-center gap-3 text-[10px]">
               <span class="flex items-center gap-1 text-accent-gold"><span class="w-2 h-2 rounded-sm bg-accent-gold"></span> رأس المال</span>
@@ -616,25 +637,29 @@
 
         <!-- Comparison + metrics -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div class="panel p-4">
-            <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-1.5">
-              <Activity size={14} class="text-accent-gold" /> مقارنة الأداء
+          <div class="panel p-4 relative overflow-hidden">
+            <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(34, 211, 164, 0.3), transparent);"></div>
+            <h3 class="relative text-sm font-bold text-white mb-3 flex items-center gap-2 tracking-tight">
+              <div class="w-7 h-7 rounded-lg bg-accent-mint/10 border border-accent-mint/20 flex items-center justify-center">
+                <Activity size={14} class="text-accent-mint" />
+              </div>
+              مقارنة الأداء
             </h3>
-            <div class="space-y-2">
-              <div class="flex items-center justify-between p-2 rounded-md bg-white/[0.02]">
+            <div class="relative space-y-2">
+              <div class="flex items-center justify-between p-2 rounded-md bg-white/[0.02] border border-white/5">
                 <span class="text-xs text-slate-400">عائد الاستراتيجية</span>
                 <span class="text-sm font-bold tabular-nums {totalReturnPct >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
                   {totalReturnPct >= 0 ? '+' : ''}{totalReturnPct.toFixed(2)}%
                 </span>
               </div>
-              <div class="flex items-center justify-between p-2 rounded-md bg-white/[0.02]">
+              <div class="flex items-center justify-between p-2 rounded-md bg-white/[0.02] border border-white/5">
                 <span class="text-xs text-slate-400">عائد الشراء والاحتفاظ</span>
                 <span class="text-sm font-bold tabular-nums {buyHoldReturn >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
                   {buyHoldReturn >= 0 ? '+' : ''}{buyHoldReturn.toFixed(2)}%
                 </span>
               </div>
-              <div class="flex items-center justify-between p-2 rounded-md bg-white/[0.02]">
-                <span class="text-xs text-slate-400">الفارق</span>
+              <div class="flex items-center justify-between p-2 rounded-md bg-accent-gold/5 border border-accent-gold/15">
+                <span class="text-xs text-slate-300">الفارق</span>
                 <span class="text-sm font-bold tabular-nums text-accent-gold">
                   {(totalReturnPct - buyHoldReturn >= 0 ? '+' : '')}{(totalReturnPct - buyHoldReturn).toFixed(2)}%
                 </span>
@@ -642,24 +667,28 @@
             </div>
           </div>
 
-          <div class="panel p-4">
-            <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-1.5">
-              <Percent size={14} class="text-accent-gold" /> إحصائيات تفصيلية
+          <div class="panel p-4 relative overflow-hidden">
+            <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.3), transparent);"></div>
+            <h3 class="relative text-sm font-bold text-white mb-3 flex items-center gap-2 tracking-tight">
+              <div class="w-7 h-7 rounded-lg bg-accent-violet/10 border border-accent-violet/20 flex items-center justify-center">
+                <Percent size={14} class="text-accent-violet" />
+              </div>
+              إحصائيات تفصيلية
             </h3>
-            <div class="grid grid-cols-2 gap-2 text-xs">
-              <div class="p-2 rounded-md bg-white/[0.02]">
+            <div class="relative grid grid-cols-2 gap-2 text-xs">
+              <div class="p-2 rounded-md bg-white/[0.02] border border-white/5">
                 <div class="text-[10px] text-slate-500">عدد الصفقات</div>
                 <div class="font-bold text-white tabular-nums">{trades.length}</div>
               </div>
-              <div class="p-2 rounded-md bg-white/[0.02]">
+              <div class="p-2 rounded-md bg-white/[0.02] border border-white/5">
                 <div class="text-[10px] text-slate-500">معامل شارب</div>
                 <div class="font-bold text-white tabular-nums">{sharpe.toFixed(2)}</div>
               </div>
-              <div class="p-2 rounded-md bg-white/[0.02]">
+              <div class="p-2 rounded-md bg-white/[0.02] border border-white/5">
                 <div class="text-[10px] text-slate-500">متوسط الربح</div>
                 <div class="font-bold text-accent-mint tabular-nums">+${avgWin.toFixed(2)}</div>
               </div>
-              <div class="p-2 rounded-md bg-white/[0.02]">
+              <div class="p-2 rounded-md bg-white/[0.02] border border-white/5">
                 <div class="text-[10px] text-slate-500">متوسط الخسارة</div>
                 <div class="font-bold text-accent-rose tabular-nums">-${avgLoss.toFixed(2)}</div>
               </div>
@@ -668,9 +697,13 @@
         </div>
 
         <!-- Trades table -->
-        <div class="panel overflow-hidden">
-          <div class="px-4 py-3 border-b border-white/5">
-            <h3 class="text-sm font-bold text-white">سجل الصفقات ({trades.length})</h3>
+        <div class="panel overflow-hidden relative">
+          <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.3), transparent);"></div>
+          <div class="relative px-4 py-3 border-b border-white/5 flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
+              <BarChart3 size={14} class="text-accent-gold" />
+            </div>
+            <h3 class="text-sm font-bold text-white tracking-tight">سجل الصفقات <span class="text-[10px] text-slate-500 tabular-nums">({trades.length})</span></h3>
           </div>
           {#if trades.length === 0}
             <div class="py-8 text-center text-slate-500 text-sm">لا توجد صفقات منفذة في هذه الفترة</div>
@@ -715,20 +748,22 @@
           {/if}
         </div>
       {:else if running}
-        <div class="panel p-12 text-center">
-          <div class="inline-block w-8 h-8 border-2 border-accent-gold border-t-transparent rounded-full animate-spin"></div>
-          <p class="mt-3 text-slate-400 text-sm">جاري تشغيل الاختبار...</p>
+        <div class="panel p-12 text-center relative overflow-hidden">
+          <div class="absolute -top-12 -right-12 w-32 h-32 bg-accent-gold/8 blur-3xl rounded-full"></div>
+          <div class="relative inline-block w-8 h-8 border-2 border-accent-gold border-t-transparent rounded-full animate-spin"></div>
+          <p class="relative mt-3 text-slate-400 text-sm">جاري تشغيل الاختبار...</p>
         </div>
       {/if}
     </div>
   </div>
 
   <!-- Disclaimer -->
-  <div class="panel p-3 border-amber-500/20 bg-amber-500/5">
-    <div class="flex items-start gap-2">
-      <AlertTriangle size={14} class="text-amber-500 flex-shrink-0 mt-0.5" />
-      <p class="text-[11px] text-amber-200/80 leading-relaxed">
-        <strong class="text-amber-300">تنبيه:</strong>
+  <div class="panel p-3 border-accent-gold/20 bg-accent-gold/5 relative overflow-hidden">
+    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.3), transparent);"></div>
+    <div class="relative flex items-start gap-2">
+      <AlertTriangle size={14} class="text-accent-gold flex-shrink-0 mt-0.5" />
+      <p class="text-[11px] text-accent-gold/80 leading-relaxed">
+        <strong class="text-accent-gold">تنبيه:</strong>
         نتائج الاختبار التاريخي لا تضمن الأداء المستقبلي. الأداء المحسوب هنا لا يأخذ في الاعتبار الانزلاق السعري (slippage) أو تأثير حجم الأمر على السوق. استخدم هذه الأداة لأغراض تعليمية وبحثية فقط.
       </p>
     </div>

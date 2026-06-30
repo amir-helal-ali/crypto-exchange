@@ -18,12 +18,11 @@
    *    retracement, eraser — persisted per symbol+timeframe in localStorage
    *  - Trade markers (buy/sell arrows from user's filled orders)
    *  - Zoom (wheel + pinch), Pan (drag), touch support
-   *  - Theme-aware (dark + light)
+   *  - Theme-aware (dark mode only, deep-space palette)
    *  - Export to PNG
    *  - High-DPI rendering
    */
   import { onMount, onDestroy } from 'svelte';
-  import { theme as themeStore } from '$lib/stores/theme';
   import { API_BASE } from '$lib/api/client';
 
   type ChartType = 'candles' | 'heikin-ashi' | 'line' | 'area';
@@ -145,7 +144,6 @@
   let flashAt = 0;
   let livePricePulse = 0;
   let lastPriceY = -1;
-  let theme = 'dark';
 
   // --- Drawing state ---
   let drawings: Drawing[] = [];
@@ -165,12 +163,6 @@
   let macdLine: (number | null)[] = [];
   let macdSignal: (number | null)[] = [];
   let macdHist: (number | null)[] = [];
-
-  // --- Subscribers ---
-  const unsubTheme = themeStore.subscribe((t) => {
-    theme = t?.resolved ?? 'dark';
-    scheduleRender();
-  });
 
   // React to tool changes from parent (state mirrors prop for use in handlers)
   let currentTool = $state(tool);
@@ -207,7 +199,6 @@
       resizeObserver?.disconnect();
       klineWs?.close();
       tickerWs?.close();
-      unsubTheme();
     };
   });
 
@@ -216,7 +207,6 @@
     cancelAnimationFrame(rafId);
     klineWs?.close();
     tickerWs?.close();
-    unsubTheme();
   });
 
   // Reload when symbol or timeframe changes
@@ -742,28 +732,27 @@
   }
 
   function themeColors() {
-    const isLight = theme === 'light';
     return {
-      bg: isLight ? '#ffffff' : cssVar('--bg-elev-1') || '#0a0e1f',
-      grid: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.04)',
-      gridStrong: isLight ? 'rgba(15,23,42,0.10)' : 'rgba(255,255,255,0.08)',
-      axisText: isLight ? '#94a3b8' : '#6b769c',
-      axisTextStrong: isLight ? '#475569' : '#a3accd',
-      up: isLight ? '#059669' : '#22d3a4',
-      down: isLight ? '#e11d48' : '#f43f7a',
-      upAlpha: isLight ? 'rgba(5,150,105,0.25)' : 'rgba(34,211,164,0.25)',
-      downAlpha: isLight ? 'rgba(225,29,72,0.25)' : 'rgba(244,63,122,0.25)',
-      gold: isLight ? '#d97706' : '#f5b544',
-      purple: isLight ? '#9333ea' : '#a855f7',
-      blue: isLight ? '#2563eb' : '#3b82f6',
-      crosshair: isLight ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.35)',
-      tooltipBg: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(10,14,31,0.92)',
-      tooltipBorder: isLight ? 'rgba(15,23,42,0.12)' : 'rgba(255,255,255,0.10)',
-      lastLine: isLight ? 'rgba(217,119,6,0.5)' : 'rgba(245,181,68,0.5)',
-      panelBorder: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.05)',
-      drawColor: isLight ? '#d97706' : '#f5b544',
-      drawColorAlt: isLight ? '#2563eb' : '#3b82f6',
-      drawFill: isLight ? 'rgba(217,119,6,0.10)' : 'rgba(245,181,68,0.08)'
+      bg: cssVar('--bg-elev-1') || '#0a0e1f',
+      grid: 'rgba(255,255,255,0.04)',
+      gridStrong: 'rgba(255,255,255,0.08)',
+      axisText: '#6b769c',
+      axisTextStrong: '#a3accd',
+      up: '#22d3a4',
+      down: '#f43f7a',
+      upAlpha: 'rgba(34,211,164,0.25)',
+      downAlpha: 'rgba(244,63,122,0.25)',
+      gold: '#f5b544',
+      purple: '#a855f7',
+      blue: '#3b82f6',
+      crosshair: 'rgba(255,255,255,0.35)',
+      tooltipBg: 'rgba(10,14,31,0.92)',
+      tooltipBorder: 'rgba(255,255,255,0.10)',
+      lastLine: 'rgba(245,181,68,0.5)',
+      panelBorder: 'rgba(255,255,255,0.05)',
+      drawColor: '#f5b544',
+      drawColorAlt: '#3b82f6',
+      drawFill: 'rgba(245,181,68,0.08)'
     };
   }
 
@@ -846,13 +835,8 @@
 
     // Subtle gradient overlay
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    if (theme !== 'light') {
-      grad.addColorStop(0, 'rgba(245,181,68,0.02)');
+    grad.addColorStop(0, 'rgba(245,181,68,0.02)');
       grad.addColorStop(1, 'rgba(34,211,164,0.015)');
-    } else {
-      grad.addColorStop(0, 'rgba(217,119,6,0.03)');
-      grad.addColorStop(1, 'rgba(5,150,105,0.02)');
-    }
     ctx.fillStyle = grad;
     ctx.fillRect(0, mainTop, chartW, mainH);
 
@@ -909,8 +893,8 @@
         ctx.lineTo((candleWidth + candleSpacing) / 2, mainTop + mainH);
         ctx.closePath();
         const areaGrad = ctx.createLinearGradient(0, mainTop, 0, mainTop + mainH);
-        areaGrad.addColorStop(0, theme === 'light' ? 'rgba(217,119,6,0.25)' : 'rgba(245,181,68,0.20)');
-        areaGrad.addColorStop(1, theme === 'light' ? 'rgba(217,119,6,0.02)' : 'rgba(245,181,68,0.01)');
+        areaGrad.addColorStop(0, 'rgba(245,181,68,0.20)');
+        areaGrad.addColorStop(1, 'rgba(245,181,68,0.01)');
         ctx.fillStyle = areaGrad;
         ctx.fill();
       }
@@ -1020,7 +1004,7 @@
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
-      ctx.fillStyle = theme === 'light' ? '#fff' : '#050813';
+      ctx.fillStyle = '#050813';
       ctx.font = 'bold 11px "JetBrains Mono", ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -1115,7 +1099,7 @@
     }
 
     // ---- NEXUS watermark ----
-    ctx.fillStyle = theme === 'light' ? 'rgba(15,23,42,0.04)' : 'rgba(255,255,255,0.025)';
+    ctx.fillStyle = 'rgba(255,255,255,0.025)';
     ctx.font = 'bold 28px "Inter", "Arial", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1141,7 +1125,7 @@
         // Price label on right
         ctx.fillStyle = d.color;
         ctx.fillRect(layout.chartW, y - 9, layout.padRight, 18);
-        ctx.fillStyle = theme === 'light' ? '#fff' : '#050813';
+        ctx.fillStyle = '#050813';
         ctx.font = 'bold 10px "JetBrains Mono", ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1264,7 +1248,7 @@
       ctx.closePath();
       ctx.fill();
       // Outline
-      ctx.strokeStyle = theme === 'light' ? '#ffffff' : '#050813';
+      ctx.strokeStyle = '#050813';
       ctx.lineWidth = 1;
       ctx.stroke();
       // Qty label
@@ -1340,7 +1324,7 @@
     ctx.lineWidth = 1;
     ctx.strokeRect(0, p.top, chartW, p.h);
     // Background
-    ctx.fillStyle = theme === 'light' ? 'rgba(15,23,42,0.02)' : 'rgba(255,255,255,0.015)';
+    ctx.fillStyle = 'rgba(255,255,255,0.015)';
     ctx.fillRect(0, p.top, chartW, p.h);
     // Levels 30, 50, 70
     const yFor = (v: number) => p.top + p.h - (v / 100) * p.h;
@@ -1394,7 +1378,7 @@
     ctx.strokeStyle = C.panelBorder;
     ctx.lineWidth = 1;
     ctx.strokeRect(0, p.top, chartW, p.h);
-    ctx.fillStyle = theme === 'light' ? 'rgba(15,23,42,0.02)' : 'rgba(255,255,255,0.015)';
+    ctx.fillStyle = 'rgba(255,255,255,0.015)';
     ctx.fillRect(0, p.top, chartW, p.h);
     // Find min/max for histogram scaling
     let hMin = Infinity;
@@ -1500,7 +1484,7 @@
     totalWidth: number,
     yScale: number
   ) {
-    ctx.fillStyle = theme === 'light' ? 'rgba(217,119,6,0.08)' : 'rgba(245,181,68,0.06)';
+    ctx.fillStyle = 'rgba(245,181,68,0.06)';
     ctx.beginPath();
     let started = false;
     for (let i = 0; i < visibleCandles.length; i++) {
@@ -1521,7 +1505,7 @@
     }
     ctx.closePath();
     ctx.fill();
-    drawLine(middle, theme === 'light' ? 'rgba(217,119,6,0.5)' : 'rgba(245,181,68,0.5)', padTop, chartH, totalWidth, yScale);
+    drawLine(middle, 'rgba(245,181,68,0.5)', padTop, chartH, totalWidth, yScale);
   }
 
   // ============================================================
@@ -1615,7 +1599,7 @@
         type: 'hline',
         points: [{ x, y }],
         pricePoints: [{ price, time: xToTime(x) }],
-        color: theme === 'light' ? '#d97706' : '#f5b544',
+        color: '#f5b544',
         createdAt: Date.now()
       });
       saveDrawings();
@@ -1648,8 +1632,8 @@
               { price: yToPrice(y), time: xToTime(x) }
             ],
             color: type === 'fib'
-              ? (theme === 'light' ? '#2563eb' : '#3b82f6')
-              : (theme === 'light' ? '#d97706' : '#f5b544'),
+              ? ('#3b82f6')
+              : ('#f5b544'),
             createdAt: Date.now()
           });
           saveDrawings();
@@ -1699,7 +1683,7 @@
           type: 'hline',
           points: [{ x, y }],
           pricePoints: [{ price, time: xToTime(x) }],
-          color: theme === 'light' ? '#d97706' : '#f5b544',
+          color: '#f5b544',
           createdAt: Date.now()
         });
         saveDrawings();
@@ -1771,8 +1755,8 @@
                 { price: yToPrice(cy), time: xToTime(cx) }
               ],
               color: type === 'fib'
-                ? (theme === 'light' ? '#2563eb' : '#3b82f6')
-                : (theme === 'light' ? '#d97706' : '#f5b544'),
+                ? ('#3b82f6')
+                : ('#f5b544'),
               createdAt: Date.now()
             });
             saveDrawings();
@@ -1887,9 +1871,3 @@
     </div>
   {/if}
 </div>
-
-<style>
-  :global([data-theme='light']) canvas {
-    -webkit-font-smoothing: antialiased;
-  }
-</style>

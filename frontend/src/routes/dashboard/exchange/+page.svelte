@@ -278,9 +278,16 @@
 
 <svelte:head><title>التداول — {symbol} — NEXUS</title></svelte:head>
 
-<div class="space-y-3 pb-20 lg:pb-0">
+<div class="relative space-y-3 pb-20 lg:pb-0">
+  <!-- Ambient aurora background -->
+  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div class="absolute top-[-10%] right-[-5%] w-[480px] h-[480px] rounded-full bg-accent-gold/[0.08] blur-[120px] animate-pulse-glow"></div>
+    <div class="absolute bottom-[-10%] left-[-5%] w-[420px] h-[420px] rounded-full bg-accent-violet/[0.07] blur-[120px] animate-pulse-glow" style="animation-delay:1.5s"></div>
+  </div>
+
   <!-- Pair header -->
-  <div class="panel p-4 flex flex-wrap items-center justify-between gap-4">
+  <div class="panel relative p-4 flex flex-wrap items-center justify-between gap-4">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
     <div class="flex items-center gap-2">
       <button
         onclick={() => favorites.toggle(symbol)}
@@ -301,8 +308,15 @@
     </div>
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="text-xl font-bold text-white">{base}<span class="text-slate-500">/{quote}</span></h1>
+          <h1 class="text-xl font-bold text-white tracking-tight">{base}<span class="text-slate-500">/{quote}</span></h1>
           <span class="pill-gold">SPOT</span>
+          <span class="pill bg-accent-mint/10 text-accent-mint border border-accent-mint/20 flex items-center gap-1 text-[10px]">
+            <span class="relative flex h-1.5 w-1.5">
+              <span class="absolute inline-flex h-full w-full rounded-full bg-accent-mint opacity-75 animate-ping"></span>
+              <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-mint"></span>
+            </span>
+            مباشر
+          </span>
         </div>
         <div class="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
           <Coins size={10} class="text-accent-gold" />
@@ -340,14 +354,16 @@
   <!-- Main grid -->
   <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr_300px] gap-3">
     <!-- Left: Market list -->
-    <div class="panel hidden lg:flex flex-col overflow-hidden" style="height: 600px;">
+    <div class="panel relative hidden lg:flex flex-col overflow-hidden" style="height: 600px;">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
       <MarketList selectedSymbol={symbol} onSelect={(s) => (symbol = s)} />
     </div>
 
     <!-- Center -->
     <div class="flex flex-col gap-3">
       <!-- Chart panel -->
-      <div class="panel overflow-hidden">
+      <div class="panel relative overflow-hidden">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent z-10"></div>
         <div class="flex items-center justify-between border-b border-white/5 px-3 py-2">
           <div class="flex items-center gap-1 overflow-x-auto scrollbar-none">
             {#each timeframes as tf}
@@ -518,7 +534,16 @@
 
         <div class="overflow-x-auto max-h-72">
           {#if orders.length === 0}
-            <div class="py-8 text-center text-slate-500 text-sm">لا توجد أوامر {ordersTab === 'open' ? 'مفتوحة' : 'في السجل'}</div>
+            <div class="py-12 text-center relative">
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-20 h-20 rounded-2xl bg-accent-gold/5 blur-2xl"></div>
+              </div>
+              <div class="relative inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-gold/10 to-accent-violet/10 border border-white/5 mb-3">
+                <Coins size={20} class="text-slate-500" />
+              </div>
+              <p class="text-sm text-slate-400">لا توجد أوامر {ordersTab === 'open' ? 'مفتوحة' : 'في السجل'}</p>
+              <p class="text-[11px] text-slate-500 mt-1">{ordersTab === 'open' ? 'ابدأ التداول من اللوحة اليمنى' : 'ستظهر صفقاتك المنفّذة هنا'}</p>
+            </div>
           {:else}
             <table class="w-full text-xs">
               <thead>
@@ -565,12 +590,14 @@
 
     <!-- Right -->
     <div class="flex flex-col gap-3">
-      <div class="panel hidden lg:flex flex-col overflow-hidden" style="height: 380px;">
+      <div class="panel relative hidden lg:flex flex-col overflow-hidden" style="height: 380px;">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
         <OrderBook {symbol} />
       </div>
 
       <!-- Depth chart -->
-      <div class="panel hidden lg:flex flex-col overflow-hidden p-2" style="height: 160px;">
+      <div class="panel relative hidden lg:flex flex-col overflow-hidden p-2" style="height: 160px;">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
         <div class="flex items-center justify-between px-1 pb-1">
           <span class="text-[10px] text-slate-500 uppercase tracking-wider">العمق</span>
           <span class="text-[10px] text-slate-500">20 مستوى</span>
@@ -578,11 +605,13 @@
         <DepthChart {symbol} height={120} />
       </div>
 
-      <div class="panel p-4">
+      <div class="panel relative p-4">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
         <TradeForm {symbol} {balances} />
       </div>
 
-      <div class="panel hidden lg:flex flex-col overflow-hidden" style="height: 240px;">
+      <div class="panel relative hidden lg:flex flex-col overflow-hidden" style="height: 240px;">
+        <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-rose/40 to-transparent"></div>
         <TradesFeed {symbol} />
       </div>
 

@@ -90,10 +90,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      {/* Ambient premium aurora background (dark-mode only) */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute -top-40 -right-40 h-[480px] w-[480px] rounded-full bg-emerald-500/10 blur-[140px] animate-pulse-glow" />
+        <div className="absolute top-1/3 -left-40 h-[420px] w-[420px] rounded-full bg-teal-500/10 blur-[140px] animate-pulse-glow" style={{ animationDelay: "1.5s" }} />
+        <div className="absolute bottom-0 right-1/4 h-[360px] w-[360px] rounded-full bg-emerald-400/5 blur-[120px] animate-pulse-glow" style={{ animationDelay: "0.8s" }} />
+      </div>
+
       {/* ─── Header ─── */}
       <header className="fixed top-0 left-0 right-0 z-40 border-b border-border/50 bg-background/60 backdrop-blur-2xl">
         <div className="absolute inset-0 bg-grid-pattern opacity-20 pointer-events-none" />
+        {/* Premium gold→emerald bottom highlight line */}
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-l from-emerald-500/40 via-teal-500/30 to-transparent" />
         <div className="relative flex items-center justify-between h-16 px-4 lg:px-6">
           {/* Right side: Mobile menu + Branding */}
           <div className="flex items-center gap-3">
@@ -104,17 +113,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Menu className="h-5 w-5" />
             </button>
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                <Zap className="h-5 w-5 text-white" />
+              <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 via-teal-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
+                <Zap className="relative h-5 w-5 text-white" />
               </div>
               <div className="hidden sm:flex flex-col">
-                <span className="text-base font-bold gradient-text leading-tight">
+                <span className="text-base font-bold gradient-text leading-tight tracking-tight">
                   EgMoney
                 </span>
                 <span className="text-[10px] text-muted-foreground leading-tight">
                   لوحة الإدارة
                 </span>
               </div>
+            </div>
+
+            {/* LIVE status pill — matches frontend premium look */}
+            <div className="hidden md:flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              <span className="text-[10px] font-semibold text-emerald-400 tracking-wider">مباشر</span>
             </div>
           </div>
 
@@ -177,7 +196,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* ─── Sidebar ─── */}
       <aside
-        className={`fixed top-16 right-0 bottom-0 z-30 w-64 bg-background/95 backdrop-blur-2xl border-l border-border/50 transform transition-transform duration-300 ease-out lg:translate-x-0 ${
+        className={`fixed top-16 right-0 bottom-0 z-30 w-64 bg-background/95 backdrop-blur-2xl border-l border-border/50 transform transition-transform duration-300 ease-out lg:translate-x-0 relative ${
           sidebarOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -241,7 +260,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       {/* ─── Main Content ─── */}
-      <main className="pt-16 pr-0 lg:pr-64 min-h-screen transition-all duration-300">
+      <main className="relative z-10 pt-16 pr-0 lg:pr-64 min-h-screen transition-all duration-300">
         <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
       </main>
     </div>

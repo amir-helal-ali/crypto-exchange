@@ -169,30 +169,3 @@
     {/each}
   </div>
 </div>
-
-<style>
-  :global([data-theme='light']) .bg-ink-900\/30 {
-    background-color: rgba(15, 23, 42, 0.03) !important;
-  }
-  :global([data-theme='light']) .bg-ink-900\/50 {
-    background-color: rgba(15, 23, 42, 0.05) !important;
-  }
-  :global([data-theme='light']) .border-white\/5 {
-    border-color: rgba(15, 23, 42, 0.08) !important;
-  }
-  :global([data-theme='light']) .text-slate-400 {
-    color: #64748b !important;
-  }
-  :global([data-theme='light']) .text-slate-500 {
-    color: #94a3b8 !important;
-  }
-  :global([data-theme='light']) .bg-white\/10 {
-    background-color: rgba(15, 23, 42, 0.08) !important;
-  }
-  :global([data-theme='light']) .bg-white\/5 {
-    background-color: rgba(15, 23, 42, 0.04) !important;
-  }
-  :global([data-theme='light']) .border-white\/10 {
-    border-color: rgba(15, 23, 42, 0.12) !important;
-  }
-</style>

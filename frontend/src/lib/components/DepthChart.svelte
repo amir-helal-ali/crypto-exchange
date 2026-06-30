@@ -2,10 +2,9 @@
   /**
    * DepthChart — visual area chart of bid/ask order book depth.
    * Sits next to (or below) the OrderBook table for a Binance Pro-style view.
-   * Custom canvas-based, theme-aware, real-time updates from the NEXUS market feed.
+   * Custom canvas-based, dark-mode real-time depth visualization from the NEXUS market feed.
    */
   import { onMount, onDestroy } from 'svelte';
-  import { theme as themeStore } from '$lib/stores/theme';
   import { nexusMarket, deriveOrderBook } from '$lib/stores/nexus-market';
   import { formatCompact } from '$lib/utils/format';
 
@@ -20,7 +19,6 @@
   let container: HTMLElement;
   let ctx: CanvasRenderingContext2D;
   let rafId = 0;
-  let theme = 'dark';
 
   let bids: [number, number][] = [];
   let asks: [number, number][] = [];
@@ -31,10 +29,6 @@
 
   let unsubNexus: (() => void) | null = null;
   let unsubOB: (() => void) | null = null;
-  const unsubTheme = themeStore.subscribe((t) => {
-    theme = t?.resolved ?? 'dark';
-    render();
-  });
 
   function cssVar(name: string): string {
     if (typeof getComputedStyle === 'undefined') return '';
@@ -42,18 +36,17 @@
   }
 
   function themeColors() {
-    const isLight = theme === 'light';
     return {
-      bg: isLight ? '#ffffff' : cssVar('--bg-elev-1') || '#0a0e1f',
-      grid: isLight ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.04)',
-      axisText: isLight ? '#94a3b8' : '#6b769c',
-      axisTextStrong: isLight ? '#475569' : '#a3accd',
-      bid: isLight ? '#059669' : '#22d3a4',
-      bidFill: isLight ? 'rgba(5,150,105,0.20)' : 'rgba(34,211,164,0.18)',
-      ask: isLight ? '#e11d48' : '#f43f7a',
-      askFill: isLight ? 'rgba(225,29,72,0.20)' : 'rgba(244,63,122,0.18)',
-      mid: isLight ? '#d97706' : '#f5b544',
-      panelBorder: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.05)'
+      bg: cssVar('--bg-elev-1') || '#0a0e1f',
+      grid: 'rgba(255,255,255,0.04)',
+      axisText: '#6b769c',
+      axisTextStrong: '#a3accd',
+      bid: '#22d3a4',
+      bidFill: 'rgba(34,211,164,0.18)',
+      ask: '#f43f7a',
+      askFill: 'rgba(244,63,122,0.18)',
+      mid: '#f5b544',
+      panelBorder: 'rgba(255,255,255,0.05)'
     };
   }
 
@@ -102,7 +95,6 @@
       cancelAnimationFrame(rafId);
       unsubNexus?.();
       unsubOB?.();
-      unsubTheme();
       ro.disconnect();
     };
   });
@@ -112,7 +104,6 @@
     cancelAnimationFrame(rafId);
     unsubNexus?.();
     unsubOB?.();
-    unsubTheme();
   });
 
   $effect(() => {
@@ -267,7 +258,7 @@
     // Mid price label (right side)
     ctx.fillStyle = C.mid;
     ctx.fillRect(padLeft + chartW, padTop + chartH / 2 - 9, padRight, 18);
-    ctx.fillStyle = theme === 'light' ? '#fff' : '#050813';
+    ctx.fillStyle = '#050813';
     ctx.font = 'bold 10px "JetBrains Mono", ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -311,9 +302,3 @@
 >
   <canvas bind:this={canvas} class="absolute inset-0" aria-label="مخطط عمق {symbol}"></canvas>
 </div>
-
-<style>
-  :global([data-theme='light']) canvas {
-    -webkit-font-smoothing: antialiased;
-  }
-</style>

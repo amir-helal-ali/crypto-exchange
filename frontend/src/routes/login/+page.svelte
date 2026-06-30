@@ -7,9 +7,11 @@
   import { authStore } from '$lib/stores/auth';
   import { toasts } from '$lib/stores/toast';
   import Button from '$lib/components/Button.svelte';
-  import { Mail, Lock, Eye, EyeOff, ArrowLeft, ShieldCheck, Zap, TrendingUp } from 'lucide-svelte';
+  import {
+    Mail, Lock, Eye, EyeOff, ArrowLeft, ShieldCheck, Zap, TrendingUp,
+    Loader2, Fingerprint, Sparkles, Crown, Activity, ChevronLeft
+  } from 'lucide-svelte';
   import ParticleBackground from '$lib/components/ParticleBackground.svelte';
-  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
   let email = $state('');
   let password = $state('');
@@ -20,7 +22,6 @@
   let tempToken = $state('');
   let errors = $state<Record<string, string>>({});
 
-  // Redirect if already logged in
   onMount(() => {
     if (authStore.isAuthenticated()) {
       goto('/dashboard');
@@ -88,82 +89,125 @@
       loading = false;
     }
   }
+
+  const features = [
+    { icon: Zap, label: 'تنفيذ فوري', sub: '< 10 مللي ثانية', color: 'mint' },
+    { icon: ShieldCheck, label: 'أمان مصرفي', sub: '2FA + تشفير', color: 'azure' },
+    { icon: TrendingUp, label: 'سيولة عالية', sub: '+200 زوج تداول', color: 'gold' }
+  ];
+
+  // Static class lookups (Tailwind JIT safe)
+  const colorClasses: Record<string, { bg: string; border: string; text: string }> = {
+    mint: { bg: 'bg-accent-mint/10', border: 'border-accent-mint/20', text: 'text-accent-mint' },
+    azure: { bg: 'bg-accent-azure/10', border: 'border-accent-azure/20', text: 'text-accent-azure' },
+    gold: { bg: 'bg-accent-gold/10', border: 'border-accent-gold/20', text: 'text-accent-gold' },
+    violet: { bg: 'bg-accent-violet/10', border: 'border-accent-violet/20', text: 'text-accent-violet' },
+    rose: { bg: 'bg-accent-rose/10', border: 'border-accent-rose/20', text: 'text-accent-rose' }
+  };
 </script>
 
 <ParticleBackground />
 
-<!-- Floating theme toggle -->
-<div class="fixed top-4 left-4 z-50">
-  <div class="panel p-1 rounded-xl">
-    <ThemeToggle size={20} />
-  </div>
-</div>
+<div class="min-h-screen flex items-center justify-center p-4 sm:p-6 relative">
+  <!-- Top fixed gradient strip -->
+  <div class="fixed top-0 inset-x-0 h-px pointer-events-none z-50" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.5), rgba(168, 85, 247, 0.4), transparent);"></div>
 
-<div class="min-h-screen flex items-center justify-center p-4 sm:p-6">
-  <div class="w-full max-w-5xl grid lg:grid-cols-2 gap-0 panel-glow overflow-hidden" style="min-height: 600px;">
+  <div class="w-full max-w-5xl grid lg:grid-cols-2 gap-0 panel-glow overflow-hidden relative" style="min-height: 620px;">
+    <!-- Inner topbar gradient highlight -->
+    <div class="absolute top-0 inset-x-0 h-px pointer-events-none z-10" style="background: linear-gradient(90deg, transparent 10%, rgba(245, 181, 68, 0.6) 50%, transparent 90%);"></div>
+
     <!-- Left side — brand showcase -->
     <div class="relative hidden lg:flex flex-col justify-between p-10 overflow-hidden">
-      <div class="absolute inset-0 bg-gradient-to-br from-accent-violet/10 via-transparent to-accent-gold/10"></div>
-      <div class="absolute top-0 right-0 w-64 h-64 bg-accent-gold/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-      <div class="absolute bottom-0 left-0 w-64 h-64 bg-accent-violet/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+      <div class="absolute inset-0 bg-gradient-to-br from-accent-violet/12 via-transparent to-accent-gold/12"></div>
+      <div class="absolute top-0 right-0 w-72 h-72 bg-accent-gold/15 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 animate-float"></div>
+      <div class="absolute bottom-0 left-0 w-72 h-72 bg-accent-violet/15 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 animate-float" style="animation-delay: 2s;"></div>
+      <div class="absolute inset-0 grid-bg opacity-20"></div>
 
+      <!-- Logo -->
       <div class="relative z-10">
-        <a href="/" class="flex items-center gap-2.5">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-gold to-accent-rose flex items-center justify-center font-black text-ink-950 text-lg">
-            N
+        <a href="/" class="flex items-center gap-2.5 group">
+          <div class="relative w-10 h-10 rounded-xl bg-gradient-to-br from-accent-gold via-accent-rose to-accent-violet flex items-center justify-center font-black text-ink-950 text-lg transition-transform group-hover:scale-105">
+            <span class="absolute inset-0 rounded-xl opacity-50 blur-md bg-gradient-to-br from-accent-gold to-accent-violet"></span>
+            <span class="relative">N</span>
           </div>
-          <span class="text-xl font-bold text-white">NEXUS Exchange</span>
+          <span class="text-xl font-bold text-white tracking-tight">NEXUS Exchange</span>
         </a>
       </div>
 
+      <!-- Hero text -->
       <div class="relative z-10 space-y-6">
-        <h1 class="text-4xl font-bold leading-tight text-balance">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-gold/10 border border-accent-gold/25 text-accent-gold text-[10px] font-bold tracking-wide">
+          <span class="relative flex h-1.5 w-1.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-gold opacity-60"></span>
+            <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-gold"></span>
+          </span>
+          منصة التداول رقم 1 في الشرق الأوسط
+        </div>
+
+        <h1 class="text-4xl font-bold leading-tight text-balance tracking-tight">
           منصة التداول
-          <span class="text-aurora block">الأكثر احترافية</span>
+          <span class="text-aurora block" style="text-shadow: 0 0 30px rgba(245, 181, 68, 0.25);">الأكثر احترافية</span>
         </h1>
         <p class="text-slate-300 text-lg leading-relaxed">
           تداول بثقة على منصة تجمع بين السرعة والأمان والسيولة العالية. انضم إلى آلاف المتداولين المحترفين.
         </p>
-        <div class="space-y-3 pt-4">
-          <div class="flex items-center gap-3 text-slate-200">
-            <div class="w-9 h-9 rounded-lg bg-accent-mint/10 border border-accent-mint/20 flex items-center justify-center">
-              <Zap size={16} class="text-accent-mint" />
+
+        <!-- Features list — premium style -->
+        <div class="space-y-3 pt-2">
+          {#each features as feat}
+            {@const c = colorClasses[feat.color]}
+            <div class="flex items-center gap-3 text-slate-200 group">
+              <div class="w-10 h-10 rounded-xl {c.bg} {c.border} border flex items-center justify-center group-hover:scale-105 transition-transform">
+                <feat.icon size={17} class={c.text} />
+              </div>
+              <div class="flex-1">
+                <p class="text-sm font-semibold text-white">{feat.label}</p>
+                <p class="text-[11px] text-slate-400">{feat.sub}</p>
+              </div>
+              <ChevronLeft size={14} class="text-slate-600 group-hover:text-slate-400 group-hover:-translate-x-1 transition-all" />
             </div>
-            <span>تنفيذ فوري للصفقات بأقل من 10 مللي ثانية</span>
-          </div>
-          <div class="flex items-center gap-3 text-slate-200">
-            <div class="w-9 h-9 rounded-lg bg-accent-azure/10 border border-accent-azure/20 flex items-center justify-center">
-              <ShieldCheck size={16} class="text-accent-azure" />
-            </div>
-            <span>أمان بمستوى البنوك مع المصادقة الثنائية</span>
-          </div>
-          <div class="flex items-center gap-3 text-slate-200">
-            <div class="w-9 h-9 rounded-lg bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
-              <TrendingUp size={16} class="text-accent-gold" />
-            </div>
-            <span>أكثر من 200 زوج تداول بسيولة عالية</span>
-          </div>
+          {/each}
         </div>
       </div>
 
-      <div class="relative z-10 text-xs text-slate-400">
-        © 2026 NEXUS Exchange. جميع الحقوق محفوظة.
+      <!-- Footer -->
+      <div class="relative z-10 flex items-center justify-between">
+        <div class="text-xs text-slate-400">© 2026 NEXUS Exchange</div>
+        <div class="flex items-center gap-1.5 text-[10px] text-slate-500">
+          <Activity size={10} class="text-accent-mint" />
+          <span>جميع الأنظمة تعمل</span>
+        </div>
       </div>
     </div>
 
     <!-- Right side — login form -->
-    <div class="p-8 sm:p-12 flex flex-col justify-center bg-ink-950/40">
-      <div class="lg:hidden mb-8 flex items-center gap-2.5">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-gold to-accent-rose flex items-center justify-center font-black text-ink-950 text-lg">
-          N
+    <div class="p-8 sm:p-12 flex flex-col justify-center bg-ink-950/40 relative">
+      <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 100% 60% at 50% 0%, rgba(168, 85, 247, 0.05), transparent 60%);"></div>
+
+      <!-- Mobile logo -->
+      <div class="lg:hidden mb-8 flex items-center gap-2.5 relative">
+        <div class="relative w-10 h-10 rounded-xl bg-gradient-to-br from-accent-gold via-accent-rose to-accent-violet flex items-center justify-center font-black text-ink-950 text-lg">
+          <span class="absolute inset-0 rounded-xl opacity-50 blur-md bg-gradient-to-br from-accent-gold to-accent-violet"></span>
+          <span class="relative">N</span>
         </div>
-        <span class="text-xl font-bold text-white">NEXUS</span>
+        <span class="text-xl font-bold text-white tracking-tight">NEXUS</span>
       </div>
 
-      <div class="mb-8">
-        <h2 class="text-2xl font-bold text-white mb-2">
-          {requires2FA ? 'تحقق ثنائي' : 'تسجيل الدخول'}
-        </h2>
+      <div class="mb-8 relative">
+        <div class="flex items-center gap-2 mb-2">
+          {#if requires2FA}
+            <div class="w-9 h-9 rounded-xl bg-accent-violet/10 border border-accent-violet/20 flex items-center justify-center">
+              <Fingerprint size={18} class="text-accent-violet" />
+            </div>
+          {:else}
+            <div class="w-9 h-9 rounded-xl bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
+              <Lock size={18} class="text-accent-gold" />
+            </div>
+          {/if}
+          <h2 class="text-2xl font-bold text-white tracking-tight">
+            {requires2FA ? 'تحقق ثنائي' : 'تسجيل الدخول'}
+          </h2>
+        </div>
         <p class="text-slate-400 text-sm">
           {requires2FA
             ? 'أدخل رمز المصادقة من تطبيق المصادقة لديك'
@@ -187,10 +231,17 @@
             {#if errors.twoFaCode}
               <p class="mt-1.5 text-xs text-accent-rose">{errors.twoFaCode}</p>
             {/if}
+            <p class="mt-2 text-[11px] text-slate-500 flex items-center gap-1.5">
+              <Fingerprint size={11} class="text-slate-600" />
+              أدخل الرمز المكوّن من 6 أرقام من تطبيق المصادقة
+            </p>
           </div>
         {:else}
           <div>
-            <label class="input-label" for="email">البريد الإلكتروني</label>
+            <label class="input-label flex items-center gap-1.5" for="email">
+              <Mail size={11} class="text-accent-gold" />
+              البريد الإلكتروني
+            </label>
             <div class="relative">
               <div class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 pointer-events-none">
                 <Mail size={16} />
@@ -211,9 +262,12 @@
 
           <div>
             <div class="flex items-center justify-between mb-1.5">
-              <label class="text-xs font-medium text-slate-400" for="password">كلمة المرور</label>
-              <a href="/forgot-password" class="text-xs text-accent-gold hover:underline">
-                نسيت كلمة المرور؟
+              <label class="text-xs font-medium text-slate-400 flex items-center gap-1.5" for="password">
+                <Lock size={11} class="text-accent-gold" />
+                كلمة المرور
+              </label>
+              <a href="/forgot-password" class="text-xs text-accent-gold hover:underline flex items-center gap-1">
+                نسيت كلمة المرور؟ <ChevronLeft size={11} />
               </a>
             </div>
             <div class="relative">
@@ -230,7 +284,7 @@
               />
               <button
                 type="button"
-                class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 hover:text-white"
+                class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 hover:text-white transition-colors"
                 onclick={() => (showPassword = !showPassword)}
                 aria-label="إظهار/إخفاء كلمة المرور"
               >
@@ -252,22 +306,30 @@
       </form>
 
       {#if !requires2FA}
-        <div class="mt-6 text-center text-sm text-slate-400">
+        <!-- Divider -->
+        <div class="my-6 flex items-center gap-3">
+          <div class="flex-1 h-px bg-gradient-to-l from-white/10 to-transparent"></div>
+          <span class="text-[10px] text-slate-500 uppercase tracking-wider">أو</span>
+          <div class="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent"></div>
+        </div>
+
+        <div class="text-center text-sm text-slate-400">
           ليس لديك حساب؟
-          <a href="/register" class="text-accent-gold font-medium hover:underline mr-1">
-            أنشئ حساباً جديداً
+          <a href="/register" class="text-accent-gold font-medium hover:underline mr-1 inline-flex items-center gap-1">
+            أنشئ حساباً جديداً <ChevronLeft size={12} />
           </a>
         </div>
       {:else}
         <button
-          class="mt-6 text-sm text-slate-400 hover:text-white transition-colors"
+          class="mt-6 text-sm text-slate-400 hover:text-white transition-colors flex items-center gap-1.5"
           onclick={() => {
             requires2FA = false;
             twoFaCode = '';
             tempToken = '';
           }}
         >
-          → العودة لتسجيل الدخول
+          <ArrowLeft size={14} class="rotate-180" />
+          العودة لتسجيل الدخول
         </button>
       {/if}
     </div>

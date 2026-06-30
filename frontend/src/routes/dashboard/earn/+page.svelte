@@ -60,14 +60,14 @@
   let balances = $state<Record<string, number>>({});
   let positions = $state<UserPosition[]>([]);
   let pools = $state<StakingPool[]>([
-    { id: 'btc', asset: 'BTC', name: 'Bitcoin', logo: '₿', color: '#f7931a', aprFlexible: 2.5, apr30: 4.2, apr90: 6.8, apr180: 9.5, minStake: 0.001, tvlUsd: 78_500_000, popular: true },
-    { id: 'eth', asset: 'ETH', name: 'Ethereum', logo: 'Ξ', color: '#627eea', aprFlexible: 3.2, apr30: 5.5, apr90: 8.1, apr180: 12.0, minStake: 0.01, tvlUsd: 28_900_000, hot: true },
-    { id: 'sol', asset: 'SOL', name: 'Solana', logo: '◎', color: '#9945ff', aprFlexible: 5.0, apr30: 8.0, apr90: 11.5, apr180: 16.0, minStake: 0.5, tvlUsd: 22_300_000 },
-    { id: 'bnb', asset: 'BNB', name: 'BNB', logo: '⬡', color: '#f0b90b', aprFlexible: 4.1, apr30: 6.8, apr90: 10.2, apr180: 14.5, minStake: 0.1, tvlUsd: 51_200_000 },
-    { id: 'usdt', asset: 'USDT', name: 'Tether', logo: '$', color: '#26a17b', aprFlexible: 8.5, apr30: 12.0, apr90: 15.5, apr180: 19.0, minStake: 10, tvlUsd: 12_500_000, popular: true },
-    { id: 'avax', asset: 'AVAX', name: 'Avalanche', logo: '▲', color: '#e84142', aprFlexible: 4.5, apr30: 7.2, apr90: 10.8, apr180: 15.0, minStake: 1, tvlUsd: 9_800_000 },
-    { id: 'ada', asset: 'ADA', name: 'Cardano', logo: '₳', color: '#0033ad', aprFlexible: 4.0, apr30: 6.5, apr90: 9.8, apr180: 13.5, minStake: 10, tvlUsd: 2_100_000 },
-    { id: 'dot', asset: 'DOT', name: 'Polkadot', logo: '●', color: '#e6007a', aprFlexible: 6.5, apr30: 9.5, apr90: 13.5, apr180: 18.0, minStake: 5, tvlUsd: 5_400_000 }
+    { id: 'btc', asset: 'BTC', name: 'Bitcoin', logo: 'BT', color: '#f7931a', aprFlexible: 2.5, apr30: 4.2, apr90: 6.8, apr180: 9.5, minStake: 0.001, tvlUsd: 78_500_000, popular: true },
+    { id: 'eth', asset: 'ETH', name: 'Ethereum', logo: 'ET', color: '#627eea', aprFlexible: 3.2, apr30: 5.5, apr90: 8.1, apr180: 12.0, minStake: 0.01, tvlUsd: 28_900_000, hot: true },
+    { id: 'sol', asset: 'SOL', name: 'Solana', logo: 'SO', color: '#9945ff', aprFlexible: 5.0, apr30: 8.0, apr90: 11.5, apr180: 16.0, minStake: 0.5, tvlUsd: 22_300_000 },
+    { id: 'bnb', asset: 'BNB', name: 'BNB', logo: 'BN', color: '#f0b90b', aprFlexible: 4.1, apr30: 6.8, apr90: 10.2, apr180: 14.5, minStake: 0.1, tvlUsd: 51_200_000 },
+    { id: 'usdt', asset: 'USDT', name: 'Tether', logo: 'US', color: '#26a17b', aprFlexible: 8.5, apr30: 12.0, apr90: 15.5, apr180: 19.0, minStake: 10, tvlUsd: 12_500_000, popular: true },
+    { id: 'avax', asset: 'AVAX', name: 'Avalanche', logo: 'AV', color: '#e84142', aprFlexible: 4.5, apr30: 7.2, apr90: 10.8, apr180: 15.0, minStake: 1, tvlUsd: 9_800_000 },
+    { id: 'ada', asset: 'ADA', name: 'Cardano', logo: 'AD', color: '#0033ad', aprFlexible: 4.0, apr30: 6.5, apr90: 9.8, apr180: 13.5, minStake: 10, tvlUsd: 2_100_000 },
+    { id: 'dot', asset: 'DOT', name: 'Polkadot', logo: 'DO', color: '#e6007a', aprFlexible: 6.5, apr30: 9.5, apr90: 13.5, apr180: 18.0, minStake: 5, tvlUsd: 5_400_000 }
   ]);
 
   let stakingModal = $state<{ open: boolean; pool: StakingPool | null }>({ open: false, pool: null });
@@ -245,21 +245,32 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && closeStakeModal()} />
 
-<div class="space-y-6">
+<div class="relative space-y-6">
+  <!-- Ambient aurora background -->
+  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div class="absolute top-[-10%] left-[-5%] w-[480px] h-[480px] rounded-full bg-accent-gold/[0.08] blur-[120px] animate-pulse-glow"></div>
+    <div class="absolute bottom-[-15%] right-[-5%] w-[440px] h-[440px] rounded-full bg-accent-violet/[0.07] blur-[120px] animate-pulse-glow" style="animation-delay:1.5s"></div>
+    <div class="absolute top-[40%] left-[35%] w-[320px] h-[320px] rounded-full bg-accent-mint/[0.05] blur-[120px] animate-pulse-glow" style="animation-delay:0.8s"></div>
+  </div>
+
   <!-- Header -->
   <div class="flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-3">
-      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold to-accent-violet flex items-center justify-center">
-        <Sparkles size={22} class="text-ink-950" />
+      <div class="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold to-accent-violet flex items-center justify-center shadow-lg shadow-accent-gold/20">
+        <div class="absolute inset-0 rounded-2xl bg-accent-gold/30 blur-md"></div>
+        <Sparkles size={22} class="relative text-ink-950" />
       </div>
       <div>
-        <h1 class="text-2xl font-bold text-white">Earn & Staking</h1>
+        <h1 class="text-2xl font-bold text-white tracking-tight">Earn & Staking</h1>
         <p class="text-sm text-slate-400">اجعل عملاتك تعمل من أجلك — اربح حتى 19% سنوياً</p>
       </div>
     </div>
     <div class="flex items-center gap-2 text-xs">
-      <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+      <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent-mint/10 border border-accent-mint/20 text-accent-mint">
+        <span class="relative flex h-1.5 w-1.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-mint opacity-60"></span>
+          <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-mint"></span>
+        </span>
         مكافآت تُحتسب كل ساعة
       </div>
     </div>
@@ -267,8 +278,10 @@
 
   <!-- Hero Stats -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    <div class="panel p-5 relative overflow-hidden">
+    <div class="panel relative p-5 overflow-hidden group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
       <div class="absolute inset-0 bg-gradient-to-br from-accent-gold/5 to-transparent"></div>
+      <div class="absolute -top-6 -right-6 w-20 h-20 rounded-full bg-accent-gold/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
       <div class="relative">
         <div class="flex items-center justify-between mb-3">
           <div class="w-9 h-9 rounded-lg bg-accent-gold/15 flex items-center justify-center">
@@ -281,24 +294,28 @@
       </div>
     </div>
 
-    <div class="panel p-5 relative overflow-hidden">
-      <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent"></div>
+    <div class="panel relative p-5 overflow-hidden group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
+      <div class="absolute inset-0 bg-gradient-to-br from-accent-mint/5 to-transparent"></div>
+      <div class="absolute -top-6 -right-6 w-20 h-20 rounded-full bg-accent-mint/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
       <div class="relative">
         <div class="flex items-center justify-between mb-3">
-          <div class="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-            <Gift size={16} class="text-emerald-400" />
+          <div class="w-9 h-9 rounded-lg bg-accent-mint/15 flex items-center justify-center">
+            <Gift size={16} class="text-accent-mint" />
           </div>
           <span class="text-[10px] text-slate-500 uppercase tracking-wider">Rewards</span>
         </div>
-        <p class="text-xl font-bold text-emerald-400 font-mono tabular-nums">
+        <p class="text-xl font-bold text-accent-mint font-mono tabular-nums">
           {egpCompact(totalRewardsEgp + rewardsTick)}
         </p>
         <p class="text-xs text-slate-400 mt-1">${totalRewardsUsd.toFixed(2)} USD</p>
       </div>
     </div>
 
-    <div class="panel p-5 relative overflow-hidden">
+    <div class="panel relative p-5 overflow-hidden group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
       <div class="absolute inset-0 bg-gradient-to-br from-accent-violet/5 to-transparent"></div>
+      <div class="absolute -top-6 -right-6 w-20 h-20 rounded-full bg-accent-violet/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
       <div class="relative">
         <div class="flex items-center justify-between mb-3">
           <div class="w-9 h-9 rounded-lg bg-accent-violet/15 flex items-center justify-center">
@@ -309,12 +326,14 @@
         <p class="text-xl font-bold text-white font-mono tabular-nums">
           {egpCompact(usdToEgp(dailyRewardsUsd, currentRate))}
         </p>
-        <p class="text-xs text-emerald-400 mt-1">≈ ${dailyRewardsUsd.toFixed(4)}/يوم</p>
+        <p class="text-xs text-accent-mint mt-1">≈ ${dailyRewardsUsd.toFixed(4)}/يوم</p>
       </div>
     </div>
 
-    <div class="panel p-5 relative overflow-hidden">
+    <div class="panel relative p-5 overflow-hidden group">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-rose/40 to-transparent"></div>
       <div class="absolute inset-0 bg-gradient-to-br from-accent-rose/5 to-transparent"></div>
+      <div class="absolute -top-6 -right-6 w-20 h-20 rounded-full bg-accent-rose/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
       <div class="relative">
         <div class="flex items-center justify-between mb-3">
           <div class="w-9 h-9 rounded-lg bg-accent-rose/15 flex items-center justify-center">
@@ -330,7 +349,8 @@
 
   <!-- Calculator + My Positions -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <div class="panel p-6 lg:col-span-2">
+    <div class="panel relative p-6 lg:col-span-2">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
       <div class="flex items-center gap-2 mb-5">
         <Calculator size={18} class="text-accent-gold" />
         <h2 class="text-base font-bold text-white">حاسبة المكافآت</h2>
@@ -370,12 +390,12 @@
         <div class="grid grid-cols-3 gap-4">
           <div class="text-center">
             <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">العائد اليومي</p>
-            <p class="text-lg font-bold text-emerald-400 font-mono tabular-nums">{calcDailyReward.toFixed(6)}</p>
+            <p class="text-lg font-bold text-accent-mint font-mono tabular-nums">{calcDailyReward.toFixed(6)}</p>
             <p class="text-[10px] text-slate-500">{calcAsset}</p>
           </div>
           <div class="text-center border-x border-white/5">
             <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">العائد الشهري</p>
-            <p class="text-lg font-bold text-emerald-400 font-mono tabular-nums">{calcMonthlyReward.toFixed(6)}</p>
+            <p class="text-lg font-bold text-accent-mint font-mono tabular-nums">{calcMonthlyReward.toFixed(6)}</p>
             <p class="text-[10px] text-slate-500">{calcAsset}</p>
           </div>
           <div class="text-center">
@@ -397,7 +417,8 @@
       </div>
     </div>
 
-    <div class="panel p-5">
+    <div class="panel relative p-5">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/40 to-transparent"></div>
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2">
           <Award size={16} class="text-accent-violet" />
@@ -408,10 +429,15 @@
 
       <div class="space-y-3 max-h-[340px] overflow-y-auto pr-1">
         {#if positions.filter((p) => p.status !== 'withdrawn').length === 0}
-          <div class="py-12 text-center">
-            <Lock size={32} class="mx-auto mb-2 text-slate-600" />
-            <p class="text-sm text-slate-400 mb-3">لا توجد مراكز staking نشطة</p>
-            <p class="text-xs text-slate-500">اختر pool من الأسفل للبدء</p>
+          <div class="py-12 text-center relative">
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div class="w-24 h-24 rounded-2xl bg-accent-violet/5 blur-3xl"></div>
+            </div>
+            <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-violet/10 to-accent-gold/10 border border-white/5 mb-3">
+              <Lock size={26} class="text-slate-500" />
+            </div>
+            <p class="text-sm text-slate-300 mb-1">لا توجد مراكز staking نشطة</p>
+            <p class="text-xs text-slate-500">اختر pool من الأسفل للبدء في كسب المكافآت</p>
           </div>
         {:else}
           {#each positions.filter((p) => p.status !== 'withdrawn') as pos}
@@ -430,9 +456,9 @@
                   </div>
                 </div>
                 {#if pos.status === 'locked'}
-                  <Lock size={12} class="text-amber-400" />
+                  <Lock size={12} class="text-accent-gold" />
                 {:else}
-                  <Unlock size={12} class="text-emerald-400" />
+                  <Unlock size={12} class="text-accent-mint" />
                 {/if}
               </div>
               <div class="grid grid-cols-2 gap-2 text-xs">
@@ -442,7 +468,7 @@
                 </div>
                 <div>
                   <p class="text-slate-500">المكافآت</p>
-                  <p class="text-emerald-400 font-mono">{formatNumber(pos.rewardsEarned)}</p>
+                  <p class="text-accent-mint font-mono tabular-nums">{formatNumber(pos.rewardsEarned)}</p>
                 </div>
               </div>
               <div class="mt-2 pt-2 border-t border-white/5 flex items-center justify-between">
@@ -465,7 +491,8 @@
   </div>
 
   <!-- Pools -->
-  <div class="panel p-6">
+  <div class="panel relative p-6">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
     <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
       <div>
         <h2 class="text-base font-bold text-white">Staking Pools</h2>
@@ -546,7 +573,7 @@
             </div>
             <div class="flex justify-between">
               <span>رصيدك</span>
-              <span class="{bal > 0 ? 'text-emerald-400' : 'text-slate-600'} font-mono">{formatNumber(bal)} {pool.asset}</span>
+              <span class="{bal > 0 ? 'text-accent-mint' : 'text-slate-600'} font-mono tabular-nums">{formatNumber(bal)} {pool.asset}</span>
             </div>
           </div>
 
@@ -565,7 +592,8 @@
   </div>
 
   <!-- How it works -->
-  <div class="panel p-6">
+  <div class="panel relative p-6">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
     <div class="flex items-center gap-2 mb-5">
       <Info size={16} class="text-accent-gold" />
       <h2 class="text-base font-bold text-white">كيف يعمل ال Staking؟</h2>
@@ -670,11 +698,11 @@
         </div>
         <div class="flex justify-between text-sm">
           <span class="text-slate-400">العائد اليومي</span>
-          <span class="text-emerald-400 font-mono">{(yearlyReward / 365).toFixed(6)} {pool.asset}</span>
+          <span class="text-accent-mint font-mono tabular-nums">{(yearlyReward / 365).toFixed(6)} {pool.asset}</span>
         </div>
         <div class="flex justify-between text-sm">
           <span class="text-slate-400">العائد الشهري</span>
-          <span class="text-emerald-400 font-mono">{(yearlyReward / 12).toFixed(6)} {pool.asset}</span>
+          <span class="text-accent-mint font-mono tabular-nums">{(yearlyReward / 12).toFixed(6)} {pool.asset}</span>
         </div>
         <div class="flex justify-between text-sm pt-2 border-t border-white/5">
           <span class="text-slate-400">العائد السنوي</span>

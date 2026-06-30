@@ -142,15 +142,25 @@
 
 <svelte:head><title>التنبيهات — NEXUS</title></svelte:head>
 
-<div class="space-y-6">
+<div class="space-y-6 relative">
+  <!-- Ambient aurora -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+    <div class="absolute -top-20 right-1/4 w-80 h-80 bg-accent-gold/6 blur-[120px] rounded-full animate-pulse-glow"></div>
+    <div class="absolute bottom-0 -left-32 w-80 h-80 bg-accent-violet/5 blur-[120px] rounded-full animate-pulse-glow" style="animation-delay: 2s;"></div>
+  </div>
+
   <!-- Header -->
-  <div class="flex items-center justify-between flex-wrap gap-3">
+  <div class="relative flex items-center justify-between flex-wrap gap-3">
     <div>
-      <h1 class="text-2xl sm:text-3xl font-bold text-white flex items-center gap-2">
-        <BellRing size={28} class="text-accent-gold" />
-        تنبيهات الأسعار
-      </h1>
-      <p class="text-sm text-slate-400 mt-1">تابع أسعار عملاتك المفضلة واحصل على إشعارات فورية</p>
+      <div class="flex items-center gap-2.5 mb-1">
+        <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent-gold/20 to-accent-violet/10 border border-accent-gold/20 flex items-center justify-center">
+          <BellRing size={22} class="text-accent-gold" />
+        </div>
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">تنبيهات الأسعار</h1>
+          <p class="text-sm text-slate-400 mt-0.5">تابع أسعار عملاتك المفضلة واحصل على إشعارات فورية</p>
+        </div>
+      </div>
     </div>
     <button
       onclick={() => (modalOpen = true)}
@@ -161,60 +171,76 @@
   </div>
 
   <!-- Stats row -->
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-    <div class="stat-card">
-      <div class="flex items-center justify-between mb-3">
-        <div class="w-10 h-10 rounded-xl bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
-          <Bell size={20} class="text-accent-gold" />
-        </div>
-        <span class="text-[10px] font-medium text-slate-500 uppercase tracking-wider">نشط</span>
-      </div>
-      <p class="text-2xl font-bold text-white tabular-nums">{activeCount}</p>
-      <p class="text-xs text-slate-400 mt-1">تنبيهات بانتظار التفعيل</p>
-    </div>
-
-    <div class="stat-card">
-      <div class="flex items-center justify-between mb-3">
-        <div class="w-10 h-10 rounded-xl bg-accent-mint/10 border border-accent-mint/20 flex items-center justify-center">
-          <CheckCircle2 size={20} class="text-accent-mint" />
-        </div>
-        <span class="text-[10px] font-medium text-slate-500 uppercase tracking-wider">مُفعّل</span>
-      </div>
-      <p class="text-2xl font-bold text-white tabular-nums">{triggeredCount}</p>
-      <p class="text-xs text-slate-400 mt-1">تنبيهات تم تفعيلها</p>
-    </div>
-
-    <div class="stat-card">
-      <div class="flex items-center justify-between mb-3">
-        <div class="w-10 h-10 rounded-xl bg-accent-azure/10 border border-accent-azure/20 flex items-center justify-center">
-          {#if notifPermission === 'granted'}
-            <BellRing size={20} class="text-accent-mint" />
-          {:else}
-            <BellOff size={20} class="text-accent-rose" />
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 relative">
+    <div class="stat-card group relative overflow-hidden">
+      <div class="absolute -top-6 -right-6 w-20 h-20 bg-accent-gold/10 blur-2xl rounded-full group-hover:bg-accent-gold/15 transition-all"></div>
+      <div class="relative">
+        <div class="flex items-center justify-between mb-3">
+          <div class="w-10 h-10 rounded-xl bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
+            <Bell size={20} class="text-accent-gold" />
+          </div>
+          {#if activeCount > 0}
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-gold opacity-60"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-gold"></span>
+            </span>
           {/if}
         </div>
-        <span class="text-[10px] font-medium text-slate-500 uppercase tracking-wider">إشعارات المتصفح</span>
+        <p class="text-2xl font-bold text-white tabular-nums">{activeCount}</p>
+        <p class="text-xs text-slate-400 mt-1">تنبيهات بانتظار التفعيل</p>
       </div>
-      {#if notifPermission === 'granted'}
-        <p class="text-2xl font-bold text-accent-mint">مفعّلة</p>
-        <p class="text-xs text-slate-400 mt-1">ستصلك الإشعارات</p>
-      {:else if notifPermission === 'denied'}
-        <p class="text-2xl font-bold text-accent-rose">محظورة</p>
-        <p class="text-xs text-slate-400 mt-1">فعّلها من إعدادات المتصفح</p>
-      {:else}
-        <p class="text-2xl font-bold text-slate-400">معطّلة</p>
-        <button onclick={enableNotifications} class="text-xs text-accent-gold hover:underline mt-1">
-          تفعيل الآن ←
-        </button>
-      {/if}
+    </div>
+
+    <div class="stat-card group relative overflow-hidden">
+      <div class="absolute -top-6 -right-6 w-20 h-20 bg-accent-mint/10 blur-2xl rounded-full group-hover:bg-accent-mint/15 transition-all"></div>
+      <div class="relative">
+        <div class="flex items-center justify-between mb-3">
+          <div class="w-10 h-10 rounded-xl bg-accent-mint/10 border border-accent-mint/20 flex items-center justify-center">
+            <CheckCircle2 size={20} class="text-accent-mint" />
+          </div>
+        </div>
+        <p class="text-2xl font-bold text-white tabular-nums">{triggeredCount}</p>
+        <p class="text-xs text-slate-400 mt-1">تنبيهات تم تفعيلها</p>
+      </div>
+    </div>
+
+    <div class="stat-card group relative overflow-hidden">
+      <div class="absolute -top-6 -right-6 w-20 h-20 blur-2xl rounded-full group-hover:opacity-100 transition-all {notifPermission === 'granted' ? 'bg-accent-mint/10' : 'bg-accent-rose/10'}"></div>
+      <div class="relative">
+        <div class="flex items-center justify-between mb-3">
+          <div class="w-10 h-10 rounded-xl {notifPermission === 'granted' ? 'bg-accent-mint/10 border-accent-mint/20' : 'bg-accent-rose/10 border-accent-rose/20'} border flex items-center justify-center">
+            {#if notifPermission === 'granted'}
+              <BellRing size={20} class="text-accent-mint" />
+            {:else}
+              <BellOff size={20} class="text-accent-rose" />
+            {/if}
+          </div>
+          <span class="text-[10px] font-medium text-slate-500 uppercase tracking-wider">المتصفح</span>
+        </div>
+        {#if notifPermission === 'granted'}
+          <p class="text-2xl font-bold text-accent-mint">مفعّلة</p>
+          <p class="text-xs text-slate-400 mt-1">ستصلك الإشعارات</p>
+        {:else if notifPermission === 'denied'}
+          <p class="text-2xl font-bold text-accent-rose">محظورة</p>
+          <p class="text-xs text-slate-400 mt-1">فعّلها من إعدادات المتصفح</p>
+        {:else}
+          <p class="text-2xl font-bold text-slate-400">معطّلة</p>
+          <button onclick={enableNotifications} class="text-xs text-accent-gold hover:underline mt-1">
+            تفعيل الآن ←
+          </button>
+        {/if}
+      </div>
     </div>
   </div>
 
   <!-- Notification permission banner -->
   {#if notifPermission !== 'granted'}
-    <div class="panel-glow p-4 flex items-start gap-3">
-      <AlertCircle size={20} class="text-accent-gold shrink-0 mt-0.5" />
-      <div class="flex-1">
+    <div class="panel-glow p-4 flex items-start gap-3 relative overflow-hidden">
+      <div class="absolute -top-12 -right-12 w-32 h-32 bg-accent-gold/10 blur-3xl rounded-full"></div>
+      <div class="relative w-9 h-9 rounded-xl bg-accent-gold/15 flex items-center justify-center shrink-0">
+        <AlertCircle size={18} class="text-accent-gold" />
+      </div>
+      <div class="flex-1 relative">
         <p class="text-sm font-semibold text-white">فعّل إشعارات المتصفح لتحصل على تنبيهات فورية</p>
         <p class="text-xs text-slate-400 mt-0.5">بدونها ستصلك التنبيهات فقط أثناء استخدام المنصة</p>
       </div>

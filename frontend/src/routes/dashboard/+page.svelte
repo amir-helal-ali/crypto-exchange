@@ -135,25 +135,37 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl sm:text-3xl font-bold text-white">لوحة التحكم</h1>
+      <div class="flex items-center gap-2.5 mb-1">
+        <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight">لوحة التحكم</h1>
+        <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent-mint/10 border border-accent-mint/25">
+          <span class="relative flex h-1.5 w-1.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-mint opacity-60"></span>
+            <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent-mint"></span>
+          </span>
+          <span class="text-[10px] font-bold text-accent-mint tracking-wide">مباشر</span>
+        </div>
+      </div>
       <p class="text-sm text-slate-400 mt-1">نظرة عامة على حسابك وأنشطتك</p>
     </div>
     <button
       onclick={refresh}
-      class="btn-ghost {loading ? 'animate-spin' : ''}"
+      class="btn-ghost"
       aria-label="تحديث"
     >
-      <RefreshCw size={16} />
+      <RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
     </button>
   </div>
 
   <!-- Hero portfolio card — EGP main -->
   <div class="panel-glow p-6 sm:p-8 relative overflow-hidden">
-    <!-- decorative aurora -->
-    <div class="absolute inset-0 opacity-30 pointer-events-none" aria-hidden="true">
-      <div class="absolute -top-12 -right-12 w-48 h-48 bg-accent-gold/20 blur-3xl rounded-full"></div>
-      <div class="absolute -bottom-12 -left-12 w-48 h-48 bg-accent-violet/20 blur-3xl rounded-full"></div>
+    <!-- decorative aurora — animated, layered -->
+    <div class="absolute inset-0 opacity-50 pointer-events-none" aria-hidden="true">
+      <div class="absolute -top-16 -right-16 w-64 h-64 bg-accent-gold/20 blur-3xl rounded-full animate-float"></div>
+      <div class="absolute -bottom-16 -left-16 w-64 h-64 bg-accent-violet/20 blur-3xl rounded-full animate-float" style="animation-delay: 2s;"></div>
+      <div class="absolute top-1/3 left-1/2 -translate-x-1/2 w-40 h-40 bg-accent-rose/8 blur-3xl rounded-full"></div>
     </div>
+    <!-- Subtle grid overlay -->
+    <div class="absolute inset-0 grid-bg opacity-30 pointer-events-none"></div>
 
     <div class="relative flex flex-wrap items-end justify-between gap-6">
       <div>
@@ -161,7 +173,7 @@
           <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">إجمالي القيمة</span>
           <span class="pill-gold text-[10px]">ج.م</span>
         </div>
-        <p class="text-4xl sm:text-5xl font-bold text-gold-gradient tabular-nums leading-none">
+        <p class="text-4xl sm:text-5xl font-bold text-gold-gradient tabular-nums leading-none" style="text-shadow: 0 0 30px rgba(245, 181, 68, 0.25);">
           {formatEGP(totalEgpValue)}
         </p>
         <p class="text-sm text-slate-400 mt-2 tabular-nums">

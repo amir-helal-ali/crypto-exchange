@@ -9,7 +9,7 @@
     Shield, Star, Clock, Search, Filter, ChevronDown, ChevronUp,
     TrendingUp, TrendingDown, Check, Users, Lock, MessageCircle,
     Banknote, CreditCard, Wallet, ArrowRightLeft, Plus, AlertCircle,
-    Zap, Award, Eye, RefreshCw
+    Zap, Award, Eye, RefreshCw, X
   } from 'lucide-svelte';
   import { usdToEgp, egpCompact, formatEGP, usdEgpRate } from '$lib/utils/currency';
   import { formatPrice, formatCompact } from '$lib/utils/format';
@@ -244,16 +244,24 @@
 
 <svelte:head><title>P2P Trading — NEXUS</title></svelte:head>
 
-<div class="space-y-4 pb-20 lg:pb-0">
+<div class="relative space-y-4 pb-20 lg:pb-0">
+  <!-- Ambient aurora background -->
+  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+    <div class="absolute top-[-10%] right-[-5%] w-[480px] h-[480px] rounded-full bg-accent-gold/[0.08] blur-[120px] animate-pulse-glow"></div>
+    <div class="absolute bottom-[-10%] left-[-5%] w-[420px] h-[420px] rounded-full bg-accent-mint/[0.06] blur-[120px] animate-pulse-glow" style="animation-delay:1.5s"></div>
+  </div>
+
   <!-- Hero header -->
-  <div class="panel p-4 bg-gradient-to-l from-accent-gold/10 via-transparent to-transparent">
+  <div class="panel relative p-4 bg-gradient-to-l from-accent-gold/10 via-transparent to-transparent">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-2xl bg-accent-gold/15 flex items-center justify-center">
-          <Users size={24} class="text-accent-gold" />
+        <div class="relative w-12 h-12 rounded-2xl bg-accent-gold/15 flex items-center justify-center">
+          <div class="absolute inset-0 rounded-2xl bg-accent-gold/20 blur-md"></div>
+          <Users size={24} class="relative text-accent-gold" />
         </div>
         <div>
-          <h1 class="text-xl font-bold text-white">سوق P2P</h1>
+          <h1 class="text-xl font-bold text-white tracking-tight">سوق P2P</h1>
           <p class="text-xs text-slate-400 mt-0.5">تداول مباشر بالجنيه المصري عبر التحويل البنكي والمحافظ الإلكترونية</p>
         </div>
       </div>
@@ -314,7 +322,8 @@
   </div>
 
   <!-- Filters bar -->
-  <div class="panel p-3">
+  <div class="panel relative p-3">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/30 to-transparent"></div>
     <div class="flex flex-wrap items-center gap-2">
       <div class="relative">
         <Search size={14} class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -359,12 +368,19 @@
   </div>
 
   <!-- Ads table -->
-  <div class="panel overflow-hidden">
+  <div class="panel relative overflow-hidden">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
     <div class="overflow-x-auto">
       {#if filteredAds.length === 0}
-        <div class="py-12 text-center">
-          <AlertCircle size={32} class="mx-auto text-slate-600 mb-2" />
-          <p class="text-slate-500 text-sm">لا توجد إعلانات مطابقة لمعايير البحث</p>
+        <div class="py-16 text-center relative">
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="w-24 h-24 rounded-2xl bg-accent-rose/5 blur-3xl"></div>
+          </div>
+          <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-rose/10 to-accent-gold/10 border border-white/5 mb-3">
+            <AlertCircle size={24} class="text-slate-500" />
+          </div>
+          <p class="text-sm text-slate-300 mb-1">لا توجد إعلانات مطابقة لمعايير البحث</p>
+          <p class="text-xs text-slate-500">جرّب تغيير الفلاتر أو طريقة الدفع</p>
         </div>
       {:else}
         <table class="w-full text-xs">
@@ -461,7 +477,8 @@
 
   <!-- Safety info -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-    <div class="panel p-4">
+    <div class="panel relative p-4">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
       <div class="w-9 h-9 rounded-lg bg-accent-mint/15 flex items-center justify-center mb-2">
         <Lock size={16} class="text-accent-mint" />
       </div>
@@ -470,7 +487,8 @@
         يتم قفل العملات الرقمية في حساب ضمان حتى يؤكد التاجر استلام الدفع، ثم تُرسل فوراً لمحفظتك.
       </p>
     </div>
-    <div class="panel p-4">
+    <div class="panel relative p-4">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
       <div class="w-9 h-9 rounded-lg bg-accent-gold/15 flex items-center justify-center mb-2">
         <Shield size={16} class="text-accent-gold" />
       </div>
@@ -479,7 +497,8 @@
         كل التاجر الموثقين خضعوا لعملية تحقق KYC كاملة ولديهم سجل تداول موثوق بنسبة إكمال تتجاوز 98%.
       </p>
     </div>
-    <div class="panel p-4">
+    <div class="panel relative p-4">
+      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-rose/40 to-transparent"></div>
       <div class="w-9 h-9 rounded-lg bg-accent-rose/15 flex items-center justify-center mb-2">
         <MessageCircle size={16} class="text-accent-rose" />
       </div>
@@ -491,13 +510,14 @@
   </div>
 
   <!-- Become merchant CTA -->
-  <div class="panel p-4 bg-gradient-to-l from-accent-gold/10 via-transparent to-transparent border-accent-gold/30">
+  <div class="panel relative p-4 bg-gradient-to-l from-accent-gold/10 via-transparent to-transparent border-accent-gold/30">
+    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/50 to-transparent"></div>
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div class="flex items-center gap-3">
         <Award size={24} class="text-accent-gold" />
         <div>
           <h3 class="text-sm font-bold text-white">هل أنت تاجر محترف؟</h3>
-          <p class="text-[11px] text-slate-400 mt-0.5">انضم لبرنامج التجار الموثقين واحصل على شارة ✓ + أولوية في الظهور + عمولات مخفضة</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">انضم لبرنامج التجار الموثقين واحصل على شارة توثيق + أولوية في الظهور + عمولات مخفضة</p>
         </div>
       </div>
       <button class="px-4 py-2 text-xs font-bold bg-accent-gold text-ink-950 rounded-md hover:bg-accent-gold/90 transition-colors flex items-center gap-1">
@@ -519,7 +539,7 @@
             {selectedAd.side === 'BUY' ? 'شراء' : 'بيع'} {selectedAd.asset} من {selectedAd.merchant.name}
           </h3>
         </div>
-        <button onclick={() => (tradeModalOpen = false)} class="text-slate-400 hover:text-white">✕</button>
+        <button onclick={() => (tradeModalOpen = false)} class="text-slate-400 hover:text-white p-1"><X size={18} /></button>
       </div>
 
       <div class="p-4 space-y-3">
@@ -608,9 +628,9 @@
         </div>
 
         <!-- Warning -->
-        <div class="bg-amber-500/5 border border-amber-500/20 rounded-md p-2 flex items-start gap-1.5">
-          <AlertCircle size={12} class="text-amber-500 flex-shrink-0 mt-0.5" />
-          <p class="text-[10px] text-amber-200/80 leading-relaxed">
+        <div class="bg-accent-gold/5 border border-accent-gold/20 rounded-md p-2 flex items-start gap-1.5">
+          <AlertCircle size={12} class="text-accent-gold flex-shrink-0 mt-0.5" />
+          <p class="text-[10px] text-accent-gold/80 leading-relaxed">
             لا تقم بأي تحويل خارج منصة NEXUS. كل التواصل يجب أن يكون عبر دردشة المنصة. التحويل الخارجي = خسارة مضمونة.
           </p>
         </div>
