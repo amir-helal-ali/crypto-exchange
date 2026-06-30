@@ -1,9 +1,8 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /app
 ENV GONOSUMCHECK=*
 ENV GONOSUMDB=*
 ENV GOFLAGS=-mod=mod
-ENV GOTOOLCHAIN=local
 COPY . .
 RUN go build -o main .
 
