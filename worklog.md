@@ -1727,3 +1727,27 @@ Stage Summary:
 - ✅ جميع النصوص بالعربية، الأيقونات من lucide-svelte، لا emojis
 - ✅ إجمالي 19 صفحة polish احترافياً عبر 4 جلسات (5+5+6+3): Admin Overview + KYC + History + Notifications + Security + Wallet + Profile + Fees + Alerts + API Keys + Exchange + Earn + P2P + Futures + Settings + Referral + Copy-trading + Backtest + Bots
 - ✅ المنصة الآن تقدم تجربة بصرية متسقة وفاخرة عبر جميع الصفحات الرئيسية للتداول والإدارة والأتمتة
+---
+Task ID: 7
+Agent: Main Agent
+Task: Design system audit and fix all remaining violations across NEXUS frontend
+
+Work Log:
+- Audited all 20+ pages in /routes/ for design system compliance
+- Found 23 violations across 4 categories
+- Fixed 4 instances of outside-palette colors (yellow-500, orange-500, amber-500) in +page.svelte (landing) — replaced with accent-gold/accent-rose/accent-violet/accent-azure/accent-mint
+- Fixed 10 Unicode symbol instances in earn/+page.svelte (₿, Ξ, ◎, ⬡, $, ▲, ₳, ●) — replaced with 2-letter abbreviations (BT, ET, SO, BN, US, AV, AD, DO) consistent with wallet page pattern
+- Fixed 2 Unicode symbol instances in p2p/+page.svelte (✓, ✕) — replaced with Arabic text "شارة توثيق" and lucide-svelte <X> component
+- Fixed 9 instances of animate-spin on entire <button> element instead of just <RefreshCw> icon across: dashboard/+page.svelte, wallet/+page.svelte, history/+page.svelte, admin/+page.svelte, admin/transactions, admin/users, admin/ads, admin/kyc, admin/fees
+- Added X import to p2p/+page.svelte lucide-svelte imports
+- All pages confirmed to already have the full NEXUS design language applied (ambient aurora, glass panels, topbar gradient, group-hover, ping dots, tabular-nums, dark-mode-only palette)
+- Build successful in 15.80s
+
+Stage Summary:
+- All 23 design system violations fixed
+- All pages now fully comply with NEXUS design language
+- Zero dynamic Tailwind class violations (JIT-safe)
+- Zero outside-palette color usage
+- Zero Unicode symbol placeholders
+- All refresh buttons spin only the icon, not the whole button
+- Build passes cleanly

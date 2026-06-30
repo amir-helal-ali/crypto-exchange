@@ -1,0 +1,648 @@
+     1→<script lang="ts">
+     2→  /**
+     3→   * P2P Trading Marketplace — Buy/Sell crypto directly with other users via EGP
+     4→   * bank transfers. Binance-style P2P with verified merchants, escrow protection,
+     5→   * multiple payment methods, and live ad listings.
+     6→   */
+     7→  import { onMount } from 'svelte';
+     8→  import {
+     9→    Shield, Star, Clock, Search, Filter, ChevronDown, ChevronUp,
+    10→    TrendingUp, TrendingDown, Check, Users, Lock, MessageCircle,
+    11→    Banknote, CreditCard, Wallet, ArrowRightLeft, Plus, AlertCircle,
+    12→    Zap, Award, Eye, RefreshCw
+    13→  } from 'lucide-svelte';
+    14→  import { usdToEgp, egpCompact, formatEGP, usdEgpRate } from '$lib/utils/currency';
+    15→  import { formatPrice, formatCompact } from '$lib/utils/format';
+    16→  import { nexusMarket } from '$lib/stores/nexus-market';
+    17→  import { toasts } from '$lib/stores/toast';
+    18→
+    19→  type Side = 'BUY' | 'SELL';
+    20→  type AdStatus = 'online' | 'offline';
+    21→
+    22→  type P2PAd = {
+    23→    id: string;
+    24→    side: Side;
+    25→    asset: string;
+    26→    fiat: 'EGP';
+    27→    price: number; // EGP per unit
+    28→    limitMin: number; // EGP
+    29→    limitMax: number; // EGP
+    30→    available: number; // asset amount
+    31→    merchant: {
+    32→      name: string;
+    33→      verified: boolean;
+    34→      rating: number;
+    35→      trades: number;
+    36→      completion: number;
+    37→      online: boolean;
+    38→      lastSeen: number;
+    39→      responseMin: number;
+    40→    };
+    41→    paymentMethods: string[];
+    42→    status: AdStatus;
+    43→    createdAt: number;
+    44→  };
+    45→
+    46→  let activeSide = $state<Side>('BUY');
+    47→  let activeAsset = $state('USDT');
+    48→  let searchQuery = $state('');
+    49→  let selectedPayment = $state<string>('all');
+    50→  let sortBy = $state<'price-asc' | 'price-desc' | 'rating' | 'trades' | 'recent'>('price-asc');
+    51→  let onlyVerified = $state(false);
+    52→  let onlyOnline = $state(true);
+    53→  let currentRate = $state(48.5);
+    54→
+    55→  // Mock merchants + ads
+    56→  const mockMerchants = [
+    57→    { name: 'Ahmed_Crypto_EG', verified: true, rating: 99.8, trades: 3420, completion: 100, online: true, lastSeen: Date.now(), responseMin: 2 },
+    58→    { name: 'CairoPay_EG', verified: true, rating: 99.5, trades: 8950, completion: 99.9, online: true, lastSeen: Date.now(), responseMin: 1 },
+    59→    { name: 'Mahmoud_P2P', verified: true, rating: 98.2, trades: 1240, completion: 99.5, online: true, lastSeen: Date.now(), responseMin: 5 },
+    60→    { name: 'AlexExchange', verified: false, rating: 96.4, trades: 320, completion: 98, online: false, lastSeen: Date.now() - 3600000, responseMin: 15 },
+    61→    { name: 'NileCrypto', verified: true, rating: 99.9, trades: 12000, completion: 100, online: true, lastSeen: Date.now(), responseMin: 1 },
+    62→    { name: 'Pyramid_FX', verified: true, rating: 97.8, trades: 890, completion: 99.2, online: true, lastSeen: Date.now(), responseMin: 3 },
+    63→    { name: 'SphinxPay', verified: false, rating: 94.2, trades: 156, completion: 97, online: false, lastSeen: Date.now() - 7200000, responseMin: 30 },
+    64→    { name: 'Pharaohs_trade', verified: true, rating: 98.9, trades: 2100, completion: 99.8, online: true, lastSeen: Date.now(), responseMin: 2 }
+    65→  ];
+    66→
+    67→  const paymentMethodsList = [
+    68→    { id: 'bank_transfer', label: 'تحويل بنكي', icon: Banknote },
+    69→    { id: 'fawry', label: 'فوري', icon: CreditCard },
+    70→    { id: 'vodafone_cash', label: 'فودافون كاش', icon: Wallet },
+    71→    { id: 'etisalat_cash', label: 'اتصالات كاش', icon: Wallet },
+    72→    { id: 'orange_cash', label: 'أورانج كاش', icon: Wallet },
+    73→    { id: 'instapay', label: 'انستاباي', icon: ArrowRightLeft },
+    74→    { id: 'meeza', label: 'ميزة', icon: CreditCard }
+    75→  ];
+    76→
+    77→  // Generate ads based on current BTC price
+    78→  let ads = $state<P2PAd[]>([]);
+    79→
+    80→  function generateAds() {
+    81→    const assets = ['USDT', 'BTC', 'ETH', 'BNB', 'USDC'];
+    82→    const newAds: P2PAd[] = [];
+    83→    mockMerchants.forEach((m, mi) => {
+    84→      assets.forEach((asset, ai) => {
+    85→        // Base price in EGP
+    86→        let baseUsdPrice = 1;
+    87→        if (asset === 'BTC') baseUsdPrice = 67000 + Math.random() * 2000;
+    88→        else if (asset === 'ETH') baseUsdPrice = 3500 + Math.random() * 100;
+    89→        else if (asset === 'BNB') baseUsdPrice = 600 + Math.random() * 20;
+    90→        else baseUsdPrice = 1;
+    91→
+    92→        // Merchant margin: BUY ads have higher price (they sell), SELL ads lower (they buy)
+    93→        const marginBuy = 0.005 + Math.random() * 0.02; // 0.5% - 2.5% premium
+    94→        const marginSell = -0.005 - Math.random() * 0.015;
+    95→
+    96→        const egpRate = currentRate;
+    97→        const buyPrice = baseUsdPrice * egpRate * (1 + marginBuy);
+    98→        const sellPrice = baseUsdPrice * egpRate * (1 + marginSell);
+    99→
+   100→        const maxAmount = asset === 'USDT' ? 50000 : asset === 'BTC' ? 500000 : 100000;
+   101→
+   102→        // Skip some random combinations to vary listings
+   103→        if (Math.random() < 0.6) return;
+   104→
+   105→        newAds.push({
+   106→          id: `${m.name}-${asset}-BUY-${mi}-${ai}`,
+   107→          side: 'BUY',
+   108→          asset,
+   109→          fiat: 'EGP',
+   110→          price: buyPrice,
+   111→          limitMin: 500 + Math.floor(Math.random() * 1500),
+   112→          limitMax: 5000 + Math.floor(Math.random() * maxAmount),
+   113→          available: asset === 'USDT' ? 1000 + Math.random() * 5000 : 0.5 + Math.random() * 5,
+   114→          merchant: m,
+   115→          paymentMethods: paymentMethodsList
+   116→            .filter(() => Math.random() > 0.6)
+   117→            .slice(0, 4)
+   118→            .map((p) => p.id),
+   119→          status: m.online ? 'online' : 'offline',
+   120→          createdAt: Date.now() - Math.random() * 86400000
+   121→        });
+   122→
+   123→        newAds.push({
+   124→          id: `${m.name}-${asset}-SELL-${mi}-${ai}`,
+   125→          side: 'SELL',
+   126→          asset,
+   127→          fiat: 'EGP',
+   128→          price: sellPrice,
+   129→          limitMin: 500 + Math.floor(Math.random() * 1500),
+   130→          limitMax: 5000 + Math.floor(Math.random() * maxAmount),
+   131→          available: asset === 'USDT' ? 500 + Math.random() * 3000 : 0.2 + Math.random() * 3,
+   132→          merchant: m,
+   133→          paymentMethods: paymentMethodsList
+   134→            .filter(() => Math.random() > 0.6)
+   135→            .slice(0, 4)
+   136→            .map((p) => p.id),
+   137→          status: m.online ? 'online' : 'offline',
+   138→          createdAt: Date.now() - Math.random() * 86400000
+   139→        });
+   140→      });
+   141→    });
+   142→    ads = newAds;
+   143→  }
+   144→
+   145→  onMount(() => {
+   146→    generateAds();
+   147→    const unsubRate = usdEgpRate.subscribe((r) => {
+   148→      currentRate = r;
+   149→    });
+   150→    return unsubRate;
+   151→  });
+   152→
+   153→  function refresh() {
+   154→    generateAds();
+   155→    toasts.info('تم تحديث الإعلانات');
+   156→  }
+   157→
+   158→  // Filtered ads
+   159→  const filteredAds = $derived.by(() => {
+   160→    let arr = ads.filter((a) => a.side === activeSide && a.asset === activeAsset);
+   161→    if (searchQuery.trim()) {
+   162→      const q = searchQuery.toLowerCase().trim();
+   163→      arr = arr.filter((a) => a.merchant.name.toLowerCase().includes(q));
+   164→    }
+   165→    if (selectedPayment !== 'all') {
+   166→      arr = arr.filter((a) => a.paymentMethods.includes(selectedPayment));
+   167→    }
+   168→    if (onlyVerified) arr = arr.filter((a) => a.merchant.verified);
+   169→    if (onlyOnline) arr = arr.filter((a) => a.status === 'online');
+   170→
+   171→    switch (sortBy) {
+   172→      case 'price-asc': arr.sort((a, b) => (activeSide === 'BUY' ? a.price - b.price : b.price - a.price)); break;
+   173→      case 'price-desc': arr.sort((a, b) => (activeSide === 'BUY' ? b.price - a.price : a.price - b.price)); break;
+   174→      case 'rating': arr.sort((a, b) => b.merchant.rating - a.merchant.rating); break;
+   175→      case 'trades': arr.sort((a, b) => b.merchant.trades - a.merchant.trades); break;
+   176→      case 'recent': arr.sort((a, b) => b.createdAt - a.createdAt); break;
+   177→    }
+   178→    return arr;
+   179→  });
+   180→
+   181→  // Aggregate stats
+   182→  const stats = $derived.by(() => {
+   183→    const onlineMerchants = new Set(ads.filter((a) => a.status === 'online').map((a) => a.merchant.name)).size;
+   184→    const totalMerchants = new Set(ads.map((a) => a.merchant.name)).size;
+   185→    const totalTrades = ads.reduce((s, a) => s + a.merchant.trades, 0) / 2;
+   186→    const avgCompletion = ads.length > 0 ? ads.reduce((s, a) => s + a.merchant.completion, 0) / ads.length : 0;
+   187→    return { onlineMerchants, totalMerchants, totalTrades, avgCompletion };
+   188→  });
+   189→
+   190→  // Best price (cheapest for BUY, highest for SELL)
+   191→  const bestPrice = $derived.by(() => {
+   192→    if (filteredAds.length === 0) return 0;
+   193→    return activeSide === 'BUY'
+   194→      ? Math.min(...filteredAds.map((a) => a.price))
+   195→      : Math.max(...filteredAds.map((a) => a.price));
+   196→  });
+   197→
+   198→  // Modal: trade flow
+   199→  let tradeModalOpen = $state(false);
+   200→  let selectedAd = $state<P2PAd | null>(null);
+   201→  let tradeAmount = $state(0);
+   202→  let tradeCurrency = $state<'fiat' | 'asset'>('fiat');
+   203→
+   204→  function openTrade(ad: P2PAd) {
+   205→    selectedAd = ad;
+   206→    tradeAmount = ad.limitMin;
+   207→    tradeCurrency = 'fiat';
+   208→    tradeModalOpen = true;
+   209→  }
+   210→
+   211→  // Computed trade values
+   212→  const tradeAssetAmount = $derived(
+   213→    tradeCurrency === 'fiat' ? tradeAmount / (selectedAd?.price || 1) : tradeAmount
+   214→  );
+   215→  const tradeFiatAmount = $derived(
+   216→    tradeCurrency === 'fiat' ? tradeAmount : tradeAmount * (selectedAd?.price || 1)
+   217→  );
+   218→
+   219→  function startTrade() {
+   220→    if (!selectedAd) return;
+   221→    if (tradeFiatAmount < (selectedAd.limitMin || 0)) {
+   222→      toasts.error(`الحد الأدنى للطلب: ${formatEGP(selectedAd.limitMin)}`);
+   223→      return;
+   224→    }
+   225→    if (tradeFiatAmount > (selectedAd.limitMax || 0)) {
+   226→      toasts.error(`الحد الأقصى للطلب: ${formatEGP(selectedAd.limitMax)}`);
+   227→      return;
+   228→    }
+   229→    toasts.success('تم إنشاء طلب P2P بنجاح! سيتم قفل العملات في Escrow حتى تأكيد الدفع');
+   230→    tradeModalOpen = false;
+   231→  }
+   232→
+   233→  const assets = ['USDT', 'BTC', 'ETH', 'BNB', 'USDC'];
+   234→
+   235→  function timeAgoCustom(ts: number): string {
+   236→    const diff = Date.now() - ts;
+   237→    const m = Math.floor(diff / 60000);
+   238→    if (m < 60) return `${m} دقيقة`;
+   239→    const h = Math.floor(m / 60);
+   240→    if (h < 24) return `${h} ساعة`;
+   241→    return `${Math.floor(h / 24)} يوم`;
+   242→  }
+   243→</script>
+   244→
+   245→<svelte:head><title>P2P Trading — NEXUS</title></svelte:head>
+   246→
+   247→<div class="relative space-y-4 pb-20 lg:pb-0">
+   248→  <!-- Ambient aurora background -->
+   249→  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+   250→    <div class="absolute top-[-10%] right-[-5%] w-[480px] h-[480px] rounded-full bg-accent-gold/[0.08] blur-[120px] animate-pulse-glow"></div>
+   251→    <div class="absolute bottom-[-10%] left-[-5%] w-[420px] h-[420px] rounded-full bg-accent-mint/[0.06] blur-[120px] animate-pulse-glow" style="animation-delay:1.5s"></div>
+   252→  </div>
+   253→
+   254→  <!-- Hero header -->
+   255→  <div class="panel relative p-4 bg-gradient-to-l from-accent-gold/10 via-transparent to-transparent">
+   256→    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
+   257→    <div class="flex items-center justify-between flex-wrap gap-3">
+   258→      <div class="flex items-center gap-3">
+   259→        <div class="relative w-12 h-12 rounded-2xl bg-accent-gold/15 flex items-center justify-center">
+   260→          <div class="absolute inset-0 rounded-2xl bg-accent-gold/20 blur-md"></div>
+   261→          <Users size={24} class="relative text-accent-gold" />
+   262→        </div>
+   263→        <div>
+   264→          <h1 class="text-xl font-bold text-white tracking-tight">سوق P2P</h1>
+   265→          <p class="text-xs text-slate-400 mt-0.5">تداول مباشر بالجنيه المصري عبر التحويل البنكي والمحافظ الإلكترونية</p>
+   266→        </div>
+   267→      </div>
+   268→      <div class="flex items-center gap-2 text-xs">
+   269→        <div class="px-3 py-1.5 rounded-lg bg-accent-mint/10 border border-accent-mint/20 flex items-center gap-1.5">
+   270→          <div class="w-2 h-2 rounded-full bg-accent-mint animate-pulse"></div>
+   271→          <span class="text-accent-mint font-bold">{stats.onlineMerchants}</span>
+   272→          <span class="text-slate-400">تاجر نشط</span>
+   273→        </div>
+   274→        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+   275→          <span class="text-slate-400">إجمالي الصفقات:</span>
+   276→          <span class="text-white font-bold mr-1">{formatCompact(stats.totalTrades)}</span>
+   277→        </div>
+   278→        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+   279→          <span class="text-slate-400">نسبة الإكمال:</span>
+   280→          <span class="text-accent-mint font-bold mr-1">{stats.avgCompletion.toFixed(1)}%</span>
+   281→        </div>
+   282→      </div>
+   283→    </div>
+   284→
+   285→    <!-- Buy/Sell toggle -->
+   286→    <div class="mt-4 flex items-center gap-2">
+   287→      <button
+   288→        onclick={() => (activeSide = 'BUY')}
+   289→        class="flex-1 sm:flex-none px-6 py-2.5 rounded-lg font-bold text-sm transition-all {activeSide === 'BUY' ? 'bg-accent-mint text-ink-950 shadow-lg shadow-accent-mint/30' : 'bg-white/[0.03] text-slate-400 hover:bg-white/5'}"
+   290→      >
+   291→        شراء {activeAsset}
+   292→      </button>
+   293→      <button
+   294→        onclick={() => (activeSide = 'SELL')}
+   295→        class="flex-1 sm:flex-none px-6 py-2.5 rounded-lg font-bold text-sm transition-all {activeSide === 'SELL' ? 'bg-accent-rose text-white shadow-lg shadow-accent-rose/30' : 'bg-white/[0.03] text-slate-400 hover:bg-white/5'}"
+   296→      >
+   297→        بيع {activeAsset}
+   298→      </button>
+   299→      <div class="hidden sm:flex items-center gap-1 mr-2 text-xs">
+   300→        <span class="text-slate-500">الأصل:</span>
+   301→        {#each assets as a}
+   302→          <button
+   303→            onclick={() => (activeAsset = a)}
+   304→            class="px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors {activeAsset === a ? 'bg-accent-gold/15 text-accent-gold' : 'text-slate-400 hover:bg-white/5'}"
+   305→          >{a}</button>
+   306→        {/each}
+   307→      </div>
+   308→      <button onclick={refresh} class="ml-auto p-2 rounded-md text-slate-400 hover:bg-white/5 hover:text-white" aria-label="تحديث">
+   309→        <RefreshCw size={14} />
+   310→      </button>
+   311→    </div>
+   312→
+   313→    <!-- Mobile asset picker -->
+   314→    <div class="sm:hidden mt-2 flex items-center gap-1 overflow-x-auto scrollbar-none">
+   315→      {#each assets as a}
+   316→        <button
+   317→          onclick={() => (activeAsset = a)}
+   318→          class="px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap {activeAsset === a ? 'bg-accent-gold/15 text-accent-gold' : 'bg-white/[0.03] text-slate-400'}"
+   319→        >{a}</button>
+   320→      {/each}
+   321→    </div>
+   322→  </div>
+   323→
+   324→  <!-- Filters bar -->
+   325→  <div class="panel relative p-3">
+   326→    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-violet/30 to-transparent"></div>
+   327→    <div class="flex flex-wrap items-center gap-2">
+   328→      <div class="relative">
+   329→        <Search size={14} class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" />
+   330→        <input
+   331→          type="text"
+   332→          placeholder="بحث عن تاجر..."
+   333→          bind:value={searchQuery}
+   334→          class="w-44 bg-white/[0.03] border border-white/5 rounded-md pr-7 pl-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-accent-gold/40"
+   335→        />
+   336→      </div>
+   337→
+   338→      <div class="flex items-center gap-1 text-xs">
+   339→        <Filter size={12} class="text-slate-500 ml-1" />
+   340→        <select bind:value={selectedPayment} class="bg-white/[0.03] border border-white/5 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none">
+   341→          <option value="all">كل طرق الدفع</option>
+   342→          {#each paymentMethodsList as p}
+   343→            <option value={p.id}>{p.label}</option>
+   344→          {/each}
+   345→        </select>
+   346→      </div>
+   347→
+   348→      <div class="flex items-center gap-1 text-xs">
+   349→        <span class="text-slate-500 text-[11px]">ترتيب:</span>
+   350→        <select bind:value={sortBy} class="bg-white/[0.03] border border-white/5 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none">
+   351→          <option value="price-asc">السعر (الأفضل أولاً)</option>
+   352→          <option value="price-desc">السعر (تنازلي)</option>
+   353→          <option value="rating">الأعلى تقييماً</option>
+   354→          <option value="trades">الأكثر صفقات</option>
+   355→          <option value="recent">الأحدث</option>
+   356→        </select>
+   357→      </div>
+   358→
+   359→      <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+   360→        <input type="checkbox" bind:checked={onlyVerified} class="accent-accent-gold" />
+   361→        <Shield size={12} class="text-accent-gold" /> موثق فقط
+   362→      </label>
+   363→      <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+   364→        <input type="checkbox" bind:checked={onlyOnline} class="accent-accent-gold" />
+   365→        <div class="w-2 h-2 rounded-full bg-accent-mint"></div> متصل فقط
+   366→      </label>
+   367→    </div>
+   368→  </div>
+   369→
+   370→  <!-- Ads table -->
+   371→  <div class="panel relative overflow-hidden">
+   372→    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
+   373→    <div class="overflow-x-auto">
+   374→      {#if filteredAds.length === 0}
+   375→        <div class="py-16 text-center relative">
+   376→          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+   377→            <div class="w-24 h-24 rounded-2xl bg-accent-rose/5 blur-3xl"></div>
+   378→          </div>
+   379→          <div class="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-rose/10 to-accent-gold/10 border border-white/5 mb-3">
+   380→            <AlertCircle size={24} class="text-slate-500" />
+   381→          </div>
+   382→          <p class="text-sm text-slate-300 mb-1">لا توجد إعلانات مطابقة لمعايير البحث</p>
+   383→          <p class="text-xs text-slate-500">جرّب تغيير الفلاتر أو طريقة الدفع</p>
+   384→        </div>
+   385→      {:else}
+   386→        <table class="w-full text-xs">
+   387→          <thead>
+   388→            <tr class="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5 bg-white/[0.02]">
+   389→              <th class="text-right font-medium px-4 py-3">التاجر</th>
+   390→              <th class="text-right font-medium px-4 py-3">السعر (ج.م)</th>
+   391→              <th class="text-right font-medium px-4 py-3">الحد/المتاح</th>
+   392→              <th class="text-right font-medium px-4 py-3">طرق الدفع</th>
+   393→              <th class="text-right font-medium px-4 py-3">التقييم</th>
+   394→              <th class="text-left font-medium px-4 py-3">إجراء</th>
+   395→            </tr>
+   396→          </thead>
+   397→          <tbody>
+   398→            {#each filteredAds as ad (ad.id)}
+   399→              <tr class="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
+   400→                <!-- Merchant -->
+   401→                <td class="px-4 py-3">
+   402→                  <div class="flex items-center gap-2">
+   403→                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-accent-gold/30 to-accent-gold/10 flex items-center justify-center text-accent-gold text-xs font-bold">
+   404→                      {ad.merchant.name.charAt(0)}
+   405→                    </div>
+   406→                    <div>
+   407→                      <div class="flex items-center gap-1">
+   408→                        <span class="font-bold text-white text-sm">{ad.merchant.name}</span>
+   409→                        {#if ad.merchant.verified}
+   410→                          <span class="text-accent-gold" title="موثق"><Check size={12} /></span>
+   411→                        {/if}
+   412→                      </div>
+   413→                      <div class="text-[10px] text-slate-500 flex items-center gap-1">
+   414→                        {#if ad.merchant.online}
+   415→                          <span class="w-1.5 h-1.5 rounded-full bg-accent-mint"></span>
+   416→                          <span class="text-accent-mint">متصل</span>
+   417→                        {:else}
+   418→                          <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+   419→                          <span>آخر ظهور: {timeAgoCustom(ad.merchant.lastSeen)}</span>
+   420→                        {/if}
+   421→                        <span class="text-slate-600">·</span>
+   422→                        <Clock size={9} class="text-slate-600" />
+   423→                        <span>{ad.merchant.responseMin} د</span>
+   424→                      </div>
+   425→                    </div>
+   426→                  </div>
+   427→                </td>
+   428→                <!-- Price -->
+   429→                <td class="px-4 py-3">
+   430→                  <div class="font-mono font-bold text-white tabular-nums text-sm">{formatEGP(ad.price)}</div>
+   431→                  {#if ad.price === bestPrice}
+   432→                    <span class="pill pill-mint text-[9px] mt-0.5 inline-block">أفضل سعر</span>
+   433→                  {/if}
+   434→                </td>
+   435→                <!-- Limits -->
+   436→                <td class="px-4 py-3">
+   437→                  <div class="text-slate-300 font-mono tabular-nums">{formatEGP(ad.limitMin)} - {formatEGP(ad.limitMax)}</div>
+   438→                  <div class="text-[10px] text-slate-500 mt-0.5">متاح: {formatPrice(ad.available, 4)} {ad.asset}</div>
+   439→                </td>
+   440→                <!-- Payment methods -->
+   441→                <td class="px-4 py-3">
+   442→                  <div class="flex flex-wrap gap-1 max-w-[200px]">
+   443→                    {#each ad.paymentMethods.slice(0, 3) as pm}
+   444→                      <span class="pill bg-white/[0.05] text-slate-300 text-[10px] py-0.5 px-1.5">
+   445→                        {paymentMethodsList.find((p) => p.id === pm)?.label || pm}
+   446→                      </span>
+   447→                    {/each}
+   448→                    {#if ad.paymentMethods.length > 3}
+   449→                      <span class="pill bg-white/[0.05] text-slate-500 text-[10px] py-0.5 px-1.5">+{ad.paymentMethods.length - 3}</span>
+   450→                    {/if}
+   451→                  </div>
+   452→                </td>
+   453→                <!-- Rating -->
+   454→                <td class="px-4 py-3">
+   455→                  <div class="flex items-center gap-1">
+   456→                    <Star size={11} class="text-accent-gold fill-accent-gold" />
+   457→                    <span class="font-bold text-accent-gold tabular-nums">{ad.merchant.rating}%</span>
+   458→                  </div>
+   459→                  <div class="text-[10px] text-slate-500 mt-0.5 tabular-nums">{formatCompact(ad.merchant.trades)} صفقة</div>
+   460→                </td>
+   461→                <!-- Action -->
+   462→                <td class="px-4 py-3 text-left">
+   463→                  <button
+   464→                    onclick={() => openTrade(ad)}
+   465→                    class="px-3 py-1.5 rounded-md text-xs font-bold transition-colors {ad.side === 'BUY' ? 'bg-accent-mint text-ink-950 hover:bg-accent-mint/90' : 'bg-accent-rose text-white hover:bg-accent-rose/90'}"
+   466→                  >
+   467→                    {ad.side === 'BUY' ? 'شراء' : 'بيع'} {ad.asset}
+   468→                  </button>
+   469→                </td>
+   470→              </tr>
+   471→            {/each}
+   472→          </tbody>
+   473→        </table>
+   474→      {/if}
+   475→    </div>
+   476→  </div>
+   477→
+   478→  <!-- Safety info -->
+   479→  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+   480→    <div class="panel relative p-4">
+   481→      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-mint/40 to-transparent"></div>
+   482→      <div class="w-9 h-9 rounded-lg bg-accent-mint/15 flex items-center justify-center mb-2">
+   483→        <Lock size={16} class="text-accent-mint" />
+   484→      </div>
+   485→      <h4 class="text-sm font-bold text-white mb-1">حماية Escrow</h4>
+   486→      <p class="text-[11px] text-slate-400 leading-relaxed">
+   487→        يتم قفل العملات الرقمية في حساب ضمان حتى يؤكد التاجر استلام الدفع، ثم تُرسل فوراً لمحفظتك.
+   488→      </p>
+   489→    </div>
+   490→    <div class="panel relative p-4">
+   491→      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/40 to-transparent"></div>
+   492→      <div class="w-9 h-9 rounded-lg bg-accent-gold/15 flex items-center justify-center mb-2">
+   493→        <Shield size={16} class="text-accent-gold" />
+   494→      </div>
+   495→      <h4 class="text-sm font-bold text-white mb-1">تجار موثقون</h4>
+   496→      <p class="text-[11px] text-slate-400 leading-relaxed">
+   497→        كل التاجر الموثقين خضعوا لعملية تحقق KYC كاملة ولديهم سجل تداول موثوق بنسبة إكمال تتجاوز 98%.
+   498→      </p>
+   499→    </div>
+   500→    <div class="panel relative p-4">
+   501→      <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-rose/40 to-transparent"></div>
+   502→      <div class="w-9 h-9 rounded-lg bg-accent-rose/15 flex items-center justify-center mb-2">
+   503→        <MessageCircle size={16} class="text-accent-rose" />
+   504→      </div>
+   505→      <h4 class="text-sm font-bold text-white mb-1">دعم 24/7</h4>
+   506→      <p class="text-[11px] text-slate-400 leading-relaxed">
+   507→        فريق وساطة متاح على مدار الساعة لحل أي نزاع بين الأطراف خلال 24 ساعة كحد أقصى.
+   508→      </p>
+   509→    </div>
+   510→  </div>
+   511→
+   512→  <!-- Become merchant CTA -->
+   513→  <div class="panel relative p-4 bg-gradient-to-l from-accent-gold/10 via-transparent to-transparent border-accent-gold/30">
+   514→    <div class="absolute top-0 inset-x-0 h-px bg-gradient-to-l from-transparent via-accent-gold/50 to-transparent"></div>
+   515→    <div class="flex items-center justify-between flex-wrap gap-3">
+   516→      <div class="flex items-center gap-3">
+   517→        <Award size={24} class="text-accent-gold" />
+   518→        <div>
+   519→          <h3 class="text-sm font-bold text-white">هل أنت تاجر محترف؟</h3>
+   520→          <p class="text-[11px] text-slate-400 mt-0.5">انضم لبرنامج التجار الموثقين واحصل على شارة ✓ + أولوية في الظهور + عمولات مخفضة</p>
+   521→        </div>
+   522→      </div>
+   523→      <button class="px-4 py-2 text-xs font-bold bg-accent-gold text-ink-950 rounded-md hover:bg-accent-gold/90 transition-colors flex items-center gap-1">
+   524→        <Plus size={12} /> تقدم كتاجر
+   525→      </button>
+   526→    </div>
+   527→  </div>
+   528→</div>
+   529→
+   530→<!-- Trade modal -->
+   531→{#if tradeModalOpen && selectedAd}
+   532→  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" dir="rtl">
+   533→    <div class="w-full max-w-md bg-ink-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+   534→      <!-- Header -->
+   535→      <div class="flex items-center justify-between px-4 py-3 border-b border-white/5 {selectedAd.side === 'BUY' ? 'bg-accent-mint/10' : 'bg-accent-rose/10'}">
+   536→        <div class="flex items-center gap-2">
+   537→          <Lock size={14} class={selectedAd.side === 'BUY' ? 'text-accent-mint' : 'text-accent-rose'} />
+   538→          <h3 class="text-sm font-bold text-white">
+   539→            {selectedAd.side === 'BUY' ? 'شراء' : 'بيع'} {selectedAd.asset} من {selectedAd.merchant.name}
+   540→          </h3>
+   541→        </div>
+   542→        <button onclick={() => (tradeModalOpen = false)} class="text-slate-400 hover:text-white">✕</button>
+   543→      </div>
+   544→
+   545→      <div class="p-4 space-y-3">
+   546→        <!-- Price + limits -->
+   547→        <div class="grid grid-cols-2 gap-2 text-xs">
+   548→          <div class="bg-white/[0.03] rounded-md p-2">
+   549→            <div class="text-[10px] text-slate-500">السعر</div>
+   550→            <div class="font-mono font-bold text-white tabular-nums">{formatEGP(selectedAd.price)} ج.م</div>
+   551→          </div>
+   552→          <div class="bg-white/[0.03] rounded-md p-2">
+   553→            <div class="text-[10px] text-slate-500">الحدود</div>
+   554→            <div class="font-mono text-slate-300 tabular-nums text-[11px]">{formatEGP(selectedAd.limitMin)} - {formatEGP(selectedAd.limitMax)}</div>
+   555→          </div>
+   556→        </div>
+   557→
+   558→        <!-- Amount input with toggle -->
+   559→        <div>
+   560→          <div class="flex items-center justify-between mb-1">
+   561→            <label class="text-[11px] text-slate-400">المبلغ</label>
+   562→            <div class="flex items-center gap-0.5 bg-white/[0.03] rounded p-0.5">
+   563→              <button
+   564→                onclick={() => (tradeCurrency = 'fiat')}
+   565→                class="px-2 py-0.5 text-[10px] rounded {tradeCurrency === 'fiat' ? 'bg-accent-gold/20 text-accent-gold' : 'text-slate-400'}"
+   566→              >ج.م</button>
+   567→              <button
+   568→                onclick={() => (tradeCurrency = 'asset')}
+   569→                class="px-2 py-0.5 text-[10px] rounded {tradeCurrency === 'asset' ? 'bg-accent-gold/20 text-accent-gold' : 'text-slate-400'}"
+   570→              >{selectedAd.asset}</button>
+   571→            </div>
+   572→          </div>
+   573→          <input
+   574→            type="number"
+   575→            bind:value={tradeAmount}
+   576→            placeholder={tradeCurrency === 'fiat' ? 'أدخل المبلغ بالجنيه' : `أدخل كمية ${selectedAd.asset}`}
+   577→            class="w-full bg-white/[0.03] border border-white/5 rounded-md px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-accent-gold/40"
+   578→          />
+   579→          <div class="flex items-center justify-between mt-1 text-[10px] text-slate-500">
+   580→            <span>≈ {formatPrice(tradeAssetAmount, 6)} {selectedAd.asset}</span>
+   581→            <span>≈ {formatEGP(tradeFiatAmount)} ج.م</span>
+   582→          </div>
+   583→        </div>
+   584→
+   585→        <!-- Quick amounts -->
+   586→        <div class="grid grid-cols-4 gap-1">
+   587→          {#each [0.25, 0.5, 0.75, 1] as pct}
+   588→            <button
+   589→              onclick={() => {
+   590→                const target = selectedAd.limitMin + (selectedAd.limitMax - selectedAd.limitMin) * pct;
+   591→                tradeCurrency = 'fiat';
+   592→                tradeAmount = Math.floor(target);
+   593→              }}
+   594→              class="py-1 text-[10px] rounded bg-white/[0.03] text-slate-300 hover:bg-white/10"
+   595→            >{pct * 100}%</button>
+   596→          {/each}
+   597→        </div>
+   598→
+   599→        <!-- Payment method selection -->
+   600→        <div>
+   601→          <label class="text-[11px] text-slate-400 block mb-1.5">طريقة الدفع</label>
+   602→          <div class="grid grid-cols-2 gap-1.5">
+   603→            {#each selectedAd.paymentMethods as pm}
+   604→              {@const PMComp = paymentMethodsList.find((p) => p.id === pm)?.icon || Banknote}
+   605→              {@const pmLabel = paymentMethodsList.find((p) => p.id === pm)?.label || pm}
+   606→              <button class="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white/[0.03] hover:bg-white/10 text-xs text-slate-200 border border-white/5">
+   607→                <svelte:component this={PMComp} size={12} class="text-accent-gold" />
+   608→                <span>{pmLabel}</span>
+   609→              </button>
+   610→            {/each}
+   611→          </div>
+   612→        </div>
+   613→
+   614→        <!-- Summary -->
+   615→        <div class="bg-white/[0.02] rounded-md p-3 space-y-1.5 text-xs">
+   616→          <div class="flex items-center justify-between">
+   617→            <span class="text-slate-400">ستستلم</span>
+   618→            <span class="font-bold text-accent-mint tabular-nums">{formatPrice(tradeAssetAmount, 6)} {selectedAd.asset}</span>
+   619→          </div>
+   620→          <div class="flex items-center justify-between">
+   621→            <span class="text-slate-400">عمولة المنصة</span>
+   622→            <span class="text-accent-mint font-bold">مجانية (للمشتري)</span>
+   623→          </div>
+   624→          <div class="flex items-center justify-between pt-1.5 border-t border-white/5">
+   625→            <span class="text-slate-400">إجمالي الدفع</span>
+   626→            <span class="font-bold text-white font-mono tabular-nums">{formatEGP(tradeFiatAmount)} ج.م</span>
+   627→          </div>
+   628→        </div>
+   629→
+   630→        <!-- Warning -->
+   631→        <div class="bg-accent-gold/5 border border-accent-gold/20 rounded-md p-2 flex items-start gap-1.5">
+   632→          <AlertCircle size={12} class="text-accent-gold flex-shrink-0 mt-0.5" />
+   633→          <p class="text-[10px] text-accent-gold/80 leading-relaxed">
+   634→            لا تقم بأي تحويل خارج منصة NEXUS. كل التواصل يجب أن يكون عبر دردشة المنصة. التحويل الخارجي = خسارة مضمونة.
+   635→          </p>
+   636→        </div>
+   637→
+   638→        <button
+   639→          onclick={startTrade}
+   640→          class="w-full py-2.5 text-sm font-bold rounded-md transition-colors {selectedAd.side === 'BUY' ? 'bg-accent-mint text-ink-950 hover:bg-accent-mint/90' : 'bg-accent-rose text-white hover:bg-accent-rose/90'}"
+   641→        >
+   642→          تأكيد الطلب — {selectedAd.side === 'BUY' ? 'شراء' : 'بيع'} {selectedAd.asset}
+   643→        </button>
+   644→      </div>
+   645→    </div>
+   646→  </div>
+   647→{/if}
+   648→

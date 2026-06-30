@@ -1,0 +1,678 @@
+     1→<script lang="ts">
+     2→  /**
+     3→   * Copy Trading — Browse and follow top traders. When you follow a trader,
+     4→   * every trade they make is automatically replicated in your account at the
+     5→   * same proportion. Includes detailed trader stats, performance curves, and
+     6→   * active followers count.
+     7→   */
+     8→  import { onMount } from 'svelte';
+     9→  import {
+    10→    Copy, Users, TrendingUp, TrendingDown, Crown, Star, Eye,
+    11→    Search, Filter, Award, Activity, DollarSign, Percent,
+    12→    Target, Clock, Check, Plus, Settings2, Zap, BarChart3,
+    13→    ArrowUpRight, ArrowDownRight, Shield, MessageCircle, RefreshCw, X
+    14→  } from 'lucide-svelte';
+    15→  import { formatPrice, formatCompact, formatPercent } from '$lib/utils/format';
+    16→  import { usdToEgp, egpCompact, usdEgpRate } from '$lib/utils/currency';
+    17→  import { toasts } from '$lib/stores/toast';
+    18→
+    19→  type Trader = {
+    20→    id: string;
+    21→    name: string;
+    22→    avatar: string;
+    23→    verified: boolean;
+    24→    rank: number;
+    25→    roi30d: number; // % return last 30 days
+    26→    roiAll: number; // % return all time
+    27→    winRate: number;
+    28→    aum: number; // assets under management in USD
+    29→    followers: number;
+    30→    copiers: number;
+    31→    maxDrawdown: number;
+    32→    sharpe: number;
+    33→    trades30d: number;
+    34→    avgHoldHours: number;
+    35→    riskScore: 1 | 2 | 3 | 4 | 5;
+    36→    favoriteAssets: string[];
+    37→    bio: string;
+    38→    equityCurve: number[];
+    39→    openPositions: { symbol: string; side: 'LONG' | 'SHORT'; pnlPct: number; size: number }[];
+    40→    following: boolean;
+    41→  };
+    42→
+    43→  let traders = $state<Trader[]>([]);
+    44→  let searchQuery = $state('');
+    45→  let sortBy = $state<'roi30d' | 'roiALL' | 'aum' | 'followers' | 'winRate' | 'sharpe'>('roi30d');
+    46→  let riskFilter = $state<'all' | 'low' | 'medium' | 'high'>('all');
+    47→  let selectedTrader = $state<Trader | null>(null);
+    48→  let detailOpen = $state(false);
+    49→  let copyModalOpen = $state(false);
+    50→  let copyAmount = $state(100);
+    51→  let copyPercent = $state(10);
+    52→  let currentRate = $state(48.5);
+    53→
+    54→  // Generate mock trader data
+    55→  function generateTraders() {
+    56→    const names = [
+    57→      'CryptoPharaoh', 'NileWhale', 'SphinxTrader', 'PyramidMaster',
+    58→      'CairoBull', 'AlexBear', 'DesertWolf', 'GoldenScarab',
+    59→      'AnubisFX', 'HorusTrader', 'RaCapital', 'IsisQuant'
+    60→    ];
+    61→    const bios = [
+    62→      'متداول محترف منذ 2018 - متخصص في BTC و ETH',
+    63→      'استراتيجية Swing trading على العملات الرئيسية',
+    64→      'مؤسس أكاديمية للتداول - خبرة 8 سنوات',
+    65→      'متداول عقود آجلة - إدارة مخاطر صارمة',
+    66→      'تداول يومي عالي التردد - تحليل فني متقدم',
+    67→      'مختص في DeFi والعملات البديلة'
+    68→    ];
+    69→    const assets = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'AVAX', 'LINK'];
+    70→
+    71→    return names.map((name, i) => {
+    72→      const roi30d = -5 + Math.random() * 80;
+    73→      const trades30d = 30 + Math.floor(Math.random() * 200);
+    74→      const followers = 100 + Math.floor(Math.random() * 5000);
+    75→      const aum = 50000 + Math.random() * 2000000;
+    76→      const riskScore = (1 + Math.floor(Math.random() * 5)) as 1|2|3|4|5;
+    77→
+    78→      // Generate equity curve
+    79→      const curve: number[] = [];
+    80→      let v = 10000;
+    81→      for (let j = 0; j < 30; j++) {
+    82→        v *= (1 + (Math.random() - 0.4) * 0.05);
+    83→        curve.push(v);
+    84→      }
+    85→
+    86→      return {
+    87→        id: `t${i + 1}`,
+    88→        name,
+    89→        avatar: name.charAt(0),
+    90→        verified: Math.random() > 0.3,
+    91→        rank: i + 1,
+    92→        roi30d,
+    93→        roiALL: roi30d * (1.5 + Math.random() * 4),
+    94→        winRate: 55 + Math.random() * 40,
+    95→        aum,
+    96→        followers,
+    97→        copiers: Math.floor(followers * (0.2 + Math.random() * 0.4)),
+    98→        maxDrawdown: 5 + Math.random() * 25,
+    99→        sharpe: 0.5 + Math.random() * 3,
+   100→        trades30d,
+   101→        avgHoldHours: 2 + Math.random() * 48,
+   102→        riskScore,
+   103→        favoriteAssets: assets.slice(0, 2 + Math.floor(Math.random() * 3)),
+   104→        bio: bios[i % bios.length],
+   105→        equityCurve: curve,
+   106→        openPositions: Array.from({ length: 1 + Math.floor(Math.random() * 3) }).map(() => ({
+   107→          symbol: assets[Math.floor(Math.random() * assets.length)] + 'USDT',
+   108→          side: (Math.random() > 0.4 ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
+   109→          pnlPct: -8 + Math.random() * 30,
+   110→          size: 500 + Math.random() * 5000
+   111→        })),
+   112→        following: false
+   113→      } as Trader;
+   114→    });
+   115→  }
+   116→
+   117→  onMount(() => {
+   118→    traders = generateTraders();
+   119→    usdEgpRate.subscribe((r) => (currentRate = r));
+   120→  });
+   121→
+   122→  const filteredTraders = $derived.by(() => {
+   123→    let arr = [...traders];
+   124→    if (searchQuery.trim()) {
+   125→      const q = searchQuery.toLowerCase().trim();
+   126→      arr = arr.filter((t) => t.name.toLowerCase().includes(q));
+   127→    }
+   128→    if (riskFilter === 'low') arr = arr.filter((t) => t.riskScore <= 2);
+   129→    else if (riskFilter === 'medium') arr = arr.filter((t) => t.riskScore === 3);
+   130→    else if (riskFilter === 'high') arr = arr.filter((t) => t.riskScore >= 4);
+   131→
+   132→    switch (sortBy) {
+   133→      case 'roi30d': arr.sort((a, b) => b.roi30d - a.roi30d); break;
+   134→      case 'roiALL': arr.sort((a, b) => b.roiALL - a.roiALL); break;
+   135→      case 'aum': arr.sort((a, b) => b.aum - a.aum); break;
+   136→      case 'followers': arr.sort((a, b) => b.followers - a.followers); break;
+   137→      case 'winRate': arr.sort((a, b) => b.winRate - a.winRate); break;
+   138→      case 'sharpe': arr.sort((a, b) => b.sharpe - a.sharpe); break;
+   139→    }
+   140→    return arr;
+   141→  });
+   142→
+   143→  const stats = $derived.by(() => {
+   144→    const totalFollowers = traders.reduce((s, t) => s + t.followers, 0);
+   145→    const totalAUM = traders.reduce((s, t) => s + t.aum, 0);
+   146→    const avgROI = traders.length > 0 ? traders.reduce((s, t) => s + t.roi30d, 0) / traders.length : 0;
+   147→    const verified = traders.filter((t) => t.verified).length;
+   148→    return { totalFollowers, totalAUM, avgROI, verified, total: traders.length };
+   149→  });
+   150→
+   151→  const followingCount = $derived(traders.filter((t) => t.following).length);
+   152→
+   153→  function toggleFollow(t: Trader) {
+   154→    t.following = !t.following;
+   155→    traders = [...traders];
+   156→    if (t.following) {
+   157→      toasts.success(`تتابع الآن ${t.name}`);
+   158→    } else {
+   159→      toasts.info(`تم إلغاء متابعة ${t.name}`);
+   160→    }
+   161→  }
+   162→
+   163→  function openDetail(t: Trader) {
+   164→    selectedTrader = t;
+   165→    detailOpen = true;
+   166→  }
+   167→
+   168→  function openCopyModal(t: Trader) {
+   169→    selectedTrader = t;
+   170→    copyModalOpen = true;
+   171→  }
+   172→
+   173→  function confirmCopy() {
+   174→    if (!selectedTrader) return;
+   175→    selectedTrader.following = true;
+   176→    traders = [...traders];
+   177→    toasts.success(`تم تفعيل نسخ ${selectedTrader.name} بمبلغ ${copyAmount}$ — نسبة ${copyPercent}% لكل صفقة`);
+   178→    copyModalOpen = false;
+   179→  }
+   180→
+   181→  function riskColor(score: number): string {
+   182→    if (score <= 2) return '#22d3a4';
+   183→    if (score === 3) return '#f5b544';
+   184→    return '#f43f7a';
+   185→  }
+   186→  function riskLabel(score: number): string {
+   187→    if (score <= 2) return 'منخفض';
+   188→    if (score === 3) return 'متوسط';
+   189→    return 'مرتفع';
+   190→  }
+   191→
+   192→  function sparkPath(curve: number[], w = 80, h = 24): string {
+   193→    if (curve.length < 2) return '';
+   194→    const max = Math.max(...curve);
+   195→    const min = Math.min(...curve);
+   196→    const range = max - min || 1;
+   197→    return curve.map((v, i) => {
+   198→      const x = (i / (curve.length - 1)) * w;
+   199→      const y = h - ((v - min) / range) * h;
+   200→      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+   201→    }).join(' ');
+   202→  }
+   203→
+   204→  // Equity curve for selected trader (larger)
+   205→  function equityPathLarge(curve: number[]): string {
+   206→    if (curve.length < 2) return '';
+   207→    const w = 600;
+   208→    const h = 180;
+   209→    const max = Math.max(...curve);
+   210→    const min = Math.min(...curve);
+   211→    const range = max - min || 1;
+   212→    return curve.map((v, i) => {
+   213→      const x = (i / (curve.length - 1)) * w;
+   214→      const y = h - ((v - min) / range) * h;
+   215→      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+   216→    }).join(' ');
+   217→  }
+   218→</script>
+   219→
+   220→<svelte:head><title>Copy Trading — NEXUS</title></svelte:head>
+   221→
+   222→<div class="space-y-4 pb-20 lg:pb-0 relative">
+   223→  <!-- Ambient aurora -->
+   224→  <div class="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+   225→    <div class="absolute -top-20 right-1/4 w-96 h-96 bg-accent-gold/7 blur-[120px] rounded-full animate-pulse-glow"></div>
+   226→    <div class="absolute bottom-0 -left-32 w-96 h-96 bg-accent-violet/5 blur-[120px] rounded-full animate-pulse-glow" style="animation-delay: 2s;"></div>
+   227→    <div class="absolute top-1/2 right-1/3 w-80 h-80 bg-accent-mint/4 blur-[120px] rounded-full animate-pulse-glow" style="animation-delay: 4s;"></div>
+   228→  </div>
+   229→
+   230→  <!-- Hero header -->
+   231→  <div class="panel p-5 relative overflow-hidden">
+   232→    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+   233→    <div class="absolute -top-12 -right-12 w-32 h-32 bg-accent-gold/10 blur-3xl rounded-full"></div>
+   234→    <div class="absolute -bottom-12 -left-12 w-32 h-32 bg-accent-violet/8 blur-3xl rounded-full"></div>
+   235→    <div class="relative flex items-center justify-between flex-wrap gap-3">
+   236→      <div class="flex items-center gap-3">
+   237→        <div class="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-accent-gold/20 to-accent-violet/10 border border-accent-gold/25 flex items-center justify-center shrink-0">
+   238→          <div class="absolute inset-0 bg-accent-gold/15 blur-xl rounded-2xl"></div>
+   239→          <Copy size={24} class="relative text-accent-gold" />
+   240→        </div>
+   241→        <div>
+   242→          <h1 class="text-xl font-bold text-white tracking-tight">نسخ المتداولين</h1>
+   243→          <p class="text-xs text-slate-400 mt-0.5">تابع كبار المتداولين وانسخ صفقاتهم تلقائياً بنفس النسبة</p>
+   244→        </div>
+   245→      </div>
+   246→      <div class="flex items-center gap-2 text-xs">
+   247→        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 relative overflow-hidden group hover:border-accent-gold/20 transition-colors">
+   248→          <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-gold/8 blur-2xl rounded-full group-hover:bg-accent-gold/12 transition-all"></div>
+   249→          <div class="relative">
+   250→            <span class="text-slate-400">تاجراً موثق:</span>
+   251→            <span class="text-accent-gold font-bold mr-1 tabular-nums">{stats.verified}</span>
+   252→          </div>
+   253→        </div>
+   254→        <div class="px-3 py-1.5 rounded-lg bg-accent-mint/10 border border-accent-mint/20 relative overflow-hidden group hover:border-accent-mint/30 transition-colors">
+   255→          <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-mint/10 blur-2xl rounded-full group-hover:bg-accent-mint/15 transition-all"></div>
+   256→          <div class="relative">
+   257→            <span class="text-slate-400">إجمالي AUM:</span>
+   258→            <span class="text-accent-mint font-bold mr-1 tabular-nums">${formatCompact(stats.totalAUM)}</span>
+   259→          </div>
+   260→        </div>
+   261→        <div class="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 relative overflow-hidden group hover:border-accent-violet/20 transition-colors">
+   262→          <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-violet/8 blur-2xl rounded-full group-hover:bg-accent-violet/12 transition-all"></div>
+   263→          <div class="relative">
+   264→            <span class="text-slate-400">تتابع:</span>
+   265→            <span class="text-accent-violet font-bold mr-1 tabular-nums">{followingCount}</span>
+   266→          </div>
+   267→        </div>
+   268→      </div>
+   269→    </div>
+   270→  </div>
+   271→
+   272→  <!-- Filters -->
+   273→  <div class="panel p-3 relative overflow-hidden">
+   274→    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.3), transparent);"></div>
+   275→    <div class="relative flex flex-wrap items-center gap-2">
+   276→      <div class="relative">
+   277→        <Search size={14} class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" />
+   278→        <input
+   279→          type="text"
+   280→          placeholder="بحث عن متداول..."
+   281→          bind:value={searchQuery}
+   282→          class="w-48 bg-white/[0.03] border border-white/5 rounded-md pr-7 pl-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-accent-gold/40"
+   283→        />
+   284→      </div>
+   285→      <div class="flex items-center gap-1 text-xs">
+   286→        <Filter size={12} class="text-slate-500 ml-1" />
+   287→        {#each [{ v: 'all', l: 'الكل' }, { v: 'low', l: 'منخفض المخاطر' }, { v: 'medium', l: 'متوسط' }, { v: 'high', l: 'عالي المخاطر' }] as f}
+   288→          <button
+   289→            onclick={() => (riskFilter = f.v as any)}
+   290→            class="px-2.5 py-1.5 rounded-md transition-colors {riskFilter === f.v ? 'bg-accent-gold/15 text-accent-gold border border-accent-gold/30' : 'text-slate-400 hover:bg-white/5 border border-transparent'}"
+   291→          >{f.l}</button>
+   292→        {/each}
+   293→      </div>
+   294→      <div class="flex items-center gap-1 text-xs mr-auto">
+   295→        <span class="text-slate-500 text-[11px]">ترتيب حسب:</span>
+   296→        <select bind:value={sortBy} class="bg-white/[0.03] border border-white/5 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none focus:border-accent-gold/40">
+   297→          <option value="roi30d">العائد 30 يوم</option>
+   298→          <option value="roiALL">العائد الكلي</option>
+   299→          <option value="aum">حجم الأموال</option>
+   300→          <option value="followers">المتابعين</option>
+   301→          <option value="winRate">معدل الربح</option>
+   302→          <option value="sharpe">معامل شارب</option>
+   303→        </select>
+   304→      </div>
+   305→    </div>
+   306→  </div>
+   307→
+   308→  <!-- Top 3 podium -->
+   309→  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   310→    {#each filteredTraders.slice(0, 3) as t, i}
+   311→      <div class="panel p-4 relative overflow-hidden {i === 0 ? 'sm:scale-[1.03] panel-glow' : i === 1 ? '' : ''}">
+   312→        <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, {i === 0 ? 'rgba(245, 181, 68, 0.5)' : i === 1 ? 'rgba(203, 213, 232, 0.3)' : 'rgba(244, 63, 122, 0.4)'}, transparent);"></div>
+   313→        <div class="absolute -top-8 -right-8 w-24 h-24 blur-3xl rounded-full {i === 0 ? 'bg-accent-gold/15' : i === 1 ? 'bg-slate-300/10' : 'bg-accent-rose/10'}"></div>
+   314→        <div class="absolute top-0 left-0 px-2.5 py-1 text-[10px] font-bold rounded-br-xl flex items-center gap-1 {i === 0 ? 'bg-accent-gold text-ink-950' : i === 1 ? 'bg-slate-300 text-ink-950' : 'bg-accent-rose text-white'}">
+   315→          {#if i === 0}<Crown size={11} />{/if}
+   316→          #{i + 1}
+   317→        </div>
+   318→        <div class="relative flex items-center gap-3 mb-3 mt-2">
+   319→          <div class="w-12 h-12 rounded-full bg-gradient-to-br from-accent-gold/40 to-accent-gold/10 border border-accent-gold/20 flex items-center justify-center text-accent-gold text-xl font-bold shrink-0">
+   320→            {t.avatar}
+   321→          </div>
+   322→          <div class="min-w-0">
+   323→            <div class="flex items-center gap-1">
+   324→              <span class="font-bold text-white truncate">{t.name}</span>
+   325→              {#if t.verified}<Check size={12} class="text-accent-gold shrink-0" />{/if}
+   326→            </div>
+   327→            <div class="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+   328→              <Users size={9} /> {formatCompact(t.followers)} متابع
+   329→            </div>
+   330→          </div>
+   331→        </div>
+   332→        <div class="relative grid grid-cols-3 gap-2 mb-3 text-center">
+   333→          <div>
+   334→            <div class="text-[10px] text-slate-500">عائد 30 يوم</div>
+   335→            <div class="text-sm font-bold tabular-nums {t.roi30d >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
+   336→              {t.roi30d >= 0 ? '+' : ''}{t.roi30d.toFixed(1)}%
+   337→            </div>
+   338→          </div>
+   339→          <div>
+   340→            <div class="text-[10px] text-slate-500">معدل الربح</div>
+   341→            <div class="text-sm font-bold text-white tabular-nums">{t.winRate.toFixed(0)}%</div>
+   342→          </div>
+   343→          <div>
+   344→            <div class="text-[10px] text-slate-500">المخاطرة</div>
+   345→            <div class="text-sm font-bold tabular-nums" style="color: {riskColor(t.riskScore)};">
+   346→              {riskLabel(t.riskScore)}
+   347→            </div>
+   348→          </div>
+   349→        </div>
+   350→        <svg viewBox="0 0 80 24" class="relative w-full h-6" preserveAspectRatio="none">
+   351→          <path d={sparkPath(t.equityCurve)} fill="none" stroke={t.roi30d >= 0 ? '#22d3a4' : '#f43f7a'} stroke-width="1.5" />
+   352→        </svg>
+   353→        <div class="relative flex items-center gap-1 mt-3">
+   354→          <button
+   355→            onclick={() => openCopyModal(t)}
+   356→            class="btn-primary flex-1 py-1.5 text-xs"
+   357→          >
+   358→            نسخ
+   359→          </button>
+   360→          <button
+   361→            onclick={() => openDetail(t)}
+   362→            class="btn-secondary px-3 py-1.5 text-xs"
+   363→            aria-label="عرض التفاصيل"
+   364→          >
+   365→            <Eye size={12} />
+   366→          </button>
+   367→        </div>
+   368→      </div>
+   369→    {/each}
+   370→  </div>
+   371→
+   372→  <!-- Full traders table -->
+   373→  <div class="panel overflow-hidden relative">
+   374→    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.3), transparent);"></div>
+   375→    <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+   376→      <h3 class="text-sm font-bold text-white flex items-center gap-2 tracking-tight">
+   377→        <div class="w-7 h-7 rounded-lg bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center">
+   378→          <BarChart3 size={14} class="text-accent-gold" />
+   379→        </div>
+   380→        كل المتداولين
+   381→        <span class="text-[10px] text-slate-500 tabular-nums">({filteredTraders.length})</span>
+   382→      </h3>
+   383→    </div>
+   384→    <div class="overflow-x-auto">
+   385→      <table class="w-full text-xs">
+   386→        <thead>
+   387→          <tr class="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5 bg-white/[0.02]">
+   388→            <th class="text-right font-medium px-4 py-3">#</th>
+   389→            <th class="text-right font-medium px-4 py-3">المتداول</th>
+   390→            <th class="text-right font-medium px-4 py-3">عائد 30 يوم</th>
+   391→            <th class="text-right font-medium px-4 py-3">المنحنى</th>
+   392→            <th class="text-right font-medium px-4 py-3">معدل الربح</th>
+   393→            <th class="text-right font-medium px-4 py-3">AUM</th>
+   394→            <th class="text-right font-medium px-4 py-3">المتابعون</th>
+   395→            <th class="text-right font-medium px-4 py-3">المخاطرة</th>
+   396→            <th class="text-left font-medium px-4 py-3">إجراء</th>
+   397→          </tr>
+   398→        </thead>
+   399→        <tbody>
+   400→          {#each filteredTraders as t, i}
+   401→            <tr class="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors cursor-pointer" onclick={() => openDetail(t)}>
+   402→              <td class="px-4 py-3 text-slate-500 font-mono">{i + 1}</td>
+   403→              <td class="px-4 py-3">
+   404→                <div class="flex items-center gap-2">
+   405→                  <div class="w-8 h-8 rounded-full bg-gradient-to-br from-accent-gold/30 to-accent-gold/10 flex items-center justify-center text-accent-gold text-xs font-bold">
+   406→                    {t.avatar}
+   407→                  </div>
+   408→                  <div>
+   409→                    <div class="flex items-center gap-1">
+   410→                      <span class="font-bold text-white">{t.name}</span>
+   411→                      {#if t.verified}<Check size={11} class="text-accent-gold" />{/if}
+   412→                    </div>
+   413→                    <div class="text-[10px] text-slate-500">{t.favoriteAssets.join(' · ')}</div>
+   414→                  </div>
+   415→                </div>
+   416→              </td>
+   417→              <td class="px-4 py-3">
+   418→                <span class="font-bold tabular-nums {t.roi30d >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
+   419→                  {t.roi30d >= 0 ? '+' : ''}{t.roi30d.toFixed(2)}%
+   420→                </span>
+   421→              </td>
+   422→              <td class="px-4 py-3">
+   423→                <svg viewBox="0 0 80 24" class="w-20 h-6" preserveAspectRatio="none">
+   424→                  <path d={sparkPath(t.equityCurve)} fill="none" stroke={t.roi30d >= 0 ? '#22d3a4' : '#f43f7a'} stroke-width="1.5" />
+   425→                </svg>
+   426→              </td>
+   427→              <td class="px-4 py-3 text-slate-300 tabular-nums">{t.winRate.toFixed(1)}%</td>
+   428→              <td class="px-4 py-3 text-slate-300 font-mono tabular-nums">${formatCompact(t.aum)}</td>
+   429→              <td class="px-4 py-3 text-slate-300 tabular-nums">{formatCompact(t.followers)}</td>
+   430→              <td class="px-4 py-3">
+   431→                <div class="flex items-center gap-1">
+   432→                  <div class="flex gap-0.5">
+   433→                    {#each Array(5) as _, idx}
+   434→                      <div class="w-1 h-3 rounded-sm" style="background: {idx < t.riskScore ? riskColor(t.riskScore) : 'rgba(255,255,255,0.1)'};"></div>
+   435→                    {/each}
+   436→                  </div>
+   437→                  <span class="text-[10px]" style="color: {riskColor(t.riskScore)};">{riskLabel(t.riskScore)}</span>
+   438→                </div>
+   439→              </td>
+   440→              <td class="px-4 py-3 text-left" onclick={(e) => e.stopPropagation()}>
+   441→                <div class="flex items-center gap-1">
+   442→                  <button
+   443→                    onclick={() => openCopyModal(t)}
+   444→                    class="px-3 py-1.5 rounded-md text-xs font-bold bg-accent-gold text-ink-950 hover:bg-accent-gold/90 transition-colors"
+   445→                  >
+   446→                    {t.following ? 'نسخ' : 'نسخ'}
+   447→                  </button>
+   448→                  <button
+   449→                    onclick={() => toggleFollow(t)}
+   450→                    class="px-2 py-1.5 rounded-md text-xs {t.following ? 'bg-accent-mint/15 text-accent-mint' : 'bg-white/[0.03] text-slate-400 hover:bg-white/5'}"
+   451→                  >
+   452→                    {#if t.following}<Check size={12} />{:else}<Plus size={12} />{/if}
+   453→                  </button>
+   454→                </div>
+   455→              </td>
+   456→            </tr>
+   457→          {/each}
+   458→        </tbody>
+   459→      </table>
+   460→    </div>
+   461→  </div>
+   462→
+   463→  <!-- How it works -->
+   464→  <div class="panel p-4 relative overflow-hidden">
+   465→    <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(34, 211, 164, 0.3), transparent);"></div>
+   466→    <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2 tracking-tight">
+   467→      <div class="w-7 h-7 rounded-lg bg-accent-mint/10 border border-accent-mint/20 flex items-center justify-center">
+   468→        <Zap size={14} class="text-accent-mint" />
+   469→      </div>
+   470→      كيف يعمل نسخ التداول؟
+   471→    </h3>
+   472→    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+   473→      {#each [{ n: '1', t: 'اختر متداول', d: 'تصفح قائمة المتداولين الموثقين واختر الأنسب لأهدافك بناءً على العائد والمخاطرة.' }, { n: '2', t: 'حدد المبلغ', d: 'اختر المبلغ الذي تريد تخصيصه للنسخ ونسبة كل صفقة من 1% إلى 100%.' }, { n: '3', t: 'نسخ تلقائي', d: 'كل صفقة يفتحها المتداول تُنسخ على حسابك فوراً بنفس النسبة المحددة.' }, { n: '4', t: 'إدارة كاملة', d: 'يمكنك إيقاف النسخ أو تعديل النسبة أو إغلاق الصفقات يدوياً في أي وقت.' }] as step}
+   474→        <div class="bg-white/[0.02] rounded-lg p-3 border border-white/5 relative overflow-hidden group hover:border-accent-gold/15 transition-colors">
+   475→          <div class="absolute -top-4 -right-4 w-12 h-12 bg-accent-gold/8 blur-2xl rounded-full group-hover:bg-accent-gold/12 transition-all"></div>
+   476→          <div class="relative w-8 h-8 rounded-lg bg-gradient-to-br from-accent-gold/20 to-accent-gold/5 border border-accent-gold/25 flex items-center justify-center mb-2 text-accent-gold font-bold text-sm tabular-nums">{step.n}</div>
+   477→          <h4 class="relative text-xs font-bold text-white mb-1">{step.t}</h4>
+   478→          <p class="relative text-[10px] text-slate-400 leading-relaxed">{step.d}</p>
+   479→        </div>
+   480→      {/each}
+   481→    </div>
+   482→  </div>
+   483→</div>
+   484→
+   485→<!-- Trader detail modal -->
+   486→{#if detailOpen && selectedTrader}
+   487→  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" dir="rtl">
+   488→    <div class="panel-glow w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+   489→      <!-- Header -->
+   490→      <div class="sticky top-0 z-10 px-5 py-3 flex items-center justify-between border-b border-white/5 bg-ink-900/80 backdrop-blur-xl">
+   491→        <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+   492→        <div class="relative flex items-center gap-3">
+   493→          <div class="w-12 h-12 rounded-full bg-gradient-to-br from-accent-gold/40 to-accent-gold/10 border border-accent-gold/20 flex items-center justify-center text-accent-gold text-xl font-bold shrink-0">
+   494→            {selectedTrader.avatar}
+   495→          </div>
+   496→          <div class="min-w-0">
+   497→            <div class="flex items-center gap-1.5">
+   498→              <h3 class="text-lg font-bold text-white tracking-tight">{selectedTrader.name}</h3>
+   499→              {#if selectedTrader.verified}<Check size={14} class="text-accent-gold shrink-0" />{/if}
+   500→            </div>
+   501→            <p class="text-[11px] text-slate-400">{selectedTrader.bio}</p>
+   502→          </div>
+   503→        </div>
+   504→        <button onclick={() => (detailOpen = false)} class="relative text-slate-400 hover:text-white hover:bg-white/5 p-2 rounded-lg transition-colors" aria-label="إغلاق">
+   505→          <X size={18} />
+   506→        </button>
+   507→      </div>
+   508→
+   509→      <div class="p-4 space-y-4">
+   510→        <!-- Stats grid -->
+   511→        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+   512→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5 relative overflow-hidden">
+   513→            <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-mint/8 blur-2xl rounded-full"></div>
+   514→            <div class="relative text-[10px] text-slate-500 uppercase tracking-wider">عائد 30 يوم</div>
+   515→            <div class="relative text-lg font-bold tabular-nums {selectedTrader.roi30d >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
+   516→              {selectedTrader.roi30d >= 0 ? '+' : ''}{selectedTrader.roi30d.toFixed(2)}%
+   517→            </div>
+   518→          </div>
+   519→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5 relative overflow-hidden">
+   520→            <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-mint/8 blur-2xl rounded-full"></div>
+   521→            <div class="relative text-[10px] text-slate-500 uppercase tracking-wider">عائد كلي</div>
+   522→            <div class="relative text-lg font-bold tabular-nums {selectedTrader.roiALL >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
+   523→              {selectedTrader.roiALL >= 0 ? '+' : ''}{selectedTrader.roiALL.toFixed(2)}%
+   524→            </div>
+   525→          </div>
+   526→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5">
+   527→            <div class="text-[10px] text-slate-500 uppercase tracking-wider">معدل الربح</div>
+   528→            <div class="text-lg font-bold text-white tabular-nums">{selectedTrader.winRate.toFixed(1)}%</div>
+   529→          </div>
+   530→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5">
+   531→            <div class="text-[10px] text-slate-500 uppercase tracking-wider">معامل شارب</div>
+   532→            <div class="text-lg font-bold text-white tabular-nums">{selectedTrader.sharpe.toFixed(2)}</div>
+   533→          </div>
+   534→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5 relative overflow-hidden">
+   535→            <div class="absolute -top-3 -right-3 w-10 h-10 bg-accent-rose/8 blur-2xl rounded-full"></div>
+   536→            <div class="relative text-[10px] text-slate-500 uppercase tracking-wider">أقصى تراجع</div>
+   537→            <div class="relative text-lg font-bold text-accent-rose tabular-nums">-{selectedTrader.maxDrawdown.toFixed(2)}%</div>
+   538→          </div>
+   539→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5">
+   540→            <div class="text-[10px] text-slate-500 uppercase tracking-wider">AUM</div>
+   541→            <div class="text-lg font-bold text-white tabular-nums">${formatCompact(selectedTrader.aum)}</div>
+   542→          </div>
+   543→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5">
+   544→            <div class="text-[10px] text-slate-500 uppercase tracking-wider">المتابعون</div>
+   545→            <div class="text-lg font-bold text-white tabular-nums">{formatCompact(selectedTrader.followers)}</div>
+   546→          </div>
+   547→          <div class="bg-white/[0.03] rounded-lg p-3 border border-white/5">
+   548→            <div class="text-[10px] text-slate-500 uppercase tracking-wider">صفقات 30 يوم</div>
+   549→            <div class="text-lg font-bold text-white tabular-nums">{selectedTrader.trades30d}</div>
+   550→          </div>
+   551→        </div>
+   552→
+   553→        <!-- Equity curve -->
+   554→        <div>
+   555→          <h4 class="text-xs font-bold text-white mb-2 flex items-center gap-1.5 tracking-tight">
+   556→            <Activity size={12} class="text-accent-gold" /> منحنى الأداء (30 يوم)
+   557→          </h4>
+   558→          <div class="bg-white/[0.02] rounded-lg p-3 border border-white/5">
+   559→            <svg viewBox="0 0 600 180" class="w-full" style="height: 180px;" preserveAspectRatio="none">
+   560→              <defs>
+   561→                <linearGradient id="eqGradT" x1="0" y1="0" x2="0" y2="1">
+   562→                  <stop offset="0%" stop-color={selectedTrader.roi30d >= 0 ? '#22d3a4' : '#f43f7a'} stop-opacity="0.35" />
+   563→                  <stop offset="100%" stop-color={selectedTrader.roi30d >= 0 ? '#22d3a4' : '#f43f7a'} stop-opacity="0" />
+   564→                </linearGradient>
+   565→              </defs>
+   566→              <path d={`${equityPathLarge(selectedTrader.equityCurve)} L600,180 L0,180 Z`} fill="url(#eqGradT)" />
+   567→              <path d={equityPathLarge(selectedTrader.equityCurve)} fill="none" stroke={selectedTrader.roi30d >= 0 ? '#22d3a4' : '#f43f7a'} stroke-width="2" />
+   568→            </svg>
+   569→          </div>
+   570→        </div>
+   571→
+   572→        <!-- Open positions -->
+   573→        <div>
+   574→          <h4 class="text-xs font-bold text-white mb-2 flex items-center gap-1.5 tracking-tight">
+   575→            <Target size={12} class="text-accent-gold" /> الصفقات المفتوحة ({selectedTrader.openPositions.length})
+   576→          </h4>
+   577→          <div class="bg-white/[0.02] rounded-lg overflow-hidden border border-white/5">
+   578→            {#each selectedTrader.openPositions as pos}
+   579→              <div class="flex items-center justify-between px-3 py-2 border-b border-white/5 last:border-0 text-xs hover:bg-white/[0.02] transition-colors">
+   580→                <div class="flex items-center gap-2">
+   581→                  <span class="pill {pos.side === 'LONG' ? 'pill-mint' : 'pill-rose'}">{pos.side === 'LONG' ? 'شراء' : 'بيع'}</span>
+   582→                  <span class="font-bold text-white">{pos.symbol}</span>
+   583→                </div>
+   584→                <div class="flex items-center gap-3">
+   585→                  <span class="text-slate-400 font-mono tabular-nums">${formatCompact(pos.size)}</span>
+   586→                  <span class="font-bold tabular-nums {pos.pnlPct >= 0 ? 'text-accent-mint' : 'text-accent-rose'}">
+   587→                    {pos.pnlPct >= 0 ? '+' : ''}{pos.pnlPct.toFixed(2)}%
+   588→                  </span>
+   589→                </div>
+   590→              </div>
+   591→            {/each}
+   592→          </div>
+   593→        </div>
+   594→
+   595→        <!-- Action -->
+   596→        <button
+   597→          onclick={() => { detailOpen = false; openCopyModal(selectedTrader); }}
+   598→          class="btn-primary w-full py-2.5 text-sm"
+   599→        >
+   600→          <Copy size={14} /> ابدأ النسخ الآن
+   601→        </button>
+   602→      </div>
+   603→    </div>
+   604→  </div>
+   605→{/if}
+   606→
+   607→<!-- Copy modal -->
+   608→{#if copyModalOpen && selectedTrader}
+   609→  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" dir="rtl">
+   610→    <div class="panel-glow w-full max-w-md overflow-hidden">
+   611→      <div class="relative flex items-center justify-between px-4 py-3 border-b border-white/5 bg-accent-gold/5">
+   612→        <div class="absolute top-0 inset-x-0 h-px pointer-events-none" style="background: linear-gradient(90deg, transparent, rgba(245, 181, 68, 0.4), transparent);"></div>
+   613→        <div class="relative flex items-center gap-2">
+   614→          <Copy size={16} class="text-accent-gold" />
+   615→          <h3 class="text-sm font-bold text-white tracking-tight">نسخ {selectedTrader.name}</h3>
+   616→        </div>
+   617→        <button onclick={() => (copyModalOpen = false)} class="relative text-slate-400 hover:text-white hover:bg-white/5 p-1.5 rounded-lg transition-colors" aria-label="إغلاق">
+   618→          <X size={16} />
+   619→        </button>
+   620→      </div>
+   621→      <div class="p-4 space-y-3">
+   622→        <div>
+   623→          <label class="text-[11px] text-slate-400 block mb-1">المبلغ المخصص للنسخ ($)</label>
+   624→          <input
+   625→            type="number"
+   626→            bind:value={copyAmount}
+   627→            min="50"
+   628→            step="50"
+   629→            class="w-full bg-white/[0.03] border border-white/5 rounded-md px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-accent-gold/40"
+   630→          />
+   631→          <p class="text-[10px] text-slate-500 mt-1 tabular-nums">≈ {formatEGP(usdToEgp(copyAmount, currentRate))} ج.م</p>
+   632→        </div>
+   633→        <div>
+   634→          <label class="text-[11px] text-slate-400 block mb-1">نسبة كل صفقة ({copyPercent}%)</label>
+   635→          <input
+   636→            type="range"
+   637→            bind:value={copyPercent}
+   638→            min="1"
+   639→            max="100"
+   640→            class="w-full accent-accent-gold"
+   641→          />
+   642→          <div class="flex items-center justify-between text-[10px] text-slate-500 mt-1">
+   643→            <span>محافظ (1%)</span>
+   644→            <span>متوازن (10%)</span>
+   645→            <span>عدواني (100%)</span>
+   646→          </div>
+   647→        </div>
+   648→        <div class="bg-white/[0.02] rounded-md p-3 space-y-1.5 text-xs border border-white/5">
+   649→          <div class="flex items-center justify-between">
+   650→            <span class="text-slate-400">حجم الصفقة الواحدة</span>
+   651→            <span class="font-bold text-white tabular-nums">${(copyAmount * copyPercent / 100).toFixed(2)}</span>
+   652→          </div>
+   653→          <div class="flex items-center justify-between">
+   654→            <span class="text-slate-400">العمولة</span>
+   655→            <span class="text-accent-mint font-bold">10% من الأرباح فقط</span>
+   656→          </div>
+   657→          <div class="flex items-center justify-between pt-1.5 border-t border-white/5">
+   658→            <span class="text-slate-400">إيقاف تلقائي عند خسارة</span>
+   659→            <span class="font-bold text-accent-rose tabular-nums">-{selectedTrader.maxDrawdown.toFixed(0)}%</span>
+   660→          </div>
+   661→        </div>
+   662→        <div class="bg-accent-gold/5 border border-accent-gold/20 rounded-md p-2 flex items-start gap-1.5">
+   663→          <Shield size={12} class="text-accent-gold flex-shrink-0 mt-0.5" />
+   664→          <p class="text-[10px] text-accent-gold/80 leading-relaxed">
+   665→            تذكر: الأداء السابق لا يضمن النتائج المستقبلية. النسخ ينطوي على مخاطر — استثمر فقط ما تستطيع خسارته.
+   666→          </p>
+   667→        </div>
+   668→        <button
+   669→          onclick={confirmCopy}
+   670→          class="btn-primary w-full py-2.5 text-sm"
+   671→        >
+   672→          <Copy size={14} /> تفعيل النسخ بمبلغ ${copyAmount}
+   673→        </button>
+   674→      </div>
+   675→    </div>
+   676→  </div>
+   677→{/if}
+   678→
