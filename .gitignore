@@ -1,2 +1,5 @@
 skills/
 node_modules/
+svelte-kit/
+.svelte-kit/
+tool-results/
