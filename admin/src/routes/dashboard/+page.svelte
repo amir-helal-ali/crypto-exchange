@@ -2,34 +2,31 @@
   import { onMount } from 'svelte';
   import {
     Users, ShoppingCart, ArrowLeftRight, TrendingUp, TrendingDown,
-    ShieldCheck, Activity, Clock, AlertCircle
+    ShieldCheck, Activity, Clock, AlertCircle, Zap
   } from 'lucide-svelte';
   import { authGet } from '$lib/api/client';
   import type { AdminStats, AuditLog } from '$lib/api/types';
   import { createAdminStream } from '$lib/api/types';
-  import { formatNumber, formatDate, getActionLabel, getActionPill } from '$lib/utils/helpers';
+  import { formatNumber, formatDate, getActionLabel, getActionPill, formatCompact } from '$lib/utils/helpers';
   import StatCard from '$lib/components/StatCard.svelte';
   import LiveIndicator from '$lib/components/LiveIndicator.svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
 
-  // ─── State ───
   let stats = $state<AdminStats | null>(null);
   let auditLogs = $state<AuditLog[]>([]);
   let loading = $state(true);
   let sseConnected = $state(false);
   let error = $state<string | null>(null);
 
-  // ─── Stat Card Config ───
   const statCards = [
-    { key: 'totalUsers' as const, label: 'إجمالي المستخدمين', icon: Users, iconColor: '#f5b544', iconBg: 'rgba(245,181,68,0.12)', sparkColor: '#f5b544' },
-    { key: 'totalOrders' as const, label: 'إجمالي الأوامر', icon: ShoppingCart, iconColor: '#3b82f6', iconBg: 'rgba(59,130,246,0.12)', sparkColor: '#3b82f6' },
-    { key: 'totalTransactions' as const, label: 'إجمالي المعاملات', icon: ArrowLeftRight, iconColor: '#a855f7', iconBg: 'rgba(168,85,247,0.12)', sparkColor: '#a855f7' },
-    { key: 'pendingDeposits' as const, label: 'إيداعات معلقة', icon: TrendingUp, iconColor: '#22d3a4', iconBg: 'rgba(34,211,164,0.12)', sparkColor: '#22d3a4' },
-    { key: 'pendingWithdrawals' as const, label: 'سحوبات معلقة', icon: TrendingDown, iconColor: '#f43f7a', iconBg: 'rgba(244,63,122,0.12)', sparkColor: '#f43f7a' },
-    { key: 'pendingKYC' as const, label: 'طلبات KYC معلقة', icon: ShieldCheck, iconColor: '#3b82f6', iconBg: 'rgba(59,130,246,0.12)', sparkColor: '#3b82f6' }
+    { key: 'totalUsers' as const, label: 'إجمالي المستخدمين', icon: Users, iconColor: '#f5b544', iconBg: 'rgba(245,181,68,0.1)', chartColor: '#f5b544', sparkSeed: 1 },
+    { key: 'totalOrders' as const, label: 'إجمالي الأوامر', icon: ShoppingCart, iconColor: '#3b82f6', iconBg: 'rgba(59,130,246,0.1)', chartColor: '#3b82f6', sparkSeed: 2 },
+    { key: 'totalTransactions' as const, label: 'إجمالي المعاملات', icon: ArrowLeftRight, iconColor: '#a855f7', iconBg: 'rgba(168,85,247,0.1)', chartColor: '#a855f7', sparkSeed: 3 },
+    { key: 'pendingDeposits' as const, label: 'إيداعات معلقة', icon: TrendingUp, iconColor: '#22d3a4', iconBg: 'rgba(34,211,164,0.1)', chartColor: '#22d3a4', sparkSeed: 4 },
+    { key: 'pendingWithdrawals' as const, label: 'سحوبات معلقة', icon: TrendingDown, iconColor: '#f43f7a', iconBg: 'rgba(244,63,122,0.1)', chartColor: '#f43f7a', sparkSeed: 5 },
+    { key: 'pendingKYC' as const, label: 'طلبات KYC معلقة', icon: ShieldCheck, iconColor: '#3b82f6', iconBg: 'rgba(59,130,246,0.1)', chartColor: '#3b82f6', sparkSeed: 6 }
   ];
 
-  // ─── Fetch Data ───
   async function fetchStats() {
     try {
       const res = await authGet('/api/v1/admin/stats');
@@ -41,14 +38,13 @@
 
   async function fetchAuditLogs() {
     try {
-      const res = await authGet('/api/v1/admin/audit-logs?limit=5');
+      const res = await authGet('/api/v1/admin/audit-logs?limit=8');
       if (!res.ok) throw new Error('فشل تحميل سجل المراجعة');
       const json = await res.json();
       if (json.success) auditLogs = json.data;
     } catch { /* non-fatal */ }
   }
 
-  // ─── SSE ───
   let eventSource: EventSource | null = $state(null);
 
   function connectSSE() {
@@ -61,7 +57,7 @@
     es.addEventListener('audit', (e) => {
       try {
         const entry: AuditLog = JSON.parse(e.data);
-        if (entry) auditLogs = [entry, ...auditLogs].slice(0, 5);
+        if (entry) auditLogs = [entry, ...auditLogs].slice(0, 8);
       } catch {}
     });
     es.onerror = () => {
@@ -83,25 +79,18 @@
 
 <!-- Aurora Background -->
 <div class="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
-  <div class="absolute -top-32 right-1/4 w-[500px] h-[500px] rounded-full opacity-[0.07] blur-[120px]" style="background: var(--accent-gold);"></div>
-  <div class="absolute top-1/3 -left-20 w-[400px] h-[400px] rounded-full opacity-[0.06] blur-[100px]" style="background: var(--accent-violet);"></div>
-  <div class="absolute bottom-10 right-10 w-[350px] h-[350px] rounded-full opacity-[0.05] blur-[100px]" style="background: var(--accent-mint);"></div>
+  <div class="absolute -top-32 right-1/4 w-[500px] h-[500px] rounded-full opacity-[0.06] blur-[120px]" style="background: var(--accent-gold);"></div>
+  <div class="absolute top-1/3 -left-20 w-[400px] h-[400px] rounded-full opacity-[0.05] blur-[100px]" style="background: var(--accent-violet);"></div>
+  <div class="absolute bottom-10 right-10 w-[350px] h-[350px] rounded-full opacity-[0.04] blur-[100px]" style="background: var(--accent-mint);"></div>
 </div>
 
-<!-- Main Content -->
 <div class="relative z-10 space-y-8">
-  <!-- Header -->
-  <div class="flex items-center justify-between flex-wrap gap-4">
-    <div>
-      <h1 class="text-2xl lg:text-3xl font-extrabold text-gold-gradient">لوحة التحكم</h1>
-      <p class="text-sm mt-1" style="color: var(--text-tertiary);">نظرة عامة على النظام</p>
-    </div>
+  <PageHeader title="لوحة التحكم" subtitle="نظرة عامة على النظام">
     <LiveIndicator connected={sseConnected} />
-  </div>
+  </PageHeader>
 
-  <!-- Error -->
   {#if error}
-    <div class="panel p-4 flex items-center gap-3" style="border-color: rgba(244,63,122,0.3);">
+    <div class="panel p-4 flex items-center gap-3" style="border-color: rgba(244,63,122,0.2);">
       <AlertCircle size={20} style="color: #f43f7a;" />
       <p class="text-sm" style="color: #f43f7a;">{error}</p>
     </div>
@@ -116,8 +105,8 @@
         icon={card.icon}
         iconColor={card.iconColor}
         iconBg={card.iconBg}
-        sparkColor={card.sparkColor}
-        sparkSeed={i}
+        chartColor={card.chartColor}
+        chartSeed={card.sparkSeed}
         loading={loading}
       />
     {/each}
@@ -125,62 +114,101 @@
 
   <!-- Recent Audit Logs -->
   <div class="panel p-6">
-    <div class="flex items-center gap-3 mb-5">
-      <Activity size={20} style="color: var(--accent-violet);" />
-      <h2 class="text-lg font-bold">سجل المراجعة الأخير</h2>
+    <div class="flex items-center justify-between mb-5">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(168,85,247,0.1);">
+          <Activity size={20} style="color: #a855f7;" />
+        </div>
+        <div>
+          <h2 class="text-lg font-bold">سجل المراجعة الأخير</h2>
+          <p class="text-xs" style="color: var(--text-quaternary);">آخر الأنشطة المسجلة</p>
+        </div>
+      </div>
+      <a href="/dashboard/audit-logs" class="btn-ghost text-xs">عرض الكل</a>
     </div>
 
     {#if loading}
       <div class="space-y-4">
         {#each Array(5) as _}
           <div class="flex items-center gap-4">
-            <div class="animate-shimmer h-8 w-8 rounded-full" style="background: rgba(255,255,255,0.06);"></div>
+            <div class="animate-shimmer h-8 w-8 rounded-full" style="background: rgba(255,255,255,0.04);"></div>
             <div class="flex-1 space-y-2">
-              <div class="animate-shimmer h-3 w-1/3 rounded" style="background: rgba(255,255,255,0.06);"></div>
-              <div class="animate-shimmer h-3 w-1/4 rounded" style="background: rgba(255,255,255,0.04);"></div>
+              <div class="animate-shimmer h-3 w-1/3 rounded" style="background: rgba(255,255,255,0.04);"></div>
+              <div class="animate-shimmer h-3 w-1/4 rounded" style="background: rgba(255,255,255,0.03);"></div>
             </div>
           </div>
         {/each}
       </div>
     {:else if auditLogs.length > 0}
-      <div class="overflow-x-auto scrollbar-none -mx-2">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>المستخدم</th>
-              <th>الإجراء</th>
-              <th class="hidden md:table-cell">التفاصيل</th>
-              <th class="hidden lg:table-cell">عنوان IP</th>
-              <th>الوقت</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each auditLogs as log (log.id)}
-              <tr>
-                <td>
-                  <div class="flex items-center gap-2">
-                    <div class="flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold" style="background: rgba(59,130,246,0.12); color: #3b82f6;">
-                      {log.username?.charAt(0)?.toUpperCase() || '?'}
-                    </div>
-                    <span class="font-medium truncate max-w-[120px]">{log.username || '—'}</span>
-                  </div>
-                </td>
-                <td><span class={getActionPill(log.action)}>{getActionLabel(log.action)}</span></td>
-                <td class="hidden md:table-cell"><span class="truncate block max-w-[200px]" style="color: var(--text-secondary);">{log.details || '—'}</span></td>
-                <td class="hidden lg:table-cell"><span class="font-mono text-xs" style="color: var(--text-quaternary);">{log.ipAddress || '—'}</span></td>
-                <td>
-                  <div class="flex items-center gap-1.5" style="color: var(--text-tertiary);">
-                    <Clock size={12} />
-                    <span class="text-xs whitespace-nowrap">{formatDate(log.createdAt)}</span>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+      <div class="space-y-1">
+        {#each auditLogs as log (log.id)}
+          <div class="flex items-center gap-4 py-3 px-3 rounded-xl transition-colors hover:bg-white/[0.02]">
+            <div class="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold shrink-0" style="background: rgba(59,130,246,0.08); color: #3b82f6;">
+              {log.username?.charAt(0)?.toUpperCase() || '?'}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-sm truncate">{log.username || '—'}</span>
+                <span class={getActionPill(log.action)}>{getActionLabel(log.action)}</span>
+              </div>
+              {#if log.details}
+                <p class="text-xs truncate mt-0.5" style="color: var(--text-quaternary);">{log.details}</p>
+              {/if}
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0" style="color: var(--text-quaternary);">
+              <Clock size={11} />
+              <span class="text-[11px] whitespace-nowrap tabular-nums">{formatDate(log.createdAt)}</span>
+            </div>
+          </div>
+        {/each}
       </div>
     {:else}
-      <EmptyState icon={Activity} title="لا توجد سجلات مراجعة" description="ستظهر سجلات المراجعة هنا عند تسجيل أي نشاط" />
+      <div class="flex flex-col items-center py-8">
+        <Activity size={32} style="color: var(--text-quaternary);" />
+        <p class="text-sm mt-2" style="color: var(--text-quaternary);">لا توجد سجلات مراجعة</p>
+      </div>
     {/if}
   </div>
+
+  <!-- Quick Stats Footer -->
+  {#if stats}
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="panel p-4 flex items-center gap-3">
+        <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(245,181,68,0.08);">
+          <Zap size={18} style="color: #f5b544;" />
+        </div>
+        <div>
+          <p class="text-[11px]" style="color: var(--text-quaternary);">المعاملات المعلقة</p>
+          <p class="text-lg font-bold tabular-nums" style="color: #f5b544;">{(stats.pendingDeposits || 0) + (stats.pendingWithdrawals || 0)}</p>
+        </div>
+      </div>
+      <div class="panel p-4 flex items-center gap-3">
+        <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(168,85,247,0.08);">
+          <ShieldCheck size={18} style="color: #a855f7;" />
+        </div>
+        <div>
+          <p class="text-[11px]" style="color: var(--text-quaternary);">KYC معلق</p>
+          <p class="text-lg font-bold tabular-nums" style="color: #a855f7;">{stats.pendingKYC || 0}</p>
+        </div>
+      </div>
+      <div class="panel p-4 flex items-center gap-3">
+        <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(34,211,164,0.08);">
+          <Users size={18} style="color: #22d3a4;" />
+        </div>
+        <div>
+          <p class="text-[11px]" style="color: var(--text-quaternary);">إجمالي المستخدمين</p>
+          <p class="text-lg font-bold tabular-nums" style="color: #22d3a4;">{formatCompact(stats.totalUsers || 0)}</p>
+        </div>
+      </div>
+      <div class="panel p-4 flex items-center gap-3">
+        <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(59,130,246,0.08);">
+          <ShoppingCart size={18} style="color: #3b82f6;" />
+        </div>
+        <div>
+          <p class="text-[11px]" style="color: var(--text-quaternary);">إجمالي الأوامر</p>
+          <p class="text-lg font-bold tabular-nums" style="color: #3b82f6;">{formatCompact(stats.totalOrders || 0)}</p>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

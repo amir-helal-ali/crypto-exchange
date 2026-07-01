@@ -1,147 +1,219 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
-    Search, Filter, Clock, Activity, ChevronLeft, ChevronRight,
-    RefreshCw, FileDown, AlertCircle, ShieldCheck, ShieldAlert,
-    ArrowLeftRight, LogIn, LogOut, UserPlus, KeyRound, Settings
+    Search, Clock, Activity, RefreshCw, FileDown,
+    AlertCircle, ShieldCheck, ShieldAlert, ArrowLeftRight, Loader2
   } from 'lucide-svelte';
   import { authGet, API, getToken } from '$lib/api/client';
-  import { formatDate, getActionLabel, getActionPill } from '$lib/utils/helpers';
+  import type { AuditLog, PaginationMeta } from '$lib/api/types';
+  import { getActionLabel, getActionPill, formatDate } from '$lib/utils/helpers';
+  import PageHeader from '$lib/components/PageHeader.svelte';
+  import ErrorAlert from '$lib/components/ErrorAlert.svelte';
   import Pagination from '$lib/components/Pagination.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
+  import { toast } from '$lib/stores/toast';
 
-  interface AuditLogEntry {
-    id: string; userId: string; username: string; action: string;
-    details: string; ipAddress: string; createdAt: string;
-  }
-
-  let logs = $state<AuditLogEntry[]>([]);
+  // ─── State ──────────────────────────────────────────────────
+  let logs = $state<AuditLog[]>([]);
+  let pagination = $state<PaginationMeta>({ page: 1, limit: 20, total: 0, totalPages: 1 });
   let loading = $state(true);
-  let error = $state<string | null>(null);
-  let searchQuery = $state('');
-  let categoryFilter = $state('');
-  let currentPage = $state(1);
-  let totalPages = $state(1);
-  let totalItems = $state(0);
-  const limit = 25;
-  let authEvents = $state(0);
-  let adminActions = $state(0);
-  let tradeActions = $state(0);
+  let error = $state('');
+  let search = $state('');
+  let category = $state('');
+  let page = $state(1);
+  let refreshing = $state(false);
 
-  const AUTH_ACTIONS = new Set(['REGISTER','LOGIN','LOGIN_2FA','LOGOUT','EMAIL_VERIFIED','PASSWORD_CHANGED','TWO_FA_ENABLED','TWO_FA_DISABLED']);
-  const ADMIN_ACTIONS = new Set(['UPDATE_USER_ROLE','REVIEW_KYC','KYC_APPROVED','KYC_REJECTED','REVIEW_TRANSACTION','SETTINGS_UPDATE']);
-  const TRADE_ACTIONS = new Set(['ORDER_PLACED','ORDER_CANCELLED','DEPOSIT_APPROVED','DEPOSIT_REJECTED','WITHDRAWAL_APPROVED','WITHDRAWAL_REJECTED']);
+  let stats = $state({
+    authEvents: 0,
+    adminActions: 0,
+    tradeActions: 0
+  });
 
-  const categoryIcons: Record<string, typeof ShieldCheck> = {
-    auth: ShieldCheck, admin: ShieldAlert, trade: ArrowLeftRight
-  };
+  // ─── Category Options ───────────────────────────────────────
+  const categoryOptions = [
+    { value: '', label: 'جميع الفئات' },
+    { value: 'auth', label: 'أحداث المصادقة' },
+    { value: 'admin', label: 'إجراءات المشرفين' },
+    { value: 'trade', label: 'إجراءات التداول' }
+  ];
 
+  // ─── Fetch Data ─────────────────────────────────────────────
   async function fetchLogs() {
-    loading = true; error = null;
     try {
-      const params = new URLSearchParams({ page: String(currentPage), limit: String(limit) });
-      if (searchQuery.trim()) params.set('search', searchQuery.trim());
-      if (categoryFilter) params.set('category', categoryFilter);
+      error = '';
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pagination.limit),
+        ...(search && { search }),
+        ...(category && { category })
+      });
       const res = await authGet(`/api/v1/admin/audit-logs?${params}`);
       if (!res.ok) throw new Error('فشل تحميل سجل المراجعة');
       const json = await res.json();
       if (json.success) {
         logs = json.data;
-        totalPages = json.pagination.totalPages;
-        totalItems = json.pagination.total;
-        if (json.stats) { authEvents = json.stats.authEvents || 0; adminActions = json.stats.adminActions || 0; tradeActions = json.stats.tradeActions || 0; }
+        pagination = json.pagination;
+        if (json.stats) stats = json.stats;
       }
-    } catch (e: any) { error = e.message; }
-    finally { loading = false; }
+    } catch (e: any) {
+      error = e.message;
+    } finally {
+      loading = false;
+      refreshing = false;
+    }
   }
 
-  function exportLogs() {
-    const token = getToken();
-    window.open(`${API}/api/v1/admin/audit-logs/export?token=${encodeURIComponent(token)}`, '_blank');
+  async function handleRefresh() {
+    refreshing = true;
+    await fetchLogs();
+    toast.success('تم تحديث السجل');
   }
 
-  let searchTimeout: ReturnType<typeof setTimeout>;
-  $effect(() => { searchQuery; clearTimeout(searchTimeout); searchTimeout = setTimeout(() => { currentPage = 1; fetchLogs(); }, 400); });
-  $effect(() => { categoryFilter; currentPage = 1; fetchLogs(); });
-  $effect(() => { currentPage; fetchLogs(); });
+  function handleExport() {
+    const url = `${API}/api/v1/admin/audit-logs/export?token=${getToken()}`;
+    window.open(url, '_blank');
+    toast.info('جاري تصدير السجل');
+  }
 
-  onMount(() => { fetchLogs().finally(() => loading = false); });
+  function handleSearch() {
+    page = 1;
+    loading = true;
+    fetchLogs();
+  }
+
+  function handleCategoryChange(e: Event) {
+    category = (e.target as HTMLSelectElement).value;
+    page = 1;
+    loading = true;
+    fetchLogs();
+  }
+
+  // ─── Lifecycle ──────────────────────────────────────────────
+  onMount(() => {
+    fetchLogs();
+  });
+
+  $effect(() => {
+    if (page) fetchLogs();
+  });
 </script>
 
 <div class="space-y-6">
-  <div class="flex items-center justify-between flex-wrap gap-4">
-    <div>
-      <h1 class="text-2xl lg:text-3xl font-extrabold text-gold-gradient">سجل المراجعة</h1>
-      <p class="text-sm mt-1" style="color: var(--text-tertiary);">تتبع جميع الأنشطة والإجراءات</p>
-    </div>
-    <div class="flex items-center gap-3">
-      <button class="btn-secondary flex items-center gap-2" onclick={fetchLogs}><RefreshCw size={16} /><span>تحديث</span></button>
-      <button class="btn-primary flex items-center gap-2" onclick={exportLogs}><FileDown size={16} /><span>تصدير</span></button>
-    </div>
-  </div>
+  <!-- Header -->
+  <PageHeader title="سجل المراجعة" subtitle="تتبع جميع الأنشطة والإجراءات">
+    <button class="btn-ghost text-sm flex items-center gap-2" onclick={handleRefresh} disabled={refreshing}>
+      {#if refreshing}
+        <Loader2 size={16} class="animate-spin" />
+      {:else}
+        <RefreshCw size={16} />
+      {/if}
+      تحديث
+    </button>
+    <button class="btn-secondary text-sm flex items-center gap-2" onclick={handleExport}>
+      <FileDown size={16} />
+      تصدير
+    </button>
+  </PageHeader>
 
+  <!-- Error -->
   {#if error}
-    <div class="panel p-4 flex items-center gap-3" style="border-color: rgba(244,63,122,0.3);">
-      <AlertCircle size={20} style="color: #f43f7a;" /><p class="text-sm" style="color: #f43f7a;">{error}</p>
-      <button class="mr-auto btn-ghost text-xs" onclick={() => error = null}>إغلاق</button>
-    </div>
+    <ErrorAlert message={error} onclose={() => (error = '')} />
   {/if}
 
+  <!-- Stat Cards -->
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
     <div class="stat-card group">
-      <div class="flex items-center gap-3">
-        <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(59,130,246,0.12);"><ShieldCheck size={20} style="color: #3b82f6;" /></div>
-        <div><p class="text-xs" style="color: var(--text-tertiary);">أحداث المصادقة</p><p class="text-2xl font-bold tabular-nums" style="color: #3b82f6;">{authEvents.toLocaleString('ar-EG')}</p></div>
+      <div class="flex items-start justify-between">
+        <div class="flex-1 min-w-0">
+          <p class="text-[11px] font-semibold tracking-wider uppercase" style="color: var(--text-quaternary);">أحداث المصادقة</p>
+          <p class="text-3xl font-bold font-mono tabular-nums mt-1" style="color: #3b82f6;">
+            {stats.authEvents.toLocaleString('ar-EG')}
+          </p>
+        </div>
+        <div class="flex items-center justify-center w-11 h-11 rounded-xl shrink-0" style="background: rgba(59,130,246,0.12); box-shadow: 0 0 20px rgba(59,130,246,0.12);">
+          <ShieldCheck size={20} style="color: #3b82f6;" />
+        </div>
       </div>
     </div>
+
     <div class="stat-card group">
-      <div class="flex items-center gap-3">
-        <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(168,85,247,0.12);"><ShieldAlert size={20} style="color: #a855f7;" /></div>
-        <div><p class="text-xs" style="color: var(--text-tertiary);">إجراءات الإدارة</p><p class="text-2xl font-bold tabular-nums" style="color: #a855f7;">{adminActions.toLocaleString('ar-EG')}</p></div>
+      <div class="flex items-start justify-between">
+        <div class="flex-1 min-w-0">
+          <p class="text-[11px] font-semibold tracking-wider uppercase" style="color: var(--text-quaternary);">إجراءات المشرفين</p>
+          <p class="text-3xl font-bold font-mono tabular-nums mt-1" style="color: #a855f7;">
+            {stats.adminActions.toLocaleString('ar-EG')}
+          </p>
+        </div>
+        <div class="flex items-center justify-center w-11 h-11 rounded-xl shrink-0" style="background: rgba(168,85,247,0.12); box-shadow: 0 0 20px rgba(168,85,247,0.12);">
+          <ShieldAlert size={20} style="color: #a855f7;" />
+        </div>
       </div>
     </div>
+
     <div class="stat-card group">
-      <div class="flex items-center gap-3">
-        <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(34,211,164,0.12);"><ArrowLeftRight size={20} style="color: #22d3a4;" /></div>
-        <div><p class="text-xs" style="color: var(--text-tertiary);">إجراءات التداول</p><p class="text-2xl font-bold tabular-nums" style="color: #22d3a4;">{tradeActions.toLocaleString('ar-EG')}</p></div>
+      <div class="flex items-start justify-between">
+        <div class="flex-1 min-w-0">
+          <p class="text-[11px] font-semibold tracking-wider uppercase" style="color: var(--text-quaternary);">إجراءات التداول</p>
+          <p class="text-3xl font-bold font-mono tabular-nums mt-1" style="color: #f5b544;">
+            {stats.tradeActions.toLocaleString('ar-EG')}
+          </p>
+        </div>
+        <div class="flex items-center justify-center w-11 h-11 rounded-xl shrink-0" style="background: rgba(245,181,68,0.12); box-shadow: 0 0 20px rgba(245,181,68,0.12);">
+          <ArrowLeftRight size={20} style="color: #f5b544;" />
+        </div>
       </div>
     </div>
   </div>
 
+  <!-- Filters -->
   <div class="panel p-4">
-    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-      <div class="relative flex-1">
-        <Search size={18} class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style="color: var(--text-quaternary);" />
-        <input type="text" class="input-field pr-10" placeholder="بحث بالإجراء أو المستخدم..." bind:value={searchQuery} dir="rtl" />
+    <div class="flex items-center gap-3 flex-wrap">
+      <div class="relative flex-1 min-w-[200px]">
+        <Search size={16} class="absolute right-3 top-1/2 -translate-y-1/2" style="color: var(--text-quaternary);" />
+        <input
+          type="text"
+          class="input-field pr-10 w-full"
+          placeholder="بحث بالاسم أو الإجراء..."
+          bind:value={search}
+          onkeydown={(e) => e.key === 'Enter' && handleSearch()}
+        />
       </div>
-      <div class="relative">
-        <select class="input-field appearance-none cursor-pointer min-w-[160px]" bind:value={categoryFilter} dir="rtl">
-          <option value="">كل الفئات</option>
-          <option value="auth">المصادقة</option>
-          <option value="admin">الإدارة</option>
-          <option value="trade">التداول</option>
-        </select>
-      </div>
+      <select class="input-field min-w-[160px]" onchange={handleCategoryChange}>
+        {#each categoryOptions as opt}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
+      <button class="btn-primary text-sm flex items-center gap-2" onclick={handleSearch}>
+        <Search size={14} />
+        بحث
+      </button>
     </div>
   </div>
 
-  {#if loading}
-    <div class="panel p-8 flex flex-col items-center gap-4">
-      <Loader2 size={32} class="animate-spin" style="color: var(--accent-gold);" />
-      <p class="text-sm" style="color: var(--text-secondary);">جارٍ تحميل السجلات...</p>
-    </div>
-  {:else if logs.length === 0}
-    <EmptyState icon={Activity} title="لا توجد سجلات" description="ستظهر سجلات المراجعة هنا عند تسجيل أي نشاط" />
-  {:else}
-    <div class="panel overflow-hidden">
-      <div class="overflow-x-auto scrollbar-none">
-        <table class="data-table">
+  <!-- Data Table -->
+  <div class="panel overflow-hidden">
+    {#if loading}
+      <div class="p-6 space-y-4">
+        {#each Array(6) as _}
+          <div class="flex items-center gap-4">
+            <div class="animate-shimmer h-9 w-9 rounded-full" style="background: rgba(255,255,255,0.04);"></div>
+            <div class="flex-1 space-y-2">
+              <div class="animate-shimmer h-3 w-1/3 rounded" style="background: rgba(255,255,255,0.04);"></div>
+              <div class="animate-shimmer h-3 w-1/4 rounded" style="background: rgba(255,255,255,0.03);"></div>
+            </div>
+            <div class="animate-shimmer h-3 w-20 rounded" style="background: rgba(255,255,255,0.03);"></div>
+          </div>
+        {/each}
+      </div>
+    {:else if logs.length > 0}
+      <div class="overflow-x-auto">
+        <table class="data-table w-full">
           <thead>
             <tr>
               <th>المستخدم</th>
               <th>الإجراء</th>
-              <th class="hidden md:table-cell">التفاصيل</th>
-              <th class="hidden lg:table-cell">IP</th>
+              <th>التفاصيل</th>
+              <th>عنوان IP</th>
               <th>الوقت</th>
             </tr>
           </thead>
@@ -149,19 +221,26 @@
             {#each logs as log (log.id)}
               <tr>
                 <td>
-                  <div class="flex items-center gap-2">
-                    <div class="flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold" style="background: rgba(59,130,246,0.12); color: #3b82f6;">
+                  <div class="flex items-center gap-3">
+                    <div class="flex items-center justify-center w-9 h-9 rounded-full text-xs font-bold shrink-0" style="background: rgba(59,130,246,0.08); color: #3b82f6;">
                       {log.username?.charAt(0)?.toUpperCase() || '?'}
                     </div>
-                    <span class="font-medium truncate max-w-[120px]">{log.username || '—'}</span>
+                    <span class="font-medium text-sm truncate max-w-[140px]">{log.username || '—'}</span>
                   </div>
                 </td>
-                <td><span class={getActionPill(log.action)}>{getActionLabel(log.action)}</span></td>
-                <td class="hidden md:table-cell"><span class="truncate block max-w-[200px]" style="color: var(--text-secondary);">{log.details || '—'}</span></td>
-                <td class="hidden lg:table-cell"><span class="font-mono text-xs" style="color: var(--text-quaternary);">{log.ipAddress || '—'}</span></td>
                 <td>
-                  <div class="flex items-center gap-1.5" style="color: var(--text-tertiary);">
-                    <Clock size={12} /><span class="text-xs whitespace-nowrap">{formatDate(log.createdAt)}</span>
+                  <span class={getActionPill(log.action)}>{getActionLabel(log.action)}</span>
+                </td>
+                <td>
+                  <span class="text-sm truncate max-w-[220px] block" style="color: var(--text-tertiary);">{log.details || '—'}</span>
+                </td>
+                <td>
+                  <span class="text-xs font-mono tabular-nums" style="color: var(--text-quaternary);">{log.ipAddress || '—'}</span>
+                </td>
+                <td>
+                  <div class="flex items-center gap-1.5 whitespace-nowrap">
+                    <Clock size={12} style="color: var(--text-quaternary);" />
+                    <span class="text-xs tabular-nums" style="color: var(--text-quaternary);">{formatDate(log.createdAt)}</span>
                   </div>
                 </td>
               </tr>
@@ -169,7 +248,12 @@
           </tbody>
         </table>
       </div>
-    </div>
-    <Pagination bind:page={currentPage} totalPages={totalPages} totalItems={totalItems} itemLabel="سجل" />
-  {/if}
+
+      <div class="px-5 pb-4">
+        <Pagination bind:page={page} totalPages={pagination.totalPages} totalItems={pagination.total} itemLabel="سجل" />
+      </div>
+    {:else}
+      <EmptyState icon={Activity} title="لا توجد سجلات" description="لم يتم العثور على سجلات مراجعة مطابقة لمعايير البحث" />
+    {/if}
+  </div>
 </div>

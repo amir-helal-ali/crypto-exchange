@@ -1,32 +1,33 @@
+// ─── API Client ───────────────────────────────────────────────
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 export { API };
 
-// ─── Token Management ───
+// ─── Token Management ─────────────────────────────────────────
 export function getToken(): string {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem('token') || '';
+  return localStorage.getItem('admin_token') || '';
 }
 
 export function getRefreshToken(): string {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem('refresh_token') || '';
+  return localStorage.getItem('admin_refresh_token') || '';
 }
 
 export function setTokens(token: string, refreshToken: string) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem('token', token);
-  localStorage.setItem('refresh_token', refreshToken);
+  localStorage.setItem('admin_token', token);
+  localStorage.setItem('admin_refresh_token', refreshToken);
 }
 
 export function setUser(user: any) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem('user', JSON.stringify(user));
+  localStorage.setItem('admin_user', JSON.stringify(user));
 }
 
 export function getUser(): any {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem('user');
+    const raw = localStorage.getItem('admin_user');
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -35,16 +36,16 @@ export function getUser(): any {
 
 export function clearTokens() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('token');
-  localStorage.removeItem('refresh_token');
-  localStorage.removeItem('user');
+  localStorage.removeItem('admin_token');
+  localStorage.removeItem('admin_refresh_token');
+  localStorage.removeItem('admin_user');
 }
 
 export function isAuthenticated(): boolean {
   return !!getToken() && getUser()?.role === 'ADMIN';
 }
 
-// ─── Refresh Queue ───
+// ─── Refresh Queue ────────────────────────────────────────────
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: (t: string) => void; reject: (e: any) => void }> = [];
 
@@ -67,7 +68,7 @@ async function refreshAccessToken(): Promise<string> {
   return data.token;
 }
 
-// ─── Auth Fetch ───
+// ─── Auth Fetch ───────────────────────────────────────────────
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -110,7 +111,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   return response;
 }
 
-// ─── Convenience Methods ───
+// ─── Convenience Methods ──────────────────────────────────────
 export const authGet = (path: string) => authFetch(`${API}${path}`);
 export const authPost = (path: string, body?: any) => authFetch(`${API}${path}`, {
   method: 'POST', body: body ? JSON.stringify(body) : undefined

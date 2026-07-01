@@ -1,9 +1,10 @@
-// ─── Number Formatting ───
+// ─── Number Formatting ────────────────────────────────────────
 export function formatNumber(n: number): string {
   return n.toLocaleString('ar-EG');
 }
 
 export function formatCompact(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString('ar-EG');
@@ -22,7 +23,7 @@ export function formatCurrency(amount: number, currency: string = 'USD'): string
   }).format(amount);
 }
 
-// ─── Date Formatting ───
+// ─── Date Formatting ─────────────────────────────────────────
 export function formatDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString('ar-EG', {
@@ -48,7 +49,6 @@ export function timeAgo(iso: string): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
   const diff = now - then;
-
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
@@ -61,7 +61,7 @@ export function timeAgo(iso: string): string {
   return 'الآن';
 }
 
-// ─── Text Helpers ───
+// ─── Text Helpers ─────────────────────────────────────────────
 export function maskString(s: string, visibleChars: number = 4): string {
   if (!s || s.length <= visibleChars) return s;
   return s.slice(0, -visibleChars).replace(/./g, '\u2022') + s.slice(-visibleChars);
@@ -75,12 +75,10 @@ export function truncate(s: string, maxLen: number = 40): string {
 export function getInitials(name: string): string {
   if (!name) return '؟';
   const parts = name.trim().split(/\s+/);
-  return parts.length >= 2
-    ? parts[0][0] + parts[1][0]
-    : parts[0].slice(0, 2);
+  return parts.length >= 2 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2);
 }
 
-// ─── Action Labels (Arabic) ───
+// ─── Action Labels (Arabic) ──────────────────────────────────
 export const actionLabels: Record<string, string> = {
   REGISTER: 'تسجيل',
   LOGIN: 'تسجيل دخول',
@@ -110,12 +108,13 @@ export function getActionLabel(action: string): string {
   return actionLabels[action] || action;
 }
 
-// ─── Status Config ───
+// ─── Status Config ────────────────────────────────────────────
 export interface StatusConfig {
   label: string;
   pillClass: string;
   color: string;
   bg: string;
+  icon?: string;
 }
 
 export const statusConfigs: Record<string, StatusConfig> = {
@@ -133,7 +132,7 @@ export function getStatusConfig(status: string): StatusConfig {
   return statusConfigs[status] || statusConfigs.PENDING;
 }
 
-// ─── Document Type Labels ───
+// ─── Document Type Labels ────────────────────────────────────
 export const docTypeLabels: Record<string, string> = {
   PASSPORT: 'جواز سفر',
   NATIONAL_ID: 'بطاقة وطنية',
@@ -147,7 +146,7 @@ export function getDocTypeLabel(type: string): string {
   return docTypeLabels[type] || type;
 }
 
-// ─── Sparkline SVG Generator ───
+// ─── Sparkline SVG Generator ─────────────────────────────────
 export function generateSparkline(color: string, seed: number = 0, width: number = 80, height: number = 28): string {
   const points: string[] = [];
   const steps = 8;
@@ -163,7 +162,36 @@ export function generateSparkline(color: string, seed: number = 0, width: number
   </svg>`;
 }
 
-// ─── Debounce ───
+// ─── Mini Area Chart SVG ──────────────────────────────────────
+export function generateAreaChart(color: string, seed: number = 0, width: number = 120, height: number = 40): string {
+  const steps = 12;
+  let y = height / 2;
+  const points: string[] = [];
+  const areaPoints: string[] = [`0,${height}`];
+
+  for (let i = 0; i <= steps; i++) {
+    const x = (i / steps) * width;
+    const variation = Math.sin(seed * 5.3 + i * 2.1) * (height * 0.35);
+    y = Math.max(4, Math.min(height - 4, height / 2 + variation));
+    points.push(`${x},${y}`);
+    areaPoints.push(`${x},${y}`);
+  }
+  areaPoints.push(`${width},${height}`);
+
+  const id = `area-${seed}-${color.replace('#', '')}`;
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <polygon points="${areaPoints.join(' ')}" fill="url(#${id})"/>
+    <polyline points="${points.join(' ')}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </svg>`;
+}
+
+// ─── Debounce ─────────────────────────────────────────────────
 export function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
   let timer: ReturnType<typeof setTimeout>;
   return ((...args: any[]) => {
@@ -172,7 +200,7 @@ export function debounce<T extends (...args: any[]) => void>(fn: T, ms: number):
   }) as T;
 }
 
-// ─── Copy to Clipboard ───
+// ─── Copy to Clipboard ───────────────────────────────────────
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -182,7 +210,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-// ─── Action Pill Class Lookup ───
+// ─── Action Pill Class Lookup ────────────────────────────────
 export const actionPillClass: Record<string, string> = {
   REGISTER: 'pill-azure',
   LOGIN: 'pill-azure',
@@ -203,4 +231,14 @@ export const actionPillClass: Record<string, string> = {
 
 export function getActionPill(action: string): string {
   return actionPillClass[action] || 'pill-azure';
+}
+
+// ─── Uptime formatter ────────────────────────────────────────
+export function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}ي ${hours}س ${mins}د`;
+  if (hours > 0) return `${hours}س ${mins}د`;
+  return `${mins}د`;
 }

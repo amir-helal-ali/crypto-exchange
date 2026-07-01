@@ -1,6 +1,6 @@
 import { API, getToken } from './client';
 
-// ─── Admin Stats ───
+// ─── Admin Stats ──────────────────────────────────────────────
 export interface AdminStats {
   totalUsers: number;
   totalOrders: number;
@@ -8,9 +8,11 @@ export interface AdminStats {
   pendingWithdrawals: number;
   pendingDeposits: number;
   pendingKYC: number;
+  totalVolume24h?: number;
+  activeUsers24h?: number;
 }
 
-// ─── Users ───
+// ─── Users ────────────────────────────────────────────────────
 export interface AdminUser {
   id: number;
   email: string;
@@ -20,9 +22,20 @@ export interface AdminUser {
   two_fa_enabled: boolean;
   kyc_status?: 'VERIFIED' | 'PENDING' | 'REJECTED' | 'NONE';
   created_at: string;
+  last_login?: string;
+  balance?: number;
 }
 
-// ─── KYC ───
+export interface UserStats {
+  total: number;
+  admins: number;
+  emailVerified: number;
+  kycVerified: number;
+  newToday: number;
+  activeToday: number;
+}
+
+// ─── KYC ──────────────────────────────────────────────────────
 export interface KYCRequest {
   id: number;
   user_id: number;
@@ -30,6 +43,7 @@ export interface KYCRequest {
   document_type: string;
   document_number: string;
   document_url: string;
+  selfie_url?: string;
   status: string;
   rejection_reason: string;
   created_at: string;
@@ -43,7 +57,7 @@ export interface KYCStats {
   rejected: number;
 }
 
-// ─── Transactions ───
+// ─── Transactions ─────────────────────────────────────────────
 export interface AdminTransaction {
   id: number;
   user_id: number;
@@ -58,7 +72,7 @@ export interface AdminTransaction {
   createdAt: string;
 }
 
-// ─── Audit Logs ───
+// ─── Audit Logs ───────────────────────────────────────────────
 export interface AuditLog {
   id: number;
   user_id: number;
@@ -69,7 +83,7 @@ export interface AuditLog {
   createdAt: string;
 }
 
-// ─── Ads ───
+// ─── Ads ──────────────────────────────────────────────────────
 export interface Ad {
   id: number;
   title: string;
@@ -84,7 +98,7 @@ export interface Ad {
   updated_at: string;
 }
 
-// ─── Fees ───
+// ─── Fees ─────────────────────────────────────────────────────
 export interface FeeSchedule {
   id: number;
   user_type: string;
@@ -96,7 +110,7 @@ export interface FeeSchedule {
   updated_at: string;
 }
 
-// ─── System Settings ───
+// ─── System Settings ──────────────────────────────────────────
 export interface SystemSettings {
   domains: Record<string, string>;
   ssl: Record<string, string>;
@@ -104,7 +118,7 @@ export interface SystemSettings {
   features: Record<string, string>;
 }
 
-// ─── SSL Status ───
+// ─── SSL Status ───────────────────────────────────────────────
 export interface SSLStatus {
   enabled: boolean;
   type: string;
@@ -119,7 +133,19 @@ export interface SSLStatus {
   key_path: string;
 }
 
-// ─── Pagination ───
+// ─── Metrics ──────────────────────────────────────────────────
+export interface MetricsData {
+  cpu: number;
+  memory: number;
+  disk: number;
+  uptime: number;
+  goroutines: number;
+  activeConnections: number;
+  requestsPerSecond: number;
+  errorRate: number;
+}
+
+// ─── Pagination ───────────────────────────────────────────────
 export interface PaginationMeta {
   page: number;
   limit: number;
@@ -133,7 +159,7 @@ export interface PaginatedResponse<T> {
   pagination: PaginationMeta;
 }
 
-// ─── SSE Stream ───
+// ─── SSE Stream ───────────────────────────────────────────────
 export function createAdminStream(types: string[] = ['*']): EventSource | null {
   const token = getToken();
   if (!token) return null;

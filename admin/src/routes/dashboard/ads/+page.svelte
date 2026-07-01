@@ -1,285 +1,516 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
-    Megaphone, Plus, Search, Pencil, Trash2, ToggleLeft, ToggleRight,
-    Loader2, AlertCircle, X, ImagePlus, Link, ArrowUpDown, Eye, EyeOff, Upload
+    Megaphone, Plus, Search, Pencil, Trash2,
+    ToggleLeft, ToggleRight, Loader2, AlertCircle,
+    ImagePlus, Upload, Eye, ArrowUpDown
   } from 'lucide-svelte';
-  import { authGet, authPost, authPut, authDelete, authUpload, API } from '$lib/api/client';
+  import { authGet, authPost, authPut, authDelete, authUpload } from '$lib/api/client';
   import type { Ad } from '$lib/api/types';
-  import Modal from '$lib/components/Modal.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
+  import ErrorAlert from '$lib/components/ErrorAlert.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
+  import Modal from '$lib/components/Modal.svelte';
+  import { toast } from '$lib/stores/toast';
 
-  type Position = 'hero' | 'section' | 'bottom' | 'floating';
-
-  let ads = $state<Ad[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let searchQuery = $state('');
-  let viewMode = $state<'grid' | 'list'>('grid');
-  let formOpen = $state(false);
-  let editingId = $state<number | null>(null);
-  let saving = $state(false);
-  let deleting = $state<number | null>(null);
-  let toggling = $state<number | null>(null);
-
-  let formTitle = $state('');
-  let formImage = $state('');
-  let formPosition = $state<Position>('hero');
-  let formSortOrder = $state(0);
-  let formLink = $state('');
-  let formButtonText = $state('');
-  let formButtonLink = $state('');
-  let formActive = $state(true);
-
-  const positionConfig: Record<Position, { label: string; pillClass: string; color: string; bg: string }> = {
+  // ─── Position Config ────────────────────────────────────────
+  const positionConfig: Record<string, { label: string; pillClass: string; color: string; bg: string }> = {
     hero: { label: 'رئيسي', pillClass: 'pill-gold', color: '#f5b544', bg: 'rgba(245,181,68,0.12)' },
     section: { label: 'قسم', pillClass: 'pill-azure', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
     bottom: { label: 'سفلي', pillClass: 'pill-mint', color: '#22d3a4', bg: 'rgba(34,211,164,0.12)' },
     floating: { label: 'عائم', pillClass: 'pill-violet', color: '#a855f7', bg: 'rgba(168,85,247,0.12)' }
   };
 
+  const positionOptions = [
+    { value: 'hero', label: 'رئيسي' },
+    { value: 'section', label: 'قسم' },
+    { value: 'bottom', label: 'سفلي' },
+    { value: 'floating', label: 'عائم' }
+  ];
+
+  // ─── State ──────────────────────────────────────────────────
+  let ads = $state<Ad[]>([]);
+  let loading = $state(true);
+  let error = $state('');
+  let search = $state('');
+  let viewMode = $state<'grid' | 'list'>('grid');
+
+  // Modal state
+  let modalOpen = $state(false);
+  let modalMode = $state<'create' | 'edit'>('create');
+  let saving = $state(false);
+  let deleting = $state<number | null>(null);
+  let toggling = $state<number | null>(null);
+
+  // Form state
+  let formId = $state<number | null>(null);
+  let formTitle = $state('');
+  let formLink = $state('');
+  let formImageUrl = $state('');
+  let formButtonText = $state('');
+  let formButtonLink = $state('');
+  let formPosition = $state('hero');
+  let formActive = $state(true);
+  let formSortOrder = $state(0);
+  let uploading = $state(false);
+
+  // ─── Computed ───────────────────────────────────────────────
+  let filteredAds = $derived(() => {
+    if (!search.trim()) return ads;
+    const q = search.toLowerCase();
+    return ads.filter(ad =>
+      ad.title.toLowerCase().includes(q) ||
+      ad.position.toLowerCase().includes(q)
+    );
+  });
+
+  // ─── API Calls ──────────────────────────────────────────────
   async function fetchAds() {
-    loading = true; error = null;
     try {
+      error = '';
       const res = await authGet('/api/v1/admin/ads');
       if (!res.ok) throw new Error('فشل تحميل الإعلانات');
       const json = await res.json();
       if (json.success) ads = json.data;
-    } catch (e: any) { error = e.message; }
-    finally { loading = false; }
+    } catch (e: any) {
+      error = e.message;
+    } finally {
+      loading = false;
+    }
   }
 
-  function openCreateForm() {
-    editingId = null; formTitle = ''; formImage = ''; formPosition = 'hero';
-    formSortOrder = 0; formLink = ''; formButtonText = ''; formButtonLink = ''; formActive = true;
-    formOpen = true;
-  }
-
-  function openEditForm(ad: Ad) {
-    editingId = ad.id; formTitle = ad.title; formImage = ad.image_url; formPosition = ad.position as Position;
-    formSortOrder = ad.sort_order; formLink = ad.link; formButtonText = ad.button_text;
-    formButtonLink = ad.button_link; formActive = ad.active;
-    formOpen = true;
-  }
-
-  async function saveAd() {
-    saving = true;
+  async function handleToggleActive(ad: Ad) {
+    toggling = ad.id;
     try {
-      const payload = { title: formTitle, image_url: formImage, position: formPosition, sort_order: formSortOrder, link: formLink, button_text: formButtonText, button_link: formButtonLink, active: formActive };
-      const res = editingId
-        ? await authPut(`/api/v1/admin/ads/${editingId}`, payload)
-        : await authPost('/api/v1/admin/ads', payload);
-      if (!res.ok) throw new Error('فشل حفظ الإعلان');
-      formOpen = false;
-      await fetchAds();
-    } catch (e: any) { error = e.message; }
-    finally { saving = false; }
+      const res = await authPut(`/api/v1/admin/ads/${ad.id}`, { active: !ad.active });
+      if (!res.ok) throw new Error('فشل تحديث حالة الإعلان');
+      const json = await res.json();
+      if (json.success) {
+        ads = ads.map(a => a.id === ad.id ? { ...a, active: !a.active } : a);
+        toast.success(ad.active ? 'تم تعطيل الإعلان' : 'تم تفعيل الإعلان');
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      toggling = null;
+    }
   }
 
-  async function deleteAd(id: number) {
+  async function handleDelete(id: number) {
+    if (!confirm('هل أنت متأكد من حذف هذا الإعلان؟')) return;
     deleting = id;
     try {
       const res = await authDelete(`/api/v1/admin/ads/${id}`);
       if (!res.ok) throw new Error('فشل حذف الإعلان');
       ads = ads.filter(a => a.id !== id);
-    } catch (e: any) { error = e.message; }
-    finally { deleting = null; }
+      toast.success('تم حذف الإعلان');
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      deleting = null;
+    }
   }
 
-  async function toggleActive(ad: Ad) {
-    toggling = ad.id;
+  // ─── Modal ──────────────────────────────────────────────────
+  function openCreateModal() {
+    modalMode = 'create';
+    formId = null;
+    formTitle = '';
+    formLink = '';
+    formImageUrl = '';
+    formButtonText = '';
+    formButtonLink = '';
+    formPosition = 'hero';
+    formActive = true;
+    formSortOrder = 0;
+    modalOpen = true;
+  }
+
+  function openEditModal(ad: Ad) {
+    modalMode = 'edit';
+    formId = ad.id;
+    formTitle = ad.title;
+    formLink = ad.link;
+    formImageUrl = ad.image_url;
+    formButtonText = ad.button_text;
+    formButtonLink = ad.button_link;
+    formPosition = ad.position;
+    formActive = ad.active;
+    formSortOrder = ad.sort_order;
+    modalOpen = true;
+  }
+
+  async function handleSave() {
+    if (!formTitle.trim()) {
+      toast.error('يرجى إدخال عنوان الإعلان');
+      return;
+    }
+    saving = true;
     try {
-      const res = await authPut(`/api/v1/admin/ads/${ad.id}`, { active: !ad.active });
-      if (!res.ok) throw new Error('فشل تبديل الحالة');
-      ads = ads.map(a => a.id === ad.id ? { ...a, active: !a.active } : a);
-    } catch (e: any) { error = e.message; }
-    finally { toggling = null; }
+      const payload = {
+        title: formTitle,
+        link: formLink,
+        image_url: formImageUrl,
+        button_text: formButtonText,
+        button_link: formButtonLink,
+        position: formPosition,
+        active: formActive,
+        sort_order: formSortOrder
+      };
+
+      let res;
+      if (modalMode === 'create') {
+        res = await authPost('/api/v1/admin/ads', payload);
+      } else {
+        res = await authPut(`/api/v1/admin/ads/${formId}`, payload);
+      }
+
+      if (!res.ok) throw new Error(modalMode === 'create' ? 'فشل إنشاء الإعلان' : 'فشل تحديث الإعلان');
+      const json = await res.json();
+      if (json.success) {
+        if (modalMode === 'create') {
+          ads = [...ads, json.data];
+          toast.success('تم إنشاء الإعلان بنجاح');
+        } else {
+          ads = ads.map(a => a.id === formId ? json.data : a);
+          toast.success('تم تحديث الإعلان بنجاح');
+        }
+        modalOpen = false;
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      saving = false;
+    }
   }
 
   async function handleImageUpload(e: Event) {
     const input = e.target as HTMLInputElement;
-    if (!input.files?.[0]) return;
-    const fd = new FormData();
-    fd.append('image', input.files[0]);
+    const file = input.files?.[0];
+    if (!file) return;
+
+    uploading = true;
     try {
-      const res = await authUpload('/api/v1/admin/ads/upload', fd);
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await authUpload('/api/v1/admin/ads/upload', formData);
       if (!res.ok) throw new Error('فشل رفع الصورة');
       const json = await res.json();
-      if (json.success) formImage = json.data.url || json.data.image_url;
-    } catch (e: any) { error = e.message; }
+      if (json.success && json.data?.url) {
+        formImageUrl = json.data.url;
+        toast.success('تم رفع الصورة بنجاح');
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      uploading = false;
+    }
   }
 
-  let filteredAds = $derived(
-    searchQuery.trim()
-      ? ads.filter(a => a.title.toLowerCase().includes(searchQuery.toLowerCase()))
-      : ads
-  );
-
-  onMount(() => { fetchAds(); });
+  // ─── Lifecycle ──────────────────────────────────────────────
+  onMount(() => {
+    fetchAds();
+  });
 </script>
 
-<!-- Ad Form Modal -->
-<Modal bind:open={formOpen} title={editingId ? 'تعديل الإعلان' : 'إضافة إعلان'} icon={Megaphone} iconColor="#f5b544" size="lg">
-  <form onsubmit={(e) => { e.preventDefault(); saveAd(); }} class="space-y-4">
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label class="field-label text-xs mb-1.5 block">العنوان *</label>
-        <input type="text" class="input-field" bind:value={formTitle} placeholder="عنوان الإعلان" required />
-      </div>
-      <div>
-        <label class="field-label text-xs mb-1.5 block">الموقع</label>
-        <select class="input-field appearance-none cursor-pointer" bind:value={formPosition}>
-          {#each Object.entries(positionConfig) as [key, cfg]}
-            <option value={key}>{cfg.label}</option>
-          {/each}
-        </select>
-      </div>
-    </div>
-    <div>
-      <label class="field-label text-xs mb-1.5 block">رابط الصورة</label>
-      <div class="flex gap-2">
-        <input type="text" class="input-field flex-1" bind:value={formImage} placeholder="رابط الصورة أو ارفع ملف" dir="ltr" />
-        <label class="btn-secondary cursor-pointer flex items-center gap-2">
-          <Upload size={16} />رفع
-          <input type="file" accept="image/*" class="hidden" onchange={handleImageUpload} />
-        </label>
-      </div>
-      {#if formImage}
-        <img src={formImage} alt="Preview" class="mt-2 h-24 rounded-lg object-cover" style="border: 1px solid var(--border-subtle);" />
-      {/if}
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label class="field-label text-xs mb-1.5 block">رابط الإعلان</label>
-        <input type="url" class="input-field" bind:value={formLink} placeholder="https://..." dir="ltr" />
-      </div>
-      <div>
-        <label class="field-label text-xs mb-1.5 block">ترتيب العرض</label>
-        <input type="number" class="input-field" bind:value={formSortOrder} min="0" />
-      </div>
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label class="field-label text-xs mb-1.5 block">نص الزر</label>
-        <input type="text" class="input-field" bind:value={formButtonText} placeholder="مثال: اقرأ المزيد" />
-      </div>
-      <div>
-        <label class="field-label text-xs mb-1.5 block">رابط الزر</label>
-        <input type="url" class="input-field" bind:value={formButtonLink} placeholder="https://..." dir="ltr" />
-      </div>
-    </div>
-    <div class="flex items-center gap-3">
-      <label class="field-label text-xs">نشط</label>
-      <button type="button" class="btn-ghost p-1" onclick={() => formActive = !formActive}>
-        {#if formActive}<ToggleRight size={28} style="color: #22d3a4;" />{:else}<ToggleLeft size={28} style="color: var(--text-quaternary);" />{/if}
-      </button>
-    </div>
-    <div class="flex items-center gap-3 justify-end pt-2">
-      <button type="button" class="btn-secondary" onclick={() => formOpen = false}>إلغاء</button>
-      <button type="submit" class="btn-primary" disabled={saving || !formTitle.trim()}>
-        {#if saving}<Loader2 size={16} class="animate-spin" />{:else}<Plus size={16} />{/if}
-        {editingId ? 'حفظ التعديلات' : 'إضافة'}
-      </button>
-    </div>
-  </form>
-</Modal>
-
-<!-- Main Content -->
 <div class="space-y-6">
-  <div class="flex items-center justify-between flex-wrap gap-4">
-    <div>
-      <h1 class="text-2xl lg:text-3xl font-extrabold text-gold-gradient">الإعلانات</h1>
-      <p class="text-sm mt-1" style="color: var(--text-tertiary);">إدارة الإعلانات والبانرات</p>
-    </div>
-    <button class="btn-primary flex items-center gap-2" onclick={openCreateForm}><Plus size={18} /><span>إضافة إعلان</span></button>
-  </div>
+  <!-- Header -->
+  <PageHeader title="الإعلانات" subtitle="إدارة الإعلانات والبانرات">
+    <button class="btn-primary text-sm flex items-center gap-2" onclick={openCreateModal}>
+      <Plus size={16} />
+      إضافة إعلان
+    </button>
+  </PageHeader>
 
+  <!-- Error -->
   {#if error}
-    <div class="panel p-4 flex items-center gap-3" style="border-color: rgba(244,63,122,0.3);">
-      <AlertCircle size={20} style="color: #f43f7a;" /><p class="text-sm" style="color: #f43f7a;">{error}</p>
-      <button class="mr-auto btn-ghost text-xs" onclick={() => error = null}>إغلاق</button>
-    </div>
+    <ErrorAlert message={error} onclose={() => (error = '')} />
   {/if}
 
+  <!-- Search & View Toggle -->
   <div class="panel p-4">
-    <div class="flex items-center gap-3">
-      <div class="relative flex-1">
-        <Search size={18} class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style="color: var(--text-quaternary);" />
-        <input type="text" class="input-field pr-10" placeholder="بحث في الإعلانات..." bind:value={searchQuery} dir="rtl" />
+    <div class="flex items-center gap-3 flex-wrap">
+      <div class="relative flex-1 min-w-[200px]">
+        <Search size={16} class="absolute right-3 top-1/2 -translate-y-1/2" style="color: var(--text-quaternary);" />
+        <input
+          type="text"
+          class="input-field pr-10 w-full"
+          placeholder="بحث في الإعلانات..."
+          bind:value={search}
+        />
       </div>
-      <div class="flex items-center gap-1 border rounded-xl p-1" style="border-color: var(--border-subtle);">
-        <button class="btn-ghost p-2 rounded-lg {!viewMode || viewMode === 'grid' ? 'bg-white/10' : ''}" onclick={() => viewMode = 'grid'}><Eye size={16} /></button>
-        <button class="btn-ghost p-2 rounded-lg {viewMode === 'list' ? 'bg-white/10' : ''}" onclick={() => viewMode = 'list'}><ArrowUpDown size={16} /></button>
+      <div class="flex items-center gap-1 p-1 rounded-lg" style="background: rgba(255,255,255,0.04);">
+        <button
+          class="p-2 rounded-md transition-colors"
+          style={viewMode === 'grid'
+            ? 'background: rgba(245,181,68,0.12); color: #f5b544;'
+            : 'color: var(--text-quaternary); background: transparent;'}
+          onclick={() => (viewMode = 'grid')}
+        >
+          <Eye size={16} />
+        </button>
+        <button
+          class="p-2 rounded-md transition-colors"
+          style={viewMode === 'list'
+            ? 'background: rgba(245,181,68,0.12); color: #f5b544;'
+            : 'color: var(--text-quaternary); background: transparent;'}
+          onclick={() => (viewMode = 'list')}
+        >
+          <ArrowUpDown size={16} />
+        </button>
       </div>
     </div>
   </div>
 
+  <!-- Content -->
   {#if loading}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
       {#each Array(6) as _}
-        <div class="panel p-4"><div class="animate-shimmer h-40 rounded-xl" style="background: rgba(255,255,255,0.06);"></div><div class="mt-3 space-y-2"><div class="animate-shimmer h-4 w-3/4 rounded" style="background: rgba(255,255,255,0.06);"></div><div class="animate-shimmer h-3 w-1/2 rounded" style="background: rgba(255,255,255,0.04);"></div></div></div>
-      {/each}
-    </div>
-  {:else if filteredAds.length === 0}
-    <EmptyState icon={Megaphone} title="لا توجد إعلانات" description="أضف إعلان جديد للبدء" />
-  {:else if viewMode === 'grid'}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      {#each filteredAds as ad (ad.id)}
-        {@const pc = positionConfig[ad.position as Position] || positionConfig.hero}
-        <div class="panel overflow-hidden group">
-          <div class="h-40 relative overflow-hidden" style="background: var(--bg-overlay-10);">
-            {#if ad.image_url}
-              <img src={ad.image_url} alt={ad.title} class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-            {:else}
-              <div class="flex items-center justify-center h-full"><ImagePlus size={32} style="color: var(--text-quaternary);" /></div>
-            {/if}
-            <span class="absolute top-3 right-3 {pc.pillClass}">{pc.label}</span>
-          </div>
-          <div class="p-4">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-bold text-sm truncate">{ad.title}</h3>
-              <button class="btn-ghost p-1.5 rounded-lg" onclick={() => toggleActive(ad)} disabled={toggling === ad.id}>
-                {#if ad.active}<ToggleRight size={20} style="color: #22d3a4;" />{:else}<ToggleLeft size={20} style="color: var(--text-quaternary);" />{/if}
-              </button>
-            </div>
-            <div class="flex items-center gap-2 text-xs" style="color: var(--text-tertiary);">
-              <span>ترتيب: {ad.sort_order}</span>
-            </div>
-            <div class="flex items-center gap-2 mt-3">
-              <button class="btn-ghost flex-1 flex items-center justify-center gap-1.5 text-xs" onclick={() => openEditForm(ad)}><Pencil size={13} />تعديل</button>
-              <button class="btn-ghost flex items-center justify-center gap-1.5 text-xs" style="color: #f43f7a;" onclick={() => deleteAd(ad.id)} disabled={deleting === ad.id}>
-                {#if deleting === ad.id}<Loader2 size={13} class="animate-spin" />{:else}<Trash2 size={13} />{/if}
-              </button>
-            </div>
+        <div class="stat-card">
+          <div class="animate-shimmer h-40 w-full rounded-xl mb-4" style="background: rgba(255,255,255,0.04);"></div>
+          <div class="space-y-3">
+            <div class="animate-shimmer h-4 w-2/3 rounded" style="background: rgba(255,255,255,0.05);"></div>
+            <div class="animate-shimmer h-3 w-1/3 rounded" style="background: rgba(255,255,255,0.04);"></div>
           </div>
         </div>
       {/each}
     </div>
-  {:else}
-    <div class="panel overflow-hidden">
-      <div class="overflow-x-auto scrollbar-none">
-        <table class="data-table">
-          <thead><tr><th>العنوان</th><th>الموقع</th><th>الحالة</th><th>الترتيب</th><th>إجراءات</th></tr></thead>
-          <tbody>
-            {#each filteredAds as ad (ad.id)}
-              {@const pc = positionConfig[ad.position as Position] || positionConfig.hero}
-              <tr>
-                <td><div class="flex items-center gap-3">{#if ad.image_url}<img src={ad.image_url} alt="" class="w-10 h-10 rounded-lg object-cover" />{:else}<div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--bg-overlay-10);"><ImagePlus size={16} style="color: var(--text-quaternary);" /></div>{/if}<span class="font-medium truncate max-w-[200px]">{ad.title}</span></div></td>
-                <td><span class={pc.pillClass}>{pc.label}</span></td>
-                <td>{#if ad.active}<span class="pill-mint">نشط</span>{:else}<span class="pill-rose">متوقف</span>{/if}</td>
-                <td class="font-mono tabular-nums">{ad.sort_order}</td>
-                <td>
-                  <div class="flex items-center gap-1">
-                    <button class="btn-ghost p-2 rounded-lg" onclick={() => toggleActive(ad)} disabled={toggling === ad.id}>{#if ad.active}<ToggleRight size={16} style="color: #22d3a4;" />{:else}<ToggleLeft size={16} />{/if}</button>
-                    <button class="btn-ghost p-2 rounded-lg" onclick={() => openEditForm(ad)}><Pencil size={14} /></button>
-                    <button class="btn-ghost p-2 rounded-lg" style="color: #f43f7a;" onclick={() => deleteAd(ad.id)} disabled={deleting === ad.id}>{#if deleting === ad.id}<Loader2 size={14} class="animate-spin" />{:else}<Trash2 size={14} />{/if}</button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+  {:else if filteredAds().length > 0}
+    <!-- Grid View -->
+    {#if viewMode === 'grid'}
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        {#each filteredAds() as ad (ad.id)}
+          <div class="stat-card group">
+            <!-- Image -->
+            <div class="relative rounded-xl overflow-hidden mb-4 aspect-video" style="background: rgba(255,255,255,0.03);">
+              {#if ad.image_url}
+                <img src={ad.image_url} alt={ad.title} class="w-full h-full object-cover" loading="lazy" />
+              {:else}
+                <div class="flex items-center justify-center w-full h-full">
+                  <ImagePlus size={32} style="color: var(--text-quaternary);" />
+                </div>
+              {/if}
+              <!-- Position Pill Overlay -->
+              <div class="absolute top-2 right-2">
+                <span class={(positionConfig[ad.position] || positionConfig.hero).pillClass}>{(positionConfig[ad.position] || positionConfig.hero).label}</span>
+              </div>
+            </div>
+
+            <!-- Info -->
+            <h3 class="font-bold text-sm mb-2 truncate" style="color: var(--text-primary);">{ad.title}</h3>
+
+            <!-- Active Toggle -->
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs" style="color: var(--text-quaternary);">الحالة</span>
+              <button
+                class="transition-colors"
+                onclick={() => handleToggleActive(ad)}
+                disabled={toggling === ad.id}
+              >
+                {#if toggling === ad.id}
+                  <Loader2 size={20} class="animate-spin" style="color: var(--text-quaternary);" />
+                {:else if ad.active}
+                  <ToggleRight size={20} style="color: #22d3a4;" />
+                {:else}
+                  <ToggleLeft size={20} style="color: var(--text-quaternary);" />
+                {/if}
+              </button>
+            </div>
+
+            <!-- Actions -->
+            <div class="glass-divider mb-3"></div>
+            <div class="flex items-center gap-2">
+              <button class="btn-ghost text-xs flex items-center gap-1.5 flex-1 justify-center" onclick={() => openEditModal(ad)}>
+                <Pencil size={13} />
+                تعديل
+              </button>
+              <button
+                class="btn-danger text-xs flex items-center gap-1.5 flex-1 justify-center"
+                onclick={() => handleDelete(ad.id)}
+                disabled={deleting === ad.id}
+              >
+                {#if deleting === ad.id}
+                  <Loader2 size={13} class="animate-spin" />
+                {:else}
+                  <Trash2 size={13} />
+                {/if}
+                حذف
+              </button>
+            </div>
+          </div>
+        {/each}
       </div>
-    </div>
+    <!-- List View -->
+    {:else}
+      <div class="panel overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="data-table w-full">
+            <thead>
+              <tr>
+                <th>الصورة</th>
+                <th>العنوان</th>
+                <th>الموقع</th>
+                <th>الحالة</th>
+                <th>الترتيب</th>
+                <th>إجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each filteredAds() as ad (ad.id)}
+                <tr>
+                  <td>
+                    <div class="w-16 h-10 rounded-lg overflow-hidden" style="background: rgba(255,255,255,0.03);">
+                      {#if ad.image_url}
+                        <img src={ad.image_url} alt={ad.title} class="w-full h-full object-cover" loading="lazy" />
+                      {:else}
+                        <div class="flex items-center justify-center w-full h-full">
+                          <ImagePlus size={14} style="color: var(--text-quaternary);" />
+                        </div>
+                      {/if}
+                    </div>
+                  </td>
+                  <td>
+                    <span class="font-medium text-sm">{ad.title}</span>
+                  </td>
+                  <td>
+                    <span class={(positionConfig[ad.position] || positionConfig.hero).pillClass}>{(positionConfig[ad.position] || positionConfig.hero).label}</span>
+                  </td>
+                  <td>
+                    <button onclick={() => handleToggleActive(ad)} disabled={toggling === ad.id}>
+                      {#if toggling === ad.id}
+                        <Loader2 size={18} class="animate-spin" style="color: var(--text-quaternary);" />
+                      {:else if ad.active}
+                        <ToggleRight size={18} style="color: #22d3a4;" />
+                      {:else}
+                        <ToggleLeft size={18} style="color: var(--text-quaternary);" />
+                      {/if}
+                    </button>
+                  </td>
+                  <td>
+                    <span class="text-xs font-mono tabular-nums" style="color: var(--text-tertiary);">{ad.sort_order}</span>
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1">
+                      <button class="btn-ghost p-1.5 rounded" onclick={() => openEditModal(ad)}>
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        class="btn-ghost p-1.5 rounded"
+                        style="color: #f43f7a;"
+                        onclick={() => handleDelete(ad.id)}
+                        disabled={deleting === ad.id}
+                      >
+                        {#if deleting === ad.id}
+                          <Loader2 size={14} class="animate-spin" />
+                        {:else}
+                          <Trash2 size={14} />
+                        {/if}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {/if}
+  {:else}
+    <EmptyState icon={Megaphone} title="لا توجد إعلانات" description="قم بإضافة إعلان جديد لعرضه في المنصة" />
   {/if}
 </div>
+
+<!-- Create / Edit Modal -->
+<Modal bind:open={modalOpen} title={modalMode === 'create' ? 'إضافة إعلان' : 'تعديل الإعلان'} icon={Megaphone} iconColor="#f5b544" iconBg="rgba(245,181,68,0.12)" size="lg">
+  <div class="space-y-5">
+    <!-- Title -->
+    <div>
+      <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">عنوان الإعلان *</label>
+      <input type="text" class="input-field w-full" placeholder="أدخل عنوان الإعلان" bind:value={formTitle} />
+    </div>
+
+    <!-- Link -->
+    <div>
+      <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">رابط الإعلان</label>
+      <input type="url" class="input-field w-full" placeholder="https://example.com" bind:value={formLink} dir="ltr" />
+    </div>
+
+    <!-- Image Upload -->
+    <div>
+      <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">صورة الإعلان</label>
+      <div class="flex items-center gap-3">
+        <div class="relative flex-1">
+          <input type="text" class="input-field w-full" placeholder="رابط الصورة أو ارفع من الجهاز" bind:value={formImageUrl} dir="ltr" />
+        </div>
+        <label class="btn-secondary text-xs flex items-center gap-2 cursor-pointer shrink-0">
+          {#if uploading}
+            <Loader2 size={14} class="animate-spin" />
+            جاري الرفع
+          {:else}
+            <Upload size={14} />
+            رفع
+          {/if}
+          <input type="file" accept="image/*" class="hidden" onchange={handleImageUpload} disabled={uploading} />
+        </label>
+      </div>
+      {#if formImageUrl}
+        <div class="mt-3 rounded-xl overflow-hidden aspect-video max-w-sm" style="background: rgba(255,255,255,0.03);">
+          <img src={formImageUrl} alt="معاينة" class="w-full h-full object-cover" />
+        </div>
+      {/if}
+    </div>
+
+    <!-- Button Text & Link -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">نص الزر</label>
+        <input type="text" class="input-field w-full" placeholder="مثال: اعرف المزيد" bind:value={formButtonText} />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">رابط الزر</label>
+        <input type="url" class="input-field w-full" placeholder="https://example.com/action" bind:value={formButtonLink} dir="ltr" />
+      </div>
+    </div>
+
+    <!-- Position & Sort Order -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">الموقع</label>
+        <select class="input-field w-full" bind:value={formPosition}>
+          {#each positionOptions as opt}
+            <option value={opt.value}>{opt.label}</option>
+          {/each}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">ترتيب العرض</label>
+        <input type="number" class="input-field w-full" bind:value={formSortOrder} min="0" />
+      </div>
+    </div>
+
+    <!-- Active Toggle -->
+    <div class="flex items-center justify-between py-2">
+      <span class="text-sm font-medium" style="color: var(--text-secondary);">الإعلان نشط</span>
+      <button
+        class="toggle-track"
+        onclick={() => (formActive = !formActive)}
+        role="switch"
+        aria-checked={formActive}
+      >
+        <span class="toggle-thumb" style={formActive ? 'transform: translateX(-20px); background: #22d3a4;' : 'transform: translateX(0); background: var(--text-quaternary);'}></span>
+      </button>
+    </div>
+  </div>
+
+  {#snippet footer()}
+    <div class="flex items-center gap-3 justify-end">
+      <button class="btn-ghost text-sm" onclick={() => (modalOpen = false)}>إلغاء</button>
+      <button class="btn-primary text-sm flex items-center gap-2" onclick={handleSave} disabled={saving}>
+        {#if saving}
+          <Loader2 size={14} class="animate-spin" />
+        {/if}
+        {modalMode === 'create' ? 'إنشاء' : 'حفظ التعديلات'}
+      </button>
+    </div>
+  {/snippet}
+</Modal>

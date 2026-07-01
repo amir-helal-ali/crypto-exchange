@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { API, setTokens, setUser, clearTokens } from '$lib/api/client';
-  import { Shield, Eye, EyeOff, Mail, Lock, Loader2, LogIn, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-svelte';
+  import { toast } from '$lib/stores/toast';
+  import { Shield, Eye, EyeOff, Mail, Lock, Loader2, LogIn, KeyRound, AlertCircle, CheckCircle2, Fingerprint } from 'lucide-svelte';
 
-  // ─── State ───
   let email = $state('');
   let password = $state('');
   let showPassword = $state(false);
@@ -13,28 +13,11 @@
   let tempToken = $state('');
   let code = $state('');
   let loading2fa = $state(false);
-  let toast = $state<{ message: string; type: 'error' | 'success' } | null>(null);
 
-  let toastTimer: ReturnType<typeof setTimeout>;
-
-  function showToast(message: string, type: 'error' | 'success' = 'error') {
-    clearTimeout(toastTimer);
-    toast = { message, type };
-    toastTimer = setTimeout(() => { toast = null; }, 4000);
-  }
-
-  $effect(() => {
-    return () => clearTimeout(toastTimer);
-  });
-
-  // ─── Login ───
   async function handleLogin(e: Event) {
     e.preventDefault();
     error = '';
-    if (!email.trim() || !password.trim()) {
-      error = 'يرجى ملء جميع الحقول';
-      return;
-    }
+    if (!email.trim() || !password.trim()) { error = 'يرجى ملء جميع الحقول'; return; }
     loading = true;
     try {
       const res = await fetch(`${API}/api/v1/auth/login`, {
@@ -43,40 +26,21 @@
         body: JSON.stringify({ email: email.trim(), password })
       });
       const data = await res.json();
-      if (!res.ok) {
-        error = data.message || data.error || 'فشل تسجيل الدخول';
-        return;
-      }
-      if (data.requires_2fa) {
-        tempToken = data.temp_token;
-        step = '2fa';
-        showToast('يرجى إدخال رمز التحقق الثنائي', 'success');
-        return;
-      }
-      if (data.user?.role !== 'ADMIN') {
-        error = 'ليس لديك صلاحية الوصول إلى لوحة الإدارة';
-        clearTokens();
-        return;
-      }
+      if (!res.ok) { error = data.message || data.error || 'فشل تسجيل الدخول'; return; }
+      if (data.requires_2fa) { tempToken = data.temp_token; step = '2fa'; toast.info('يرجى إدخال رمز التحقق الثنائي'); return; }
+      if (data.user?.role !== 'ADMIN') { error = 'ليس لديك صلاحية الوصول إلى لوحة الإدارة'; clearTokens(); return; }
       setTokens(data.token, data.refresh_token);
       setUser(data.user);
-      showToast('تم تسجيل الدخول بنجاح', 'success');
+      toast.success('تم تسجيل الدخول بنجاح');
       setTimeout(() => goto('/dashboard'), 500);
-    } catch {
-      error = 'حدث خطأ في الاتصال بالخادم';
-    } finally {
-      loading = false;
-    }
+    } catch { error = 'حدث خطأ في الاتصال بالخادم'; }
+    finally { loading = false; }
   }
 
-  // ─── 2FA ───
   async function handleVerify2FA(e: Event) {
     e.preventDefault();
     error = '';
-    if (!code.trim()) {
-      error = 'يرجى إدخال رمز التحقق';
-      return;
-    }
+    if (!code.trim()) { error = 'يرجى إدخال رمز التحقق'; return; }
     loading2fa = true;
     try {
       const res = await fetch(`${API}/api/v1/auth/verify-2fa`, {
@@ -85,32 +49,17 @@
         body: JSON.stringify({ temp_token: tempToken, code: code.trim() })
       });
       const data = await res.json();
-      if (!res.ok) {
-        error = data.message || data.error || 'رمز التحقق غير صحيح';
-        return;
-      }
-      if (data.user?.role !== 'ADMIN') {
-        error = 'ليس لديك صلاحية الوصول إلى لوحة الإدارة';
-        clearTokens();
-        return;
-      }
+      if (!res.ok) { error = data.message || data.error || 'رمز التحقق غير صحيح'; return; }
+      if (data.user?.role !== 'ADMIN') { error = 'ليس لديك صلاحية الوصول إلى لوحة الإدارة'; clearTokens(); return; }
       setTokens(data.token, data.refresh_token);
       setUser(data.user);
-      showToast('تم التحقق بنجاح', 'success');
+      toast.success('تم التحقق بنجاح');
       setTimeout(() => goto('/dashboard'), 500);
-    } catch {
-      error = 'حدث خطأ في الاتصال بالخادم';
-    } finally {
-      loading2fa = false;
-    }
+    } catch { error = 'حدث خطأ في الاتصال بالخادم'; }
+    finally { loading2fa = false; }
   }
 
-  function backToLogin() {
-    step = 'login';
-    code = '';
-    tempToken = '';
-    error = '';
-  }
+  function backToLogin() { step = 'login'; code = ''; tempToken = ''; error = ''; }
 </script>
 
 <svelte:head>
@@ -125,18 +74,6 @@
     <div class="blob blob-3"></div>
     <div class="blob blob-4"></div>
   </div>
-
-  <!-- Toast -->
-  {#if toast}
-    <div class="toast toast-{toast.type}">
-      {#if toast.type === 'error'}
-        <AlertCircle size={18} />
-      {:else}
-        <CheckCircle2 size={18} />
-      {/if}
-      <span>{toast.message}</span>
-    </div>
-  {/if}
 
   <!-- Login Card -->
   <div class="login-card panel-glow">
@@ -156,10 +93,10 @@
         {step === 'login' ? 'لوحة تحكم المسؤول' : 'أدخل رمز التحقق من تطبيق المصادقة'}
       </p>
       {#if step === 'login'}
-        <span class="pill-gold mt-3">
-          <Shield size={12} />
+        <div class="pill-gold mt-3 gap-1.5">
+          <Fingerprint size={11} />
           مسؤول النظام
-        </span>
+        </div>
       {/if}
     </div>
 
@@ -249,7 +186,7 @@
     <div class="card-footer">
       <span class="text-aurora font-bold text-xs tracking-wider">NEXUS</span>
       <span class="footer-dot"></span>
-      <span class="text-xs" style="color: var(--text-quaternary);">لوحة الإدارة v2.0</span>
+      <span class="text-xs" style="color: var(--text-quaternary);">لوحة الإدارة v3.0</span>
     </div>
   </div>
 </div>
@@ -270,7 +207,7 @@
   }
   .blob {
     position: absolute; border-radius: 50%;
-    filter: blur(100px); opacity: 0.35;
+    filter: blur(120px); opacity: 0.3;
   }
   .blob-1 {
     width: 600px; height: 600px;
@@ -316,34 +253,17 @@
     33% { transform: translate(30px, 50px) scale(1.12); }
     66% { transform: translate(-50px, -40px) scale(0.88); }
   }
-  .toast {
-    position: fixed; top: 1.5rem; left: 50%; transform: translateX(-50%);
-    z-index: 1000; display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.75rem 1.25rem; border-radius: 0.75rem;
-    backdrop-filter: blur(16px); font-size: 0.875rem; font-weight: 500;
-    animation: slideIn 0.3s ease-out; max-width: 90vw;
-  }
-  .toast-error {
-    background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
-    color: #fca5a5; box-shadow: 0 0 24px rgba(239,68,68,0.15);
-  }
-  .toast-success {
-    background: rgba(34,211,164,0.15); border: 1px solid rgba(34,211,164,0.3);
-    color: #6ee7b7; box-shadow: 0 0 24px rgba(34,211,164,0.15);
-  }
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-    to { opacity: 1; transform: translateX(-50%) translateY(0); }
-  }
+
   .login-card {
     position: relative; z-index: 1; width: 100%; max-width: 420px;
     padding: 2.5rem 2rem 1.5rem;
-    animation: cardAppear 0.6s ease-out;
+    animation: cardAppear 0.6s var(--ease-out-expo);
   }
   @keyframes cardAppear {
-    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    from { opacity: 0; transform: translateY(24px) scale(0.96); }
     to { opacity: 1; transform: translateY(0) scale(1); }
   }
+
   .card-header {
     display: flex; flex-direction: column; align-items: center;
     text-align: center; padding-bottom: 1.5rem;
@@ -351,27 +271,23 @@
   .icon-circle {
     width: 64px; height: 64px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(245,181,68,0.1); border: 1px solid rgba(245,181,68,0.2);
-    box-shadow: 0 0 32px rgba(245,181,68,0.1);
+    background: rgba(245,181,68,0.08); border: 1px solid rgba(245,181,68,0.15);
+    box-shadow: 0 0 40px rgba(245,181,68,0.08);
     margin-bottom: 1rem;
     animation: glowPulse 3s ease-in-out infinite;
   }
   @keyframes glowPulse {
-    0%, 100% { box-shadow: 0 0 24px rgba(245,181,68,0.1); }
-    50% { box-shadow: 0 0 40px rgba(245,181,68,0.2); }
+    0%, 100% { box-shadow: 0 0 24px rgba(245,181,68,0.08); }
+    50% { box-shadow: 0 0 48px rgba(245,181,68,0.15); }
   }
   .icon-main { color: #f5b544; }
-  .card-title {
-    font-size: 1.5rem; font-weight: 700;
-    color: var(--text-primary); margin: 0 0 0.375rem;
-  }
-  .card-subtitle {
-    font-size: 0.875rem; color: var(--text-tertiary); margin: 0;
-  }
+  .card-title { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.375rem; }
+  .card-subtitle { font-size: 0.875rem; color: var(--text-tertiary); margin: 0; }
+
   .error-box {
     display: flex; align-items: center; gap: 0.5rem;
     padding: 0.75rem 1rem; margin: 1rem 0 0; border-radius: 0.75rem;
-    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
+    background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15);
     color: #fca5a5; font-size: 0.8125rem;
     animation: shake 0.4s ease-in-out;
   }
@@ -382,6 +298,7 @@
     60% { transform: translateX(-4px); }
     80% { transform: translateX(4px); }
   }
+
   .form-body {
     display: flex; flex-direction: column; gap: 1.25rem; padding-top: 1.25rem;
   }
@@ -406,6 +323,7 @@
     transition: color 0.2s, background 0.2s; z-index: 1;
   }
   .toggle-password:hover { color: var(--text-secondary); background: rgba(255,255,255,0.05); }
+
   .btn-full {
     width: 100%; display: flex; align-items: center; justify-content: center;
     gap: 0.5rem; padding: 0.875rem 1.5rem; font-size: 0.9375rem; margin-top: 0.25rem;
@@ -418,12 +336,14 @@
   }
   .btn-back:hover { color: var(--text-secondary); background: rgba(255,255,255,0.03); }
   .btn-back:disabled { opacity: 0.4; cursor: not-allowed; }
+
   .twofa-info {
     display: flex; align-items: center; gap: 0.5rem;
     padding: 0.75rem 1rem; border-radius: 0.75rem;
-    background: rgba(245,181,68,0.06); border: 1px solid rgba(245,181,68,0.12);
+    background: rgba(245,181,68,0.04); border: 1px solid rgba(245,181,68,0.1);
     color: var(--text-secondary); font-size: 0.8125rem;
   }
+
   .card-footer {
     display: flex; align-items: center; justify-content: center;
     gap: 0.75rem; padding-top: 1rem;
@@ -432,11 +352,10 @@
     width: 3px; height: 3px; border-radius: 50%;
     background: var(--text-quaternary);
   }
-  :global(.animate-spin) { animation: spin 1s linear infinite; }
-  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
   @media (max-width: 480px) {
     .login-card { padding: 2rem 1.25rem 1.25rem; }
     .card-title { font-size: 1.25rem; }
-    .blob { filter: blur(80px); opacity: 0.25; }
+    .blob { filter: blur(80px); opacity: 0.2; }
   }
 </style>

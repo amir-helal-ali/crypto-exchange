@@ -1,12 +1,17 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { isAuthenticated } from '$lib/api/client';
 
   onMount(() => {
-    goto('/login');
+    if (isAuthenticated()) {
+      goto('/dashboard');
+    } else {
+      goto('/login');
+    }
   });
 </script>
 
-<div class="min-h-screen flex items-center justify-center">
-  <div class="animate-spin w-10 h-10 rounded-xl border-2 border-transparent" style="border-top-color: #f5b544; border-right-color: #f5b544;"></div>
+<div class="min-h-screen flex items-center justify-center" style="background: var(--bg-base);">
+  <div class="animate-spin h-8 w-8 rounded-full border-2" style="border-color: var(--border-medium); border-top-color: var(--accent-gold);"></div>
 </div>

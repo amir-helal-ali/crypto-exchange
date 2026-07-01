@@ -2,25 +2,21 @@
   let {
     icon = null as any,
     title = '',
-    description = '',
-    action = null as any
+    description = ''
   } = $props<{
     icon: any;
     title: string;
     description?: string;
-    action?: any;
   }>();
 </script>
 
-<div class="panel p-16 text-center">
-  <icon size={48} class="mx-auto mb-4 opacity-20" style="color: var(--text-quaternary);" />
-  <p class="text-lg font-bold" style="color: var(--text-secondary);">{title}</p>
+<div class="flex flex-col items-center justify-center py-16 text-center animate-fade-in">
+  <div class="flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
+    style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
+    <icon size={28} style="color: var(--text-quaternary);"></icon>
+  </div>
+  <h3 class="text-lg font-bold mb-1" style="color: var(--text-secondary);">{title}</h3>
   {#if description}
-    <p class="text-sm mt-2" style="color: var(--text-quaternary);">{description}</p>
-  {/if}
-  {#if action}
-    <div class="mt-6">
-      {@render action()}
-    </div>
+    <p class="text-sm max-w-sm" style="color: var(--text-quaternary);">{description}</p>
   {/if}
 </div>
