@@ -1,0 +1,807 @@
+     1→     1→<script lang="ts">
+     2→     2→        import Pagination from '$lib/components/Pagination.svelte';
+     3→     3→        import EmptyState from '$lib/components/EmptyState.svelte';
+     4→     4→        import LiveIndicator from '$lib/components/LiveIndicator.svelte';
+     5→     5→        import PageHeader from '$lib/components/PageHeader.svelte';
+     6→     6→        import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+     7→     7→        import { authGet, authPut } from '$lib/api/client';
+     8→     8→        import type AdminTransaction from '$lib/api/types';
+     9→     9→        import { createAdminStream } from '$lib/api/types';
+    10→    10→        import { formatDate, formatNumber, copyToClipboard } from '$lib/utils/helpers';
+    11→    11→        import {
+    12→    12→                Search,
+    13→    13→                ArrowLeftRight,
+    14→    14→                CheckCircle2,
+    15→    15→                XCircle,
+    16→    16→                Clock,
+    17→    17→                Copy,
+    18→    18→                Check,
+    19→    19→                AlertCircle,
+    20→    20→                TrendingUp,
+    21→    21→                TrendingDown,
+    22→    22→                RefreshCw,
+    23→    23→                Loader2
+    24→    24→        } from 'lucide-svelte';
+    25→    25→
+    26→    26→        // --- State ---
+    27→    27→        let transactions = $state<AdminTransaction[]>([]);
+    28→    28→        let total = $state(0);
+    29→    29→        let totalPages = $state(0);
+    30→    30→        let page = $state(1);
+    31→    31→        let limit = $state(20);
+    32→    32→        let search = $state('');
+    33→    33→        let searchInput = $state('');
+    34→    34→        let statusFilter = $state<'ALL' | 'PENDING' | 'COMPLETED' | 'REJECTED'>('ALL');
+    35→    35→        let loading = $state(true);
+    36→    36→        let refreshing = $state(false);
+    37→    37→        let error = $state('');
+    38→    38→        let actionLoading = $state<Record<string, boolean>>({});
+    39→    39→        let copiedField = $state<Record<string, boolean>>({});
+    40→    40→        let reviewTxId = $state<Record<string, string>>({});
+    41→    41→        let live = $state(true);
+    42→    42→
+    43→    43→        // --- Config ---
+    44→    44→        const STATUS_CONFIG = {
+    45→    45→                PENDING: { label: 'معلق', pillClass: 'pill-gold', color: '#f5b544' },
+    46→    46→                COMPLETED: { label: 'مكتمل', pillClass: 'pill-mint', color: '#22d3a4' },
+    47→    47→                REJECTED: { label: 'مرفوض', pillClass: 'pill-rose', color: '#f43f7a' }
+    48→    48→        } as const;
+    49→    49→
+    50→    50→        const TYPE_CONFIG = {
+    51→    51→                DEPOSIT: { label: 'إيداع', icon: TrendingUp, color: '#22d3a4' },
+    52→    52→                WITHDRAWAL: { label: 'سحب', icon: TrendingDown, color: '#f43f7a' }
+    53→    53→        } as const;
+    54→    54→
+    55→    55→        const FILTER_OPTIONS: Array<{ value: 'ALL' | 'PENDING' | 'COMPLETED' | 'REJECTED'; label: string }> = [
+    56→    56→                { value: 'ALL', label: 'الكل' },
+    57→    57→                { value: 'PENDING', label: 'معلق' },
+    58→    58→                { value: 'COMPLETED', label: 'مكتمل' },
+    59→    59→                { value: 'REJECTED', label: 'مرفوض' }
+    60→    60→        ];
+    61→    61→
+    62→    62→        // --- Derived ---
+    63→    63→        const pendingCount = $derived(transactions.filter((t) => t.status === 'PENDING').length);
+    64→    64→
+    65→    65→        // --- Fetch ---
+    66→    66→        async function fetchTransactions(isRefresh = false) {
+    67→    67→                if (isRefresh) {
+    68→    68→                        refreshing = true;
+    69→    69→                } else {
+    70→    70→                        loading = true;
+    71→    71→                }
+    72→    72→                error = '';
+    73→    73→
+    74→    74→                try {
+    75→    75→                        const params = new URLSearchParams({
+    76→    76→                                page: String(page),
+    77→    77→                                limit: String(limit)
+    78→    78→                        });
+    79→    79→                        if (search) params.set('search', search);
+    80→    80→                        if (statusFilter !== 'ALL') params.set('status', statusFilter);
+    81→    81→
+    82→    82→                        const res = await authGet(`/api/v1/admin/transactions?${params.toString()}`);
+    83→    83→                        if (res.success) {
+    84→    84→                                transactions = res.data;
+    85→    85→                                total = res.meta.total;
+    86→    86→                                totalPages = res.meta.totalPages;
+    87→    87→                        } else {
+    88→    88→                                error = 'فشل في تحميل المعاملات';
+    89→    89→                        }
+    90→    90→                } catch {
+    91→    91→                        error = 'حدث خطأ أثناء تحميل المعاملات';
+    92→    92→                } finally {
+    93→    93→                        loading = false;
+    94→    94→                        refreshing = false;
+    95→    95→                }
+    96→    96→        }
+    97→    97→
+    98→    98→        // --- Search handler ---
+    99→    99→        let searchTimeout: ReturnType<typeof setTimeout>;
+   100→   100→        function handleSearchInput() {
+   101→   101→                clearTimeout(searchTimeout);
+   102→   102→                searchTimeout = setTimeout(() => {
+   103→   103→                        search = searchInput;
+   104→   104→                        page = 1;
+   105→   105→                        fetchTransactions();
+   106→   106→                }, 400);
+   107→   107→        }
+   108→   108→
+   109→   109→        function handleStatusFilter(value: 'ALL' | 'PENDING' | 'COMPLETED' | 'REJECTED') {
+   110→   110→                statusFilter = value;
+   111→   111→                page = 1;
+   112→   112→                fetchTransactions();
+   113→   113→        }
+   114→   114→
+   115→   115→        function handlePageChange(newPage: number) {
+   116→   116→                page = newPage;
+   117→   117→                fetchTransactions();
+   118→   118→        }
+   119→   119→
+   120→   120→        // --- Actions ---
+   121→   121→        async function reviewTransaction(
+   122→   122→                id: string,
+   123→   123→                status: 'COMPLETED' | 'REJECTED'
+   124→   124→        ) {
+   125→   125→                actionLoading[id] = true;
+   126→   126→                error = '';
+   127→   127→
+   128→   128→                try {
+   129→   129→                        const body: { status: string; tx_id?: string } = { status };
+   130→   130→                        const txIdValue = reviewTxId[id]?.trim();
+   131→   131→                        if (status === 'COMPLETED' && txIdValue) {
+   132→   132→                                body.tx_id = txIdValue;
+   133→   133→                        }
+   134→   134→
+   135→   135→                        const res = await authPut(`/api/v1/admin/transactions/${id}/review`, body);
+   136→   136→                        if (res.success) {
+   137→   137→                                transactions = transactions.map((t) =>
+   138→   138→                                        t.id === id ? { ...t, status, tx_id: txIdValue || t.tx_id } : t
+   139→   139→                                );
+   140→   140→                                delete reviewTxId[id];
+   141→   141→                        } else {
+   142→   142→                                error = 'فشل في تحديث حالة المعاملة';
+   143→   143→                        }
+   144→   144→                } catch {
+   145→   145→                        error = 'حدث خطأ أثناء تحديث المعاملة';
+   146→   146→                } finally {
+   147→   147→                        actionLoading[id] = false;
+   148→   148→                }
+   149→   149→        }
+   150→   150→
+   151→   151→        // --- Copy ---
+   152→   152→        async function handleCopy(value: string, field: string, rowId: string) {
+   153→   153→                await copyToClipboard(value);
+   154→   154→                const key = `${rowId}-${field}`;
+   155→   155→                copiedField[key] = true;
+   156→   156→                setTimeout(() => {
+   157→   157→                        copiedField[key] = false;
+   158→   158→                }, 2000);
+   159→   159→        }
+   160→   160→
+   161→   161→        // --- SSE ---
+   162→   162→        $effect(() => {
+   163→   163→                const stream = createAdminStream('/api/v1/admin/transactions/stream');
+   164→   164→                stream.onmessage = (event: MessageEvent) => {
+   165→   165→                        try {
+   166→   166→                                const data = JSON.parse(event.data);
+   167→   167→                                if (data.type === 'transaction_update') {
+   168→   168→                                        transactions = transactions.map((t) =>
+   169→   169→                                                t.id === data.transaction.id ? data.transaction : t
+   170→   170→                                        );
+   171→   171→                                } else if (data.type === 'transaction_new') {
+   172→   172→                                        if (page === 1 && (statusFilter === 'ALL' || statusFilter === 'PENDING')) {
+   173→   173→                                                transactions = [data.transaction, ...transactions].slice(0, limit);
+   174→   174→                                                total += 1;
+   175→   175→                                        }
+   176→   176→                                }
+   177→   177→                        } catch {
+   178→   178→                                // ignore malformed SSE
+   179→   179→                        }
+   180→   180→                };
+   181→   181→
+   182→   182→                stream.onerror = () => {
+   183→   183→                        live = false;
+   184→   184→                };
+   185→   185→
+   186→   186→                return () => {
+   187→   187→                        stream.close();
+   188→   188→                };
+   189→   189→        });
+   190→   190→
+   191→   191→        // --- Init ---
+   192→   192→        $effect(() => {
+   193→   193→                fetchTransactions();
+   194→   194→        });
+   195→   195→</script>
+   196→   196→
+   197→   197→<svelte:head>
+   198→   198→        <title>المعاملات | لوحة الإدارة</title>
+   199→   199→</svelte:head>
+   200→   200→
+   201→   201→<div class="transactions-page">
+   202→   202→        <!-- Header -->
+   203→   203→        <PageHeader title="المعاملات" subtitle="إدارة عمليات الإيداع والسحب">
+   204→   204→                <div class="header-actions">
+   205→   205→                        <LiveIndicator active={live} label={live ? 'مباشر' : 'غير متصل'} />
+   206→   206→                        {#if pendingCount > 0}
+   207→   207→                                <div class="pending-badge">
+   208→   208→                                        <Clock size={14} />
+   209→   209→                                        <span>{pendingCount} معلقة</span>
+   210→   210→                                </div>
+   211→   211→                        {/if}
+   212→   212→                        <button
+   213→   213→                                class="btn-secondary"
+   214→   214→                                onclick={() => fetchTransactions(true)}
+   215→   215→                                disabled={refreshing}
+   216→   216→                        >
+   217→   217→                                <RefreshCw size={16} class={refreshing ? 'animate-spin' : ''} />
+   218→   218→                                <span>تحديث</span>
+   219→   219→                        </button>
+   220→   220→                </div>
+   221→   221→        </PageHeader>
+   222→   222→
+   223→   223→        <!-- Error -->
+   224→   224→        {#if error}
+   225→   225→                <ErrorAlert message={error} onclose={() => (error = '')} />
+   226→   226→        {/if}
+   227→   227→
+   228→   228→        <!-- Filters -->
+   229→   229→        <div class="filters-bar glass-divider">
+   230→   230→                <div class="search-wrapper">
+   231→   231→                        <Search size={18} class="search-icon" />
+   232→   232→                        <input
+   233→   233→                                type="text"
+   234→   234→                                class="input-field search-input"
+   235→   235→                                placeholder="بحث بالاسم، البريد، العنوان..."
+   236→   236→                                bind:value={searchInput}
+   237→   237→                                oninput={handleSearchInput}
+   238→   238→                        />
+   239→   239→                </div>
+   240→   240→
+   241→   241→                <div class="status-filters">
+   242→   242→                        {#each FILTER_OPTIONS as option}
+   243→   243→                                <button
+   244→   244→                                        class="filter-btn"
+   245→   245→                                        class:active={statusFilter === option.value}
+   246→   246→                                        onclick={() => handleStatusFilter(option.value)}
+   247→   247→                                >
+   248→   248→                                        {option.label}
+   249→   249→                                        {#if option.value === 'PENDING' && pendingCount > 0}
+   250→   250→                                                <span class="filter-count">{pendingCount}</span>
+   251→   251→                                        {/if}
+   252→   252→                                </button>
+   253→   253→                        {/each}
+   254→   254→                </div>
+   255→   255→        </div>
+   256→   256→
+   257→   257→        <!-- Table -->
+   258→   258→        <div class="table-container">
+   259→   259→                {#if loading}
+   260→   260→                        <div class="loading-state">
+   261→   261→                                <Loader2 size={32} class="animate-spin" />
+   262→   262→                                <span>جاري التحميل...</span>
+   263→   263→                        </div>
+   264→   264→                {:else if transactions.length === 0}
+   265→   265→                        <EmptyState
+   266→   266→                                icon={ArrowLeftRight}
+   267→   267→                                title="لا توجد معاملات"
+   268→   268→                                description="لم يتم العثور على معاملات مطابقة لمعايير البحث"
+   269→   269→                        />
+   270→   270→                {:else}
+   271→   271→                        <div class="data-table-wrapper">
+   272→   272→                                <table class="data-table">
+   273→   273→                                        <thead>
+   274→   274→                                                <tr>
+   275→   275→                                                        <th>المستخدم</th>
+   276→   276→                                                        <th>النوع</th>
+   277→   277→                                                        <th>المبلغ</th>
+   278→   278→                                                        <th>الحالة</th>
+   279→   279→                                                        <th>العنوان</th>
+   280→   280→                                                        <th>رقم المعاملة</th>
+   281→   281→                                                        <th>التاريخ</th>
+   282→   282→                                                        <th>إجراءات</th>
+   283→   283→                                                </tr>
+   284→   284→                                        </thead>
+   285→   285→                                        <tbody>
+   286→   286→                                                {#each transactions as transaction (transaction.id)}
+   287→   287→                                                        {@const typeConf = TYPE_CONFIG[transaction.type as keyof typeof TYPE_CONFIG]}
+   288→   288→                                                        {@const statusConf = STATUS_CONFIG[transaction.status as keyof typeof STATUS_CONFIG]}
+   289→   289→                                                        {@const isPending = transaction.status === 'PENDING'}
+   290→   290→                                                        {@const isActing = actionLoading[transaction.id] === true}
+   291→   291→                                                        <tr class:row-pending={isPending}>
+   292→   292→                                                                <!-- User -->
+   293→   293→                                                                <td>
+   294→   294→                                                                        <div class="user-cell">
+   295→   295→                                                                                <span class="user-name">{transaction.username}</span>
+   296→   296→                                                                                <span class="user-email">{transaction.email}</span>
+   297→   297→                                                                        </div>
+   298→   298→                                                                </td>
+   299→   299→
+   300→   300→                                                                <!-- Type -->
+   301→   301→                                                                <td>
+   302→   302→                                                                        <div class="type-cell" style="color: {typeConf.color}">
+   303→   303→                                                                                {#if typeConf.icon}
+   304→   304→                                                                                  <typeConf.icon size={16} />
+   305→   305→                                                                                {/if}
+   306→   306→                                                                                <span>{typeConf.label}</span>
+   307→   307→                                                                        </div>
+   308→   308→                                                                </td>
+   309→   309→
+   310→   310→                                                                <!-- Amount -->
+   311→   311→                                                                <td>
+   312→   312→                                                                        <div class="amount-cell">
+   313→   313→                                                                                <span class="amount-value tabular-nums">
+   314→   314→                                                                                        {formatNumber(transaction.amount)}
+   315→   315→                                                                                </span>
+   316→   316→                                                                                <span class="amount-currency">{transaction.currency}</span>
+   317→   317→                                                                        </div>
+   318→   318→                                                                </td>
+   319→   319→
+   320→   320→                                                                <!-- Status -->
+   321→   321→                                                                <td>
+   322→   322→                                                                        <span class="pill {statusConf.pillClass}">
+   323→   323→                                                                                {statusConf.label}
+   324→   324→                                                                        </span>
+   325→   325→                                                                </td>
+   326→   326→
+   327→   327→                                                                <!-- Address -->
+   328→   328→                                                                <td>
+   329→   329→                                                                        {#if transaction.address}
+   330→   330→                                                                                <div class="copy-cell">
+   331→   331→                                                                                        <span class="copy-value" title={transaction.address}>
+   332→   332→                                                                                                {transaction.address.slice(0, 6)}...{transaction.address.slice(-4)}
+   333→   333→                                                                                        </span>
+   334→   334→                                                                                        <button
+   335→   335→                                                                                                class="btn-ghost copy-btn"
+   336→   336→                                                                                                onclick={() => handleCopy(transaction.address, 'address', transaction.id)}
+   337→   337→                                                                                                title="نسخ العنوان"
+   338→   338→                                                                                        >
+   339→   339→                                                                                                {#if copiedField[`${transaction.id}-address`]}
+   340→   340→                                                                                                        <Check size={14} style="color: var(--accent-mint)" />
+   341→   341→                                                                                                {:else}
+   342→   342→                                                                                                        <Copy size={14} />
+   343→   343→                                                                                                {/if}
+   344→   344→                                                                                        </button>
+   345→   345→                                                                                </div>
+   346→   346→                                                                        {:else}
+   347→   347→                                                                                <span class="text-tertiary">—</span>
+   348→   348→                                                                        {/if}
+   349→   349→                                                                </td>
+   350→   350→
+   351→   351→                                                                <!-- TX ID -->
+   352→   352→                                                                <td>
+   353→   353→                                                                        {#if isPending && transaction.type === 'WITHDRAWAL'}
+   354→   354→                                                                                <div class="tx-input-cell">
+   355→   355→                                                                                        <input
+   356→   356→                                                                                                type="text"
+   357→   357→                                                                                                class="input-field tx-input"
+   358→   358→                                                                                                placeholder="أدخل رقم المعاملة"
+   359→   359→                                                                                                bind:value={reviewTxId[transaction.id]}
+   360→   360→                                                                                        />
+   361→   361→                                                                                </div>
+   362→   362→                                                                        {:else if transaction.tx_id}
+   363→   363→                                                                                <div class="copy-cell">
+   364→   364→                                                                                        <span class="copy-value" title={transaction.tx_id}>
+   365→   365→                                                                                                {transaction.tx_id.slice(0, 6)}...{transaction.tx_id.slice(-4)}
+   366→   366→                                                                                        </span>
+   367→   367→                                                                                        <button
+   368→   368→                                                                                                class="btn-ghost copy-btn"
+   369→   369→                                                                                                onclick={() => handleCopy(transaction.tx_id, 'txid', transaction.id)}
+   370→   370→                                                                                                title="نسخ رقم المعاملة"
+   371→   371→                                                                                        >
+   372→   372→                                                                                                {#if copiedField[`${transaction.id}-txid`]}
+   373→   373→                                                                                                        <Check size={14} style="color: var(--accent-mint)" />
+   374→   374→                                                                                                {:else}
+   375→   375→                                                                                                        <Copy size={14} />
+   376→   376→                                                                                                {/if}
+   377→   377→                                                                                        </button>
+   378→   378→                                                                                </div>
+   379→   379→                                                                        {:else}
+   380→   380→                                                                                <span class="text-tertiary">—</span>
+   381→   381→                                                                        {/if}
+   382→   382→                                                                </td>
+   383→   383→
+   384→   384→                                                                <!-- Date -->
+   385→   385→                                                                <td>
+   386→   386→                                                                        <span class="date-cell tabular-nums">
+   387→   387→                                                                                {formatDate(transaction.createdAt)}
+   388→   388→                                                                        </span>
+   389→   389→                                                                </td>
+   390→   390→
+   391→   391→                                                                <!-- Actions -->
+   392→   392→                                                                <td>
+   393→   393→                                                                        {#if isPending}
+   394→   394→                                                                                <div class="actions-cell">
+   395→   395→                                                                                        <button
+   396→   396→                                                                                                class="btn-buy btn-sm"
+   397→   397→                                                                                                onclick={() => reviewTransaction(transaction.id, 'COMPLETED')}
+   398→   398→                                                                                                disabled={isActing}
+   399→   399→                                                                                        >
+   400→   400→                                                                                                {#if isActing}
+   401→   401→                                                                                                        <Loader2 size={14} class="animate-spin" />
+   402→   402→                                                                                                {:else}
+   403→   403→                                                                                                        <CheckCircle2 size={14} />
+   404→   404→                                                                                                {/if}
+   405→   405→                                                                                                <span>قبول</span>
+   406→   406→                                                                                        </button>
+   407→   407→                                                                                        <button
+   408→   408→                                                                                                class="btn-danger btn-sm"
+   409→   409→                                                                                                onclick={() => reviewTransaction(transaction.id, 'REJECTED')}
+   410→   410→                                                                                                disabled={isActing}
+   411→   411→                                                                                        >
+   412→   412→                                                                                                {#if isActing}
+   413→   413→                                                                                                        <Loader2 size={14} class="animate-spin" />
+   414→   414→                                                                                                {:else}
+   415→   415→                                                                                                        <XCircle size={14} />
+   416→   416→                                                                                                {/if}
+   417→   417→                                                                                                <span>رفض</span>
+   418→   418→                                                                                        </button>
+   419→   419→                                                                                </div>
+   420→   420→                                                                        {:else if transaction.status === 'COMPLETED'}
+   421→   421→                                                                                <div class="actions-cell">
+   422→   422→                                                                                        <CheckCircle2 size={18} style="color: var(--accent-mint)" />
+   423→   423→                                                                                </div>
+   424→   424→                                                                        {:else if transaction.status === 'REJECTED'}
+   425→   425→                                                                                <div class="actions-cell">
+   426→   426→                                                                                        <XCircle size={18} style="color: var(--accent-rose)" />
+   427→   427→                                                                                </div>
+   428→   428→                                                                        {/if}
+   429→   429→                                                                </td>
+   430→   430→                                                        </tr>
+   431→   431→                                                {/each}
+   432→   432→                                        </tbody>
+   433→   433→                                </table>
+   434→   434→                        </div>
+   435→   435→
+   436→   436→                        <!-- Pagination -->
+   437→   437→                        {#if totalPages > 1}
+   438→   438→                                <div class="pagination-wrapper">
+   439→   439→                                        <Pagination
+   440→   440→                                                {page}
+   441→   441→                                                {totalPages}
+   442→   442→                                                onchange={(p: number) => handlePageChange(p)}
+   443→   443→                                        />
+   444→   444→                                </div>
+   445→   445→                        {/if}
+   446→   446→                {/if}
+   447→   447→        </div>
+   448→   448→</div>
+   449→   449→
+   450→   450→<style>
+   451→   451→        /* ===== Page Layout ===== */
+   452→   452→        .transactions-page {
+   453→   453→                display: flex;
+   454→   454→                flex-direction: column;
+   455→   455→                gap: 1.25rem;
+   456→   456→        }
+   457→   457→
+   458→   458→        /* ===== Header Actions ===== */
+   459→   459→        .header-actions {
+   460→   460→                display: flex;
+   461→   461→                align-items: center;
+   462→   462→                gap: 0.75rem;
+   463→   463→        }
+   464→   464→
+   465→   465→        .pending-badge {
+   466→   466→                display: flex;
+   467→   467→                align-items: center;
+   468→   468→                gap: 0.375rem;
+   469→   469→                padding: 0.375rem 0.75rem;
+   470→   470→                border-radius: 9999px;
+   471→   471→                background: rgba(245, 181, 68, 0.12);
+   472→   472→                color: var(--accent-gold);
+   473→   473→                font-size: 0.8125rem;
+   474→   474→                font-weight: 600;
+   475→   475→                border: 1px solid rgba(245, 181, 68, 0.2);
+   476→   476→        }
+   477→   477→
+   478→   478→        /* ===== Filters Bar ===== */
+   479→   479→        .filters-bar {
+   480→   480→                display: flex;
+   481→   481→                align-items: center;
+   482→   482→                gap: 1rem;
+   483→   483→                padding: 1rem 1.25rem;
+   484→   484→                background: var(--panel-bg, rgba(15, 15, 30, 0.6));
+   485→   485→                border-radius: 0.75rem;
+   486→   486→                flex-wrap: wrap;
+   487→   487→        }
+   488→   488→
+   489→   489→        .search-wrapper {
+   490→   490→                position: relative;
+   491→   491→                flex: 1;
+   492→   492→                min-width: 240px;
+   493→   493→        }
+   494→   494→
+   495→   495→        .search-icon {
+   496→   496→                position: absolute;
+   497→   497→                right: 0.875rem;
+   498→   498→                top: 50%;
+   499→   499→                transform: translateY(-50%);
+   500→   500→                color: var(--text-tertiary);
+   501→   501→                pointer-events: none;
+   502→   502→        }
+   503→   503→
+   504→   504→        .search-input {
+   505→   505→                width: 100%;
+   506→   506→                padding-right: 2.5rem;
+   507→   507→                padding-left: 1rem;
+   508→   508→        }
+   509→   509→
+   510→   510→        .status-filters {
+   511→   511→                display: flex;
+   512→   512→                align-items: center;
+   513→   513→                gap: 0.375rem;
+   514→   514→        }
+   515→   515→
+   516→   516→        .filter-btn {
+   517→   517→                display: flex;
+   518→   518→                align-items: center;
+   519→   519→                gap: 0.375rem;
+   520→   520→                padding: 0.5rem 1rem;
+   521→   521→                border: 1px solid transparent;
+   522→   522→                border-radius: 0.5rem;
+   523→   523→                background: transparent;
+   524→   524→                color: var(--text-secondary);
+   525→   525→                font-size: 0.8125rem;
+   526→   526→                font-weight: 500;
+   527→   527→                cursor: pointer;
+   528→   528→                transition: all 0.2s ease;
+   529→   529→                white-space: nowrap;
+   530→   530→        }
+   531→   531→
+   532→   532→        .filter-btn:hover {
+   533→   533→                background: rgba(255, 255, 255, 0.05);
+   534→   534→                color: var(--text-primary);
+   535→   535→        }
+   536→   536→
+   537→   537→        .filter-btn.active {
+   538→   538→                background: rgba(168, 85, 247, 0.12);
+   539→   539→                color: var(--accent-violet);
+   540→   540→                border-color: rgba(168, 85, 247, 0.25);
+   541→   541→        }
+   542→   542→
+   543→   543→        .filter-count {
+   544→   544→                display: inline-flex;
+   545→   545→                align-items: center;
+   546→   546→                justify-content: center;
+   547→   547→                min-width: 1.25rem;
+   548→   548→                height: 1.25rem;
+   549→   549→                padding: 0 0.375rem;
+   550→   550→                border-radius: 9999px;
+   551→   551→                background: rgba(245, 181, 68, 0.15);
+   552→   552→                color: var(--accent-gold);
+   553→   553→                font-size: 0.6875rem;
+   554→   554→                font-weight: 700;
+   555→   555→        }
+   556→   556→
+   557→   557→        /* ===== Table Container ===== */
+   558→   558→        .table-container {
+   559→   559→                min-height: 300px;
+   560→   560→        }
+   561→   561→
+   562→   562→        .loading-state {
+   563→   563→                display: flex;
+   564→   564→                flex-direction: column;
+   565→   565→                align-items: center;
+   566→   566→                justify-content: center;
+   567→   567→                gap: 1rem;
+   568→   568→                padding: 4rem 0;
+   569→   569→                color: var(--text-tertiary);
+   570→   570→                font-size: 0.875rem;
+   571→   571→        }
+   572→   572→
+   573→   573→        .data-table-wrapper {
+   574→   574→                overflow-x: auto;
+   575→   575→                border-radius: 0.75rem;
+   576→   576→                background: var(--panel-bg, rgba(15, 15, 30, 0.6));
+   577→   577→                border: 1px solid rgba(255, 255, 255, 0.06);
+   578→   578→        }
+   579→   579→
+   580→   580→        /* ===== Data Table ===== */
+   581→   581→        .data-table {
+   582→   582→                width: 100%;
+   583→   583→                border-collapse: collapse;
+   584→   584→                font-size: 0.8125rem;
+   585→   585→        }
+   586→   586→
+   587→   587→        .data-table thead {
+   588→   588→                border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+   589→   589→        }
+   590→   590→
+   591→   591→        .data-table th {
+   592→   592→                padding: 0.875rem 1rem;
+   593→   593→                text-align: right;
+   594→   594→                color: var(--text-tertiary);
+   595→   595→                font-weight: 600;
+   596→   596→                font-size: 0.75rem;
+   597→   597→                text-transform: uppercase;
+   598→   598→                letter-spacing: 0.05em;
+   599→   599→                white-space: nowrap;
+   600→   600→        }
+   601→   601→
+   602→   602→        .data-table td {
+   603→   603→                padding: 0.875rem 1rem;
+   604→   604→                color: var(--text-primary);
+   605→   605→                border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+   606→   606→                vertical-align: middle;
+   607→   607→        }
+   608→   608→
+   609→   609→        .data-table tbody tr {
+   610→   610→                transition: background 0.15s ease;
+   611→   611→        }
+   612→   612→
+   613→   613→        .data-table tbody tr:hover {
+   614→   614→                background: rgba(255, 255, 255, 0.02);
+   615→   615→        }
+   616→   616→
+   617→   617→        .data-table tbody tr:last-child td {
+   618→   618→                border-bottom: none;
+   619→   619→        }
+   620→   620→
+   621→   621→        .row-pending {
+   622→   622→                background: rgba(245, 181, 68, 0.03);
+   623→   623→        }
+   624→   624→
+   625→   625→        .row-pending:hover {
+   626→   626→                background: rgba(245, 181, 68, 0.06) !important;
+   627→   627→        }
+   628→   628→
+   629→   629→        /* ===== Cells ===== */
+   630→   630→        .user-cell {
+   631→   631→                display: flex;
+   632→   632→                flex-direction: column;
+   633→   633→                gap: 0.125rem;
+   634→   634→        }
+   635→   635→
+   636→   636→        .user-name {
+   637→   637→                font-weight: 600;
+   638→   638→                color: var(--text-primary);
+   639→   639→        }
+   640→   640→
+   641→   641→        .user-email {
+   642→   642→                font-size: 0.75rem;
+   643→   643→                color: var(--text-tertiary);
+   644→   644→        }
+   645→   645→
+   646→   646→        .type-cell {
+   647→   647→                display: flex;
+   648→   648→                align-items: center;
+   649→   649→                gap: 0.375rem;
+   650→   650→                font-weight: 600;
+   651→   651→        }
+   652→   652→
+   653→   653→        .amount-cell {
+   654→   654→                display: flex;
+   655→   655→                align-items: baseline;
+   656→   656→                gap: 0.375rem;
+   657→   657→        }
+   658→   658→
+   659→   659→        .amount-value {
+   660→   660→                font-weight: 700;
+   661→   661→                font-size: 0.875rem;
+   662→   662→        }
+   663→   663→
+   664→   664→        .amount-currency {
+   665→   665→                font-size: 0.6875rem;
+   666→   666→                color: var(--text-tertiary);
+   667→   667→                font-weight: 500;
+   668→   668→        }
+   669→   669→
+   670→   670→        /* ===== Pills ===== */
+   671→   671→        .pill {
+   672→   672→                display: inline-flex;
+   673→   673→                align-items: center;
+   674→   674→                padding: 0.25rem 0.75rem;
+   675→   675→                border-radius: 9999px;
+   676→   676→                font-size: 0.75rem;
+   677→   677→                font-weight: 600;
+   678→   678→                white-space: nowrap;
+   679→   679→        }
+   680→   680→
+   681→   681→        .pill-gold {
+   682→   682→                background: rgba(245, 181, 68, 0.12);
+   683→   683→                color: var(--accent-gold);
+   684→   684→                border: 1px solid rgba(245, 181, 68, 0.2);
+   685→   685→        }
+   686→   686→
+   687→   687→        .pill-mint {
+   688→   688→                background: rgba(34, 211, 164, 0.12);
+   689→   689→                color: var(--accent-mint);
+   690→   690→                border: 1px solid rgba(34, 211, 164, 0.2);
+   691→   691→        }
+   692→   692→
+   693→   693→        .pill-rose {
+   694→   694→                background: rgba(244, 63, 122, 0.12);
+   695→   695→                color: var(--accent-rose);
+   696→   696→                border: 1px solid rgba(244, 63, 122, 0.2);
+   697→   697→        }
+   698→   698→
+   699→   699→        /* ===== Copy Cell ===== */
+   700→   700→        .copy-cell {
+   701→   701→                display: flex;
+   702→   702→                align-items: center;
+   703→   703→                gap: 0.375rem;
+   704→   704→        }
+   705→   705→
+   706→   706→        .copy-value {
+   707→   707→                font-family: 'JetBrains Mono', 'Fira Code', monospace;
+   708→   708→                font-size: 0.75rem;
+   709→   709→                color: var(--text-secondary);
+   710→   710→                letter-spacing: 0.02em;
+   711→   711→        }
+   712→   712→
+   713→   713→        .copy-btn {
+   714→   714→                display: inline-flex;
+   715→   715→                align-items: center;
+   716→   716→                justify-content: center;
+   717→   717→                padding: 0.25rem;
+   718→   718→                border-radius: 0.375rem;
+   719→   719→                color: var(--text-tertiary);
+   720→   720→                transition: all 0.15s ease;
+   721→   721→        }
+   722→   722→
+   723→   723→        .copy-btn:hover {
+   724→   724→                background: rgba(255, 255, 255, 0.08);
+   725→   725→                color: var(--text-primary);
+   726→   726→        }
+   727→   727→
+   728→   728→        /* ===== TX Input ===== */
+   729→   729→        .tx-input-cell {
+   730→   730→                min-width: 160px;
+   731→   731→        }
+   732→   732→
+   733→   733→        .tx-input {
+   734→   734→                padding: 0.375rem 0.625rem;
+   735→   735→                font-size: 0.75rem;
+   736→   736→                font-family: 'JetBrains Mono', 'Fira Code', monospace;
+   737→   737→                min-width: 140px;
+   738→   738→        }
+   739→   739→
+   740→   740→        /* ===== Date Cell ===== */
+   741→   741→        .date-cell {
+   742→   742→                color: var(--text-tertiary);
+   743→   743→                font-size: 0.75rem;
+   744→   744→                white-space: nowrap;
+   745→   745→        }
+   746→   746→
+   747→   747→        /* ===== Actions Cell ===== */
+   748→   748→        .actions-cell {
+   749→   749→                display: flex;
+   750→   750→                align-items: center;
+   751→   751→                gap: 0.5rem;
+   752→   752→        }
+   753→   753→
+   754→   754→        .btn-sm {
+   755→   755→                display: inline-flex;
+   756→   756→                align-items: center;
+   757→   757→                gap: 0.375rem;
+   758→   758→                padding: 0.375rem 0.75rem;
+   759→   759→                border-radius: 0.5rem;
+   760→   760→                font-size: 0.75rem;
+   761→   761→                font-weight: 600;
+   762→   762→                cursor: pointer;
+   763→   763→                border: none;
+   764→   764→                transition: all 0.2s ease;
+   765→   765→                white-space: nowrap;
+   766→   766→        }
+   767→   767→
+   768→   768→        .btn-sm:disabled {
+   769→   769→                opacity: 0.5;
+   770→   770→                cursor: not-allowed;
+   771→   771→        }
+   772→   772→
+   773→   773→        /* ===== Pagination ===== */
+   774→   774→        .pagination-wrapper {
+   775→   775→                display: flex;
+   776→   776→                justify-content: center;
+   777→   777→                padding-top: 1rem;
+   778→   778→        }
+   779→   779→
+   780→   780→        /* ===== Utility ===== */
+   781→   781→        .text-tertiary {
+   782→   782→                color: var(--text-tertiary);
+   783→   783→        }
+   784→   784→
+   785→   785→        /* ===== Responsive ===== */
+   786→   786→        @media (max-width: 768px) {
+   787→   787→                .filters-bar {
+   788→   788→                        flex-direction: column;
+   789→   789→                        align-items: stretch;
+   790→   790→                }
+   791→   791→
+   792→   792→                .search-wrapper {
+   793→   793→                        min-width: 100%;
+   794→   794→                }
+   795→   795→
+   796→   796→                .status-filters {
+   797→   797→                        overflow-x: auto;
+   798→   798→                        padding-bottom: 0.25rem;
+   799→   799→                }
+   800→   800→
+   801→   801→                .data-table th,
+   802→   802→                .data-table td {
+   803→   803→                        padding: 0.625rem 0.75rem;
+   804→   804→                }
+   805→   805→        }
+   806→   806→</style>
+   807→   807→
