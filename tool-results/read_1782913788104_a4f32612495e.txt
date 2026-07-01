@@ -1,0 +1,560 @@
+     1→     1→<script lang="ts">
+     2→     2→        import { onMount } from 'svelte';
+     3→     3→        import { authGet, authPut, authPost } from '$lib/api/client';
+     4→     4→        import { toast } from '$lib/stores/toast';
+     5→     5→        import PageHeader from '$lib/components/PageHeader.svelte';
+     6→     6→        import Modal from '$lib/components/Modal.svelte';
+     7→     7→        import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+     8→     8→        import type { SystemSettings, SSLStatus, MetricsData } from '$lib/api/types';
+     9→     9→        import {
+    10→    10→                Settings, Globe, Shield, Lock, RefreshCw, Save,
+    11→    11→                CheckCircle, AlertTriangle, XCircle, Server, Wifi, Activity
+    12→    12→        } from 'lucide-svelte';
+    13→    13→
+    14→    14→        let settings = $state<SystemSettings | null>(null);
+    15→    15→        let sslStatus = $state<SSLStatus | null>(null);
+    16→    16→        let metrics = $state<MetricsData | null>(null);
+    17→    17→        let loading = $state(true);
+    18→    18→        let error = $state('');
+    19→    19→        let activeTab = $state('overview');
+    20→    20→        let saving = $state(false);
+    21→    21→
+    22→    22→        let frontendDomain = $state('');
+    23→    23→        let backendDomain = $state('');
+    24→    24→        let adminDomain = $state('');
+    25→    25→        let mainDomain = $state('');
+    26→    26→        let sslEnabled = $state(false);
+    27→    27→        let sslEmail = $state('');
+    28→    28→        let sslType = $state('letsencrypt');
+    29→    29→        let registrationOpen = $state(true);
+    30→    30→        let maintenanceMode = $state(false);
+    31→    31→        let maintenanceMessage = $state('');
+    32→    32→        let corsOrigins = $state('');
+    33→    33→        let sslModalOpen = $state(false);
+    34→    34→        let sslModalLoading = $state(false);
+    35→    35→        let certPem = $state('');
+    36→    36→        let keyPem = $state('');
+    37→    37→
+    38→    38→        // Computed health icon/color
+    39→    39→        let sslHealthIcon = $derived(
+    40→    40→                sslStatus?.health === 'healthy' ? CheckCircle :
+    41→    41→                sslStatus?.health === 'warning' ? AlertTriangle : XCircle
+    42→    42→        );
+    43→    43→        let sslHealthColor = $derived(
+    44→    44→                sslStatus?.health === 'healthy' ? 'text-accent-mint' :
+    45→    45→                sslStatus?.health === 'warning' ? 'text-accent-gold' : 'text-accent-rose'
+    46→    46→        );
+    47→    47→        let sslHealthLabel = $derived(
+    48→    48→                sslStatus?.health === 'healthy' ? 'سليم' :
+    49→    49→                sslStatus?.health === 'warning' ? 'تحذير' : 'خطر'
+    50→    50→        );
+    51→    51→
+    52→    52→        const tabs = [
+    53→    53→                { id: 'overview', label: 'نظرة عامة', icon: Settings },
+    54→    54→                { id: 'domains', label: 'النطاقات', icon: Globe },
+    55→    55→                { id: 'ssl', label: 'SSL', icon: Lock },
+    56→    56→                { id: 'security', label: 'الأمان', icon: Shield },
+    57→    57→                { id: 'features', label: 'الميزات', icon: Activity }
+    58→    58→        ];
+    59→    59→
+    60→    60→        async function loadSettings() {
+    61→    61→                loading = true;
+    62→    62→                error = '';
+    63→    63→                const res = await authGet<SystemSettings>('/api/v1/admin/settings');
+    64→    64→                if (res.success && res.data) {
+    65→    65→                        settings = res.data;
+    66→    66→                        frontendDomain = res.data.domains?.frontend_domain || '';
+    67→    67→                        backendDomain = res.data.domains?.backend_domain || '';
+    68→    68→                        adminDomain = res.data.domains?.admin_domain || '';
+    69→    69→                        mainDomain = res.data.domains?.main_domain || '';
+    70→    70→                        sslEnabled = res.data.ssl?.ssl_enabled === 'true';
+    71→    71→                        corsOrigins = res.data.security?.cors_extra_origins || '';
+    72→    72→                        registrationOpen = res.data.features?.registration_open !== 'false';
+    73→    73→                        maintenanceMode = res.data.features?.maintenance_mode === 'true';
+    74→    74→                        maintenanceMessage = res.data.features?.maintenance_message || '';
+    75→    75→                } else {
+    76→    76→                        error = res.error || 'فشل تحميل الإعدادات';
+    77→    77→                }
+    78→    78→                loadSSLStatus();
+    79→    79→                loadMetrics();
+    80→    80→                loading = false;
+    81→    81→        }
+    82→    82→
+    83→    83→        async function loadSSLStatus() {
+    84→    84→                const res = await authGet<SSLStatus>('/api/v1/admin/ssl/status');
+    85→    85→                if (res.success && res.data) sslStatus = res.data;
+    86→    86→        }
+    87→    87→
+    88→    88→        async function loadMetrics() {
+    89→    89→                const res = await authGet<MetricsData>('/api/v1/admin/metrics');
+    90→    90→                if (res.success && res.data) metrics = res.data;
+    91→    91→        }
+    92→    92→
+    93→    93→        async function saveSettings(keys: Record<string, string>) {
+    94→    94→                saving = true;
+    95→    95→                const res = await authPut('/api/v1/admin/settings', { settings: keys });
+    96→    96→                if (res.success) {
+    97→    97→                        toast.success('تم حفظ الإعدادات');
+    98→    98→                        loadSettings();
+    99→    99→                } else {
+   100→   100→                        toast.error(res.error || 'فشل حفظ الإعدادات');
+   101→   101→                }
+   102→   102→                saving = false;
+   103→   103→        }
+   104→   104→
+   105→   105→        async function saveDomains() {
+   106→   106→                await saveSettings({
+   107→   107→                        frontend_domain: frontendDomain,
+   108→   108→                        backend_domain: backendDomain,
+   109→   109→                        admin_domain: adminDomain,
+   110→   110→                        main_domain: mainDomain
+   111→   111→                });
+   112→   112→        }
+   113→   113→
+   114→   114→        async function saveSSL() {
+   115→   115→                await saveSettings({
+   116→   116→                        ssl_enabled: String(sslEnabled),
+   117→   117→                        ssl_cert_path: sslStatus?.cert_path || '',
+   118→   118→                        ssl_key_path: sslStatus?.key_path || ''
+   119→   119→                });
+   120→   120→        }
+   121→   121→
+   122→   122→        async function saveSecurity() {
+   123→   123→                await saveSettings({ cors_extra_origins: corsOrigins });
+   124→   124→        }
+   125→   125→
+   126→   126→        async function saveFeatures() {
+   127→   127→                await saveSettings({
+   128→   128→                        registration_open: String(registrationOpen),
+   129→   129→                        maintenance_mode: String(maintenanceMode),
+   130→   130→                        maintenance_message: maintenanceMessage
+   131→   131→                });
+   132→   132→        }
+   133→   133→
+   134→   134→        async function generateSSL() {
+   135→   135→                sslModalLoading = true;
+   136→   136→                const res = await authPost('/api/v1/admin/ssl/generate', {
+   137→   137→                        type: sslType,
+   138→   138→                        email: sslEmail,
+   139→   139→                        domains: [mainDomain, adminDomain, frontendDomain].filter(Boolean)
+   140→   140→                });
+   141→   141→                if (res.success) {
+   142→   142→                        toast.success('تم توليد شهادة SSL بنجاح');
+   143→   143→                        loadSSLStatus();
+   144→   144→                } else {
+   145→   145→                        toast.error(res.error || 'فشل توليد شهادة SSL');
+   146→   146→                }
+   147→   147→                sslModalLoading = false;
+   148→   148→        }
+   149→   149→
+   150→   150→        async function renewSSL() {
+   151→   151→                sslModalLoading = true;
+   152→   152→                const res = await authPost('/api/v1/admin/ssl/renew');
+   153→   153→                if (res.success) {
+   154→   154→                        toast.success('تم تجديد شهادة SSL');
+   155→   155→                        loadSSLStatus();
+   156→   156→                } else {
+   157→   157→                        toast.error(res.error || 'فشل تجديد شهادة SSL');
+   158→   158→                }
+   159→   159→                sslModalLoading = false;
+   160→   160→        }
+   161→   161→
+   162→   162→        async function installCustomSSL() {
+   163→   163→                if (!certPem || !keyPem) { toast.error('يرجى إدخال الشهادة والمفتاح'); return; }
+   164→   164→                sslModalLoading = true;
+   165→   165→                const res = await authPost('/api/v1/admin/ssl/install', {
+   166→   166→                        cert_pem: certPem,
+   167→   167→                        key_pem: keyPem,
+   168→   168→                        domains: [mainDomain].filter(Boolean)
+   169→   169→                });
+   170→   170→                if (res.success) {
+   171→   171→                        toast.success('تم تثبيت الشهادة');
+   172→   172→                        sslModalOpen = false;
+   173→   173→                        loadSSLStatus();
+   174→   174→                } else {
+   175→   175→                        toast.error(res.error || 'فشل تثبيت الشهادة');
+   176→   176→                }
+   177→   177→                sslModalLoading = false;
+   178→   178→        }
+   179→   179→
+   180→   180→        async function reloadNginx() {
+   181→   181→                const res = await authPost('/api/v1/admin/nginx/reload');
+   182→   182→                if (res.success) {
+   183→   183→                        toast.success('تم إعادة تحميل Nginx');
+   184→   184→                } else {
+   185→   185→                        toast.error(res.error || 'فشل إعادة تحميل Nginx');
+   186→   186→                }
+   187→   187→        }
+   188→   188→
+   189→   189→        onMount(() => { loadSettings(); });
+   190→   190→</script>
+   191→   191→
+   192→   192→<PageHeader title="إعدادات النظام" subtitle="إدارة النطاقات والشهادات والميزات">
+   193→   193→        <button class="btn-ghost" onclick={loadSettings} disabled={loading}>
+   194→   194→                <RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
+   195→   195→        </button>
+   196→   196→</PageHeader>
+   197→   197→
+   198→   198→{#if error}
+   199→   199→        <ErrorAlert message={error} onclose={() => (error = '')} />
+   200→   200→{/if}
+   201→   201→
+   202→   202→<!-- Tabs -->
+   203→   203→<div class="flex items-center gap-1 mb-6 p-1 panel w-fit">
+   204→   204→        {#each tabs as tab}
+   205→   205→                <button
+   206→   206→                        class="tab-btn {activeTab === tab.id ? 'tab-btn-active' : ''} flex items-center gap-2"
+   207→   207→                        onclick={() => (activeTab = tab.id)}
+   208→   208→                >
+   209→   209→                        <tab.icon size={14} />
+   210→   210→                        {tab.label}
+   211→   211→                </button>
+   212→   212→        {/each}
+   213→   213→</div>
+   214→   214→
+   215→   215→<!-- Tab: Overview -->
+   216→   216→{#if activeTab === 'overview'}
+   217→   217→        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   218→   218→                <div class="panel p-5">
+   219→   219→                        <h3 class="text-base font-bold text-ink-primary mb-4 flex items-center gap-2">
+   220→   220→                                <Server size={18} class="text-accent-violet" /> معلومات النظام
+   221→   221→                        </h3>
+   222→   222→                        {#if metrics}
+   223→   223→                                <div class="grid grid-cols-2 gap-4 text-sm">
+   224→   224→                                        <div>
+   225→   225→                                                <span class="text-ink-muted block text-xs mb-1">Goroutines</span>
+   226→   226→                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.goroutines}</span>
+   227→   227→                                        </div>
+   228→   228→                                        <div>
+   229→   229→                                                <span class="text-ink-muted block text-xs mb-1">Heap Alloc</span>
+   230→   230→                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.heap_alloc_mb.toFixed(1)} MB</span>
+   231→   231→                                        </div>
+   232→   232→                                        <div>
+   233→   233→                                                <span class="text-ink-muted block text-xs mb-1">Heap In Use</span>
+   234→   234→                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.heap_in_use_mb.toFixed(1)} MB</span>
+   235→   235→                                        </div>
+   236→   236→                                        <div>
+   237→   237→                                                <span class="text-ink-muted block text-xs mb-1">GC Count</span>
+   238→   238→                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.num_gc}</span>
+   239→   239→                                        </div>
+   240→   240→                                        <div>
+   241→   241→                                                <span class="text-ink-muted block text-xs mb-1">Go Version</span>
+   242→   242→                                                <span class="text-ink-primary">{metrics.runtime.go_version}</span>
+   243→   243→                                        </div>
+   244→   244→                                        <div>
+   245→   245→                                                <span class="text-ink-muted block text-xs mb-1">CPU Cores</span>
+   246→   246→                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.num_cpu}</span>
+   247→   247→                                        </div>
+   248→   248→                                </div>
+   249→   249→                        {:else}
+   250→   250→                                <div class="skeleton h-32"></div>
+   251→   251→                        {/if}
+   252→   252→                </div>
+   253→   253→
+   254→   254→                <div class="panel p-5">
+   255→   255→                        <h3 class="text-base font-bold text-ink-primary mb-4 flex items-center gap-2">
+   256→   256→                                <Wifi size={18} class="text-accent-azure" /> الاتصالات
+   257→   257→                        </h3>
+   258→   258→                        {#if metrics}
+   259→   259→                                <div class="grid grid-cols-2 gap-4 text-sm">
+   260→   260→                                        <div>
+   261→   261→                                                <span class="text-ink-muted block text-xs mb-1">Market Clients</span>
+   262→   262→                                                <span class="text-ink-primary tabular-nums">{metrics.websocket.market_clients}</span>
+   263→   263→                                        </div>
+   264→   264→                                        <div>
+   265→   265→                                                <span class="text-ink-muted block text-xs mb-1">User Clients</span>
+   266→   266→                                                <span class="text-ink-primary tabular-nums">{metrics.websocket.user_clients}</span>
+   267→   267→                                        </div>
+   268→   268→                                        <div>
+   269→   269→                                                <span class="text-ink-muted block text-xs mb-1">Online Users</span>
+   270→   270→                                                <span class="text-ink-primary tabular-nums">{metrics.websocket.online_users}</span>
+   271→   271→                                        </div>
+   272→   272→                                        <div>
+   273→   273→                                                <span class="text-ink-muted block text-xs mb-1">SSE Subscribers</span>
+   274→   274→                                                <span class="text-ink-primary tabular-nums">{metrics.sse.admin_subscribers}</span>
+   275→   275→                                        </div>
+   276→   276→                                        <div>
+   277→   277→                                                <span class="text-ink-muted block text-xs mb-1">Binance</span>
+   278→   278→                                                <span class={metrics.upstream.binance_connected ? 'text-accent-mint' : 'text-accent-rose'}>
+   279→   279→                                                        {metrics.upstream.binance_connected ? 'متصل' : 'غير متصل'}
+   280→   280→                                                </span>
+   281→   281→                                        </div>
+   282→   282→                                        <div>
+   283→   283→                                                <span class="text-ink-muted block text-xs mb-1">Binance Symbols</span>
+   284→   284→                                                <span class="text-ink-primary tabular-nums">{metrics.upstream.binance_symbols}</span>
+   285→   285→                                        </div>
+   286→   286→                                </div>
+   287→   287→                        {:else}
+   288→   288→                                <div class="skeleton h-32"></div>
+   289→   289→                        {/if}
+   290→   290→                </div>
+   291→   291→
+   292→   292→                <div class="panel p-5">
+   293→   293→                        <h3 class="text-base font-bold text-ink-primary mb-4 flex items-center gap-2">
+   294→   294→                                <Lock size={18} class="text-accent-gold" /> حالة SSL
+   295→   295→                        </h3>
+   296→   296→                        {#if sslStatus}
+   297→   297→                                <div class="flex items-center gap-3 mb-4">
+   298→   298→                                        {#if sslStatus.health === 'healthy'}
+   299→   299→                                                <CheckCircle size={20} class="text-accent-mint" />
+   300→   300→                                        {:else if sslStatus.health === 'warning'}
+   301→   301→                                                <AlertTriangle size={20} class="text-accent-gold" />
+   302→   302→                                        {:else}
+   303→   303→                                                <XCircle size={20} class="text-accent-rose" />
+   304→   304→                                        {/if}
+   305→   305→                                        <div>
+   306→   306→                                                <p class="text-sm font-bold {sslHealthColor}">{sslHealthLabel}</p>
+   307→   307→                                                <p class="text-xs text-ink-muted">{sslStatus.enabled ? 'مفعّل' : 'معطّل'}</p>
+   308→   308→                                        </div>
+   309→   309→                                </div>
+   310→   310→                                {#if sslStatus.days_remaining != null}
+   311→   311→                                        <div class="text-sm text-ink-secondary mb-2">
+   312→   312→                                                الأيام المتبقية: <span class="tabular-nums font-bold {sslStatus.days_remaining < 30 ? 'text-accent-rose' : 'text-accent-mint'}">{sslStatus.days_remaining}</span>
+   313→   313→                                        </div>
+   314→   314→                                {/if}
+   315→   315→                                {#if sslStatus.issuer_org}
+   316→   316→                                        <div class="text-xs text-ink-muted">الجهة المصدرة: {sslStatus.issuer_org}</div>
+   317→   317→                                {/if}
+   318→   318→                        {:else}
+   319→   319→                                <div class="skeleton h-24"></div>
+   320→   320→                        {/if}
+   321→   321→                </div>
+   322→   322→
+   323→   323→                <div class="panel p-5">
+   324→   324→                        <h3 class="text-base font-bold text-ink-primary mb-4">إجراءات سريعة</h3>
+   325→   325→                        <div class="flex flex-col gap-2">
+   326→   326→                                <button class="btn-secondary w-full justify-start" onclick={reloadNginx}>
+   327→   327→                                        <RefreshCw size={16} /> إعادة تحميل Nginx
+   328→   328→                                </button>
+   329→   329→                                <button class="btn-secondary w-full justify-start" onclick={() => (activeTab = 'ssl')}>
+   330→   330→                                        <Lock size={16} /> إدارة SSL
+   331→   331→                                </button>
+   332→   332→                                <button class="btn-secondary w-full justify-start" onclick={() => (activeTab = 'domains')}>
+   333→   333→                                        <Globe size={16} /> إدارة النطاقات
+   334→   334→                                </button>
+   335→   335→                        </div>
+   336→   336→                </div>
+   337→   337→        </div>
+   338→   338→{/if}
+   339→   339→
+   340→   340→<!-- Tab: Domains -->
+   341→   341→{#if activeTab === 'domains'}
+   342→   342→        <div class="panel p-6 max-w-2xl">
+   343→   343→                <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+   344→   344→                        <Globe size={18} class="text-accent-gold" /> إعدادات النطاقات
+   345→   345→                </h3>
+   346→   346→                <form onsubmit={(e) => { e.preventDefault(); saveDomains(); }} class="flex flex-col gap-5">
+   347→   347→                        <div>
+   348→   348→                                <label for="mainDomain" class="block text-sm font-medium text-ink-secondary mb-2">النطاق الرئيسي</label>
+   349→   349→                                <input id="mainDomain" type="text" bind:value={mainDomain} class="input-field" placeholder="example.com" dir="ltr" />
+   350→   350→                        </div>
+   351→   351→                        <div>
+   352→   352→                                <label for="frontendDomain" class="block text-sm font-medium text-ink-secondary mb-2">نطاق الواجهة</label>
+   353→   353→                                <input id="frontendDomain" type="text" bind:value={frontendDomain} class="input-field" placeholder="www.example.com" dir="ltr" />
+   354→   354→                        </div>
+   355→   355→                        <div>
+   356→   356→                                <label for="backendDomain" class="block text-sm font-medium text-ink-secondary mb-2">نطاق API</label>
+   357→   357→                                <input id="backendDomain" type="text" bind:value={backendDomain} class="input-field" placeholder="api.example.com" dir="ltr" />
+   358→   358→                        </div>
+   359→   359→                        <div>
+   360→   360→                                <label for="adminDomain" class="block text-sm font-medium text-ink-secondary mb-2">نطاق لوحة الإدارة</label>
+   361→   361→                                <input id="adminDomain" type="text" bind:value={adminDomain} class="input-field" placeholder="admin.example.com" dir="ltr" />
+   362→   362→                        </div>
+   363→   363→                        <div class="flex items-center gap-3 pt-2">
+   364→   364→                                <button type="submit" class="btn-primary" disabled={saving}>
+   365→   365→                                        {#if saving}<RefreshCw size={14} class="animate-spin" />{:else}<Save size={14} />{/if}
+   366→   366→                                        حفظ النطاقات
+   367→   367→                                </button>
+   368→   368→                                <button type="button" class="btn-secondary" onclick={reloadNginx}>
+   369→   369→                                        <RefreshCw size={14} /> إعادة تحميل Nginx
+   370→   370→                                </button>
+   371→   371→                        </div>
+   372→   372→                </form>
+   373→   373→        </div>
+   374→   374→{/if}
+   375→   375→
+   376→   376→<!-- Tab: SSL -->
+   377→   377→{#if activeTab === 'ssl'}
+   378→   378→        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   379→   379→                <div class="panel p-6">
+   380→   380→                        <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+   381→   381→                                <Lock size={18} class="text-accent-gold" /> إعدادات SSL
+   382→   382→                        </h3>
+   383→   383→                        <div class="flex flex-col gap-5">
+   384→   384→                                <div class="flex items-center gap-3">
+   385→   385→                                        <button
+   386→   386→                                                type="button"
+   387→   387→                                                onclick={() => (sslEnabled = !sslEnabled)}
+   388→   388→                                                class="toggle-track {sslEnabled ? 'toggle-track-active' : ''}"
+   389→   389→                                                aria-label="تفعيل SSL"
+   390→   390→                                        >
+   391→   391→                                                <div class="toggle-thumb {sslEnabled ? 'toggle-thumb-active right-1' : 'right-[22px]'}"></div>
+   392→   392→                                        </button>
+   393→   393→                                        <span class="text-sm text-ink-secondary">{sslEnabled ? 'SSL مفعّل' : 'SSL معطّل'}</span>
+   394→   394→                                </div>
+   395→   395→                                <div>
+   396→   396→                                        <label for="sslType" class="block text-sm font-medium text-ink-secondary mb-2">نوع الشهادة</label>
+   397→   397→                                        <select id="sslType" bind:value={sslType} class="input-field">
+   398→   398→                                                <option value="letsencrypt">Let's Encrypt</option>
+   399→   399→                                                <option value="local">محلي (Self-signed)</option>
+   400→   400→                                                <option value="custom">مخصص</option>
+   401→   401→                                        </select>
+   402→   402→                                </div>
+   403→   403→                                {#if sslType === 'letsencrypt'}
+   404→   404→                                        <div>
+   405→   405→                                                <label for="sslEmail" class="block text-sm font-medium text-ink-secondary mb-2">البريد الإلكتروني</label>
+   406→   406→                                                <input id="sslEmail" type="email" bind:value={sslEmail} class="input-field" placeholder="admin@example.com" dir="ltr" />
+   407→   407→                                        </div>
+   408→   408→                                {/if}
+   409→   409→                                <div class="flex items-center gap-3 pt-2">
+   410→   410→                                        <button class="btn-primary" onclick={() => {
+   411→   411→                                                if (sslType === 'custom') { sslModalOpen = true; }
+   412→   412→                                                else { generateSSL(); }
+   413→   413→                                        }} disabled={sslModalLoading}>
+   414→   414→                                                {#if sslModalLoading}<RefreshCw size={14} class="animate-spin" />{:else}<Lock size={14} />{/if}
+   415→   415→                                                {sslType === 'custom' ? 'تثبيت شهادة' : 'توليد شهادة'}
+   416→   416→                                        </button>
+   417→   417→                                        {#if sslStatus?.type === 'letsencrypt'}
+   418→   418→                                                <button class="btn-secondary" onclick={renewSSL} disabled={sslModalLoading}>
+   419→   419→                                                        <RefreshCw size={14} /> تجديد
+   420→   420→                                                </button>
+   421→   421→                                        {/if}
+   422→   422→                                        <button class="btn-secondary" onclick={saveSSL} disabled={saving}>
+   423→   423→                                                <Save size={14} /> حفظ الإعدادات
+   424→   424→                                        </button>
+   425→   425→                                </div>
+   426→   426→                        </div>
+   427→   427→                </div>
+   428→   428→
+   429→   429→                <div class="panel p-6">
+   430→   430→                        <h3 class="text-base font-bold text-ink-primary mb-6">حالة الشهادة</h3>
+   431→   431→                        {#if sslStatus}
+   432→   432→                                <div class="flex flex-col gap-4 text-sm">
+   433→   433→                                        <div class="flex items-center gap-2">
+   434→   434→                                                {#if sslStatus.health === 'healthy'}
+   435→   435→                                                        <CheckCircle size={18} class="text-accent-mint" />
+   436→   436→                                                {:else if sslStatus.health === 'warning'}
+   437→   437→                                                        <AlertTriangle size={18} class="text-accent-gold" />
+   438→   438→                                                {:else}
+   439→   439→                                                        <XCircle size={18} class="text-accent-rose" />
+   440→   440→                                                {/if}
+   441→   441→                                                <span class="font-bold {sslHealthColor}">{sslHealthLabel}</span>
+   442→   442→                                        </div>
+   443→   443→                                        {#if sslStatus.subject}
+   444→   444→                                                <div><span class="text-ink-muted">الموضوع:</span> <span class="text-ink-primary" dir="ltr">{sslStatus.subject}</span></div>
+   445→   445→                                        {/if}
+   446→   446→                                        {#if sslStatus.issuer_org}
+   447→   447→                                                <div><span class="text-ink-muted">الجهة المصدرة:</span> <span class="text-ink-primary">{sslStatus.issuer_org}</span></div>
+   448→   448→                                        {/if}
+   449→   449→                                        {#if sslStatus.not_before}
+   450→   450→                                                <div><span class="text-ink-muted">تاريخ الإصدار:</span> <span class="text-ink-primary">{sslStatus.not_before}</span></div>
+   451→   451→                                        {/if}
+   452→   452→                                        {#if sslStatus.not_after}
+   453→   453→                                                <div><span class="text-ink-muted">تاريخ الانتهاء:</span> <span class="text-ink-primary">{sslStatus.not_after}</span></div>
+   454→   454→                                        {/if}
+   455→   455→                                        {#if sslStatus.days_remaining != null}
+   456→   456→                                                <div>
+   457→   457→                                                        <span class="text-ink-muted">الأيام المتبقية:</span>
+   458→   458→                                                        <span class="tabular-nums font-bold {sslStatus.days_remaining < 30 ? 'text-accent-rose' : 'text-accent-mint'}">{sslStatus.days_remaining}</span>
+   459→   459→                                                </div>
+   460→   460→                                        {/if}
+   461→   461→                                        {#if sslStatus.sans?.length}
+   462→   462→                                                <div>
+   463→   463→                                                        <span class="text-ink-muted block mb-1">النطاقات المشمولة (SANs):</span>
+   464→   464→                                                        <div class="flex flex-wrap gap-1">
+   465→   465→                                                                {#each sslStatus.sans as san}
+   466→   466→                                                                        <span class="pill-pending text-[10px]" dir="ltr">{san}</span>
+   467→   467→                                                                {/each}
+   468→   468→                                                        </div>
+   469→   469→                                                </div>
+   470→   470→                                        {/if}
+   471→   471→                                </div>
+   472→   472→                        {:else}
+   473→   473→                                <div class="skeleton h-48"></div>
+   474→   474→                        {/if}
+   475→   475→                </div>
+   476→   476→        </div>
+   477→   477→{/if}
+   478→   478→
+   479→   479→<!-- Tab: Security -->
+   480→   480→{#if activeTab === 'security'}
+   481→   481→        <div class="panel p-6 max-w-2xl">
+   482→   482→                <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+   483→   483→                        <Shield size={18} class="text-accent-azure" /> إعدادات الأمان
+   484→   484→                </h3>
+   485→   485→                <form onsubmit={(e) => { e.preventDefault(); saveSecurity(); }} class="flex flex-col gap-5">
+   486→   486→                        <div>
+   487→   487→                                <label for="corsOrigins" class="block text-sm font-medium text-ink-secondary mb-2">أصول CORS إضافية</label>
+   488→   488→                                <textarea id="corsOrigins" bind:value={corsOrigins} class="input-field min-h-[100px] font-mono text-xs" placeholder="https://example.com, https://admin.example.com" dir="ltr"></textarea>
+   489→   489→                                <p class="text-xs text-ink-muted mt-1">افصل بين النطاقات بفواصل</p>
+   490→   490→                        </div>
+   491→   491→                        <button type="submit" class="btn-primary w-fit" disabled={saving}>
+   492→   492→                                {#if saving}<RefreshCw size={14} class="animate-spin" />{:else}<Save size={14} />{/if}
+   493→   493→                                حفظ
+   494→   494→                        </button>
+   495→   495→                </form>
+   496→   496→        </div>
+   497→   497→{/if}
+   498→   498→
+   499→   499→<!-- Tab: Features -->
+   500→   500→{#if activeTab === 'features'}
+   501→   501→        <div class="panel p-6 max-w-2xl">
+   502→   502→                <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+   503→   503→                        <Activity size={18} class="text-accent-mint" /> ميزات النظام
+   504→   504→                </h3>
+   505→   505→                <form onsubmit={(e) => { e.preventDefault(); saveFeatures(); }} class="flex flex-col gap-6">
+   506→   506→                        <div class="flex items-center justify-between">
+   507→   507→                                <div>
+   508→   508→                                        <p class="text-sm font-medium text-ink-primary">التسجيل المفتوح</p>
+   509→   509→                                        <p class="text-xs text-ink-muted">السماح للمستخدمين الجدد بالتسجيل</p>
+   510→   510→                                </div>
+   511→   511→                                <button type="button" onclick={() => (registrationOpen = !registrationOpen)} class="toggle-track {registrationOpen ? 'toggle-track-active' : ''}" aria-label="تفعيل التسجيل">
+   512→   512→                                        <div class="toggle-thumb {registrationOpen ? 'toggle-thumb-active right-1' : 'right-[22px]'}"></div>
+   513→   513→                                </button>
+   514→   514→                        </div>
+   515→   515→                        <div class="glass-divider"></div>
+   516→   516→                        <div class="flex items-center justify-between">
+   517→   517→                                <div>
+   518→   518→                                        <p class="text-sm font-medium text-ink-primary">وضع الصيانة</p>
+   519→   519→                                        <p class="text-xs text-ink-muted">تعطيل الواجهة للمستخدمين مع عرض رسالة صيانة</p>
+   520→   520→                                </div>
+   521→   521→                                <button type="button" onclick={() => (maintenanceMode = !maintenanceMode)} class="toggle-track {maintenanceMode ? 'toggle-track-active' : ''}" aria-label="وضع الصيانة">
+   522→   522→                                        <div class="toggle-thumb {maintenanceMode ? 'toggle-thumb-active right-1' : 'right-[22px]'}"></div>
+   523→   523→                                </button>
+   524→   524→                        </div>
+   525→   525→                        {#if maintenanceMode}
+   526→   526→                                <div>
+   527→   527→                                        <label for="maintenanceMsg" class="block text-sm font-medium text-ink-secondary mb-2">رسالة الصيانة</label>
+   528→   528→                                        <textarea id="maintenanceMsg" bind:value={maintenanceMessage} class="input-field min-h-[80px]" placeholder="الموقع تحت الصيانة، سنعود قريباً..."></textarea>
+   529→   529→                                </div>
+   530→   530→                        {/if}
+   531→   531→                        <div class="glass-divider"></div>
+   532→   532→                        <button type="submit" class="btn-primary w-fit" disabled={saving}>
+   533→   533→                                {#if saving}<RefreshCw size={14} class="animate-spin" />{:else}<Save size={14} />{/if}
+   534→   534→                                حفظ الميزات
+   535→   535→                        </button>
+   536→   536→                </form>
+   537→   537→        </div>
+   538→   538→{/if}
+   539→   539→
+   540→   540→<!-- Custom SSL Install Modal -->
+   541→   541→<Modal bind:open={sslModalOpen} title="تثبيت شهادة SSL مخصصة" icon={Lock} size="lg">
+   542→   542→        <div class="flex flex-col gap-4">
+   543→   543→                <div>
+   544→   544→                        <label for="certPem" class="block text-sm font-medium text-ink-secondary mb-2">شهادة PEM</label>
+   545→   545→                        <textarea id="certPem" bind:value={certPem} class="input-field min-h-[120px] font-mono text-xs" placeholder="-----BEGIN CERTIFICATE-----..." dir="ltr"></textarea>
+   546→   546→                </div>
+   547→   547→                <div>
+   548→   548→                        <label for="keyPem" class="block text-sm font-medium text-ink-secondary mb-2">مفتاح PEM</label>
+   549→   549→                        <textarea id="keyPem" bind:value={keyPem} class="input-field min-h-[120px] font-mono text-xs" placeholder="-----BEGIN PRIVATE KEY-----..." dir="ltr"></textarea>
+   550→   550→                </div>
+   551→   551→        </div>
+   552→   552→        {#snippet footer()}
+   553→   553→                <button class="btn-ghost" onclick={() => (sslModalOpen = false)}>إلغاء</button>
+   554→   554→                <button class="btn-primary" onclick={installCustomSSL} disabled={sslModalLoading || !certPem || !keyPem}>
+   555→   555→                        {#if sslModalLoading}<RefreshCw size={14} class="animate-spin" />{/if}
+   556→   556→                        تثبيت
+   557→   557→                </button>
+   558→   558→        {/snippet}
+   559→   559→</Modal>
+   560→   560→
