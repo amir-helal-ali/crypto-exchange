@@ -1,69 +1,37 @@
 <script lang="ts">
-	import { formatNumber } from '$lib/utils/helpers';
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
-	let {
-		page = $bindable(1),
-		totalPages = 1,
-		totalItems = 0,
-		itemLabel = 'عنصر'
-	}: {
+	interface Props {
 		page: number;
-		totalPages: number;
-		totalItems: number;
-		itemLabel?: string;
-	} = $props();
-
-	function goTo(p: number) {
-		if (p >= 1 && p <= totalPages) page = p;
+		total: number;
+		limit: number;
+		onchange: (page: number) => void;
 	}
 
-	let pages = $derived.by(() => {
-		const arr: (number | string)[] = [];
-		if (totalPages <= 7) {
-			for (let i = 1; i <= totalPages; i++) arr.push(i);
-		} else {
-			arr.push(1);
-			if (page > 3) arr.push('…');
-			for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) arr.push(i);
-			if (page < totalPages - 2) arr.push('…');
-			arr.push(totalPages);
-		}
-		return arr;
-	});
+	let { page, total, limit, onchange }: Props = $props();
+	const totalPages = $derived(Math.ceil(total / limit));
 </script>
 
 {#if totalPages > 1}
-	<div class="flex items-center justify-between pt-4">
-		<span class="text-sm text-ink-muted">
-			{formatNumber(totalItems)} {itemLabel}
+	<div class="flex items-center justify-between mt-4 pt-4 glass-divider">
+		<span class="text-sm text-[var(--ink-muted)]">
+			عرض {((page - 1) * limit) + 1} — {Math.min(page * limit, total)} من {total}
 		</span>
-		<div class="flex items-center gap-1">
+		<div class="flex items-center gap-2">
 			<button
-				class="btn-ghost px-2 py-1.5 disabled:opacity-30"
-				onclick={() => goTo(page - 1)}
+				class="btn-ghost text-sm"
 				disabled={page <= 1}
+				onclick={() => onchange(page - 1)}
 			>
 				<ChevronRight size={16} />
 			</button>
-			{#each pages as p}
-				{#if p === '…'}
-					<span class="px-2 text-ink-muted">…</span>
-				{:else}
-					<button
-						class="min-w-[32px] h-8 rounded-lg text-sm font-medium transition-all {p === page
-							? 'bg-accent-gold/15 text-accent-gold border border-accent-gold/20'
-							: 'text-ink-secondary hover:bg-white/5'}"
-						onclick={() => goTo(p as number)}
-					>
-						{p}
-					</button>
-				{/if}
-			{/each}
+			<span class="text-sm tabular-nums text-[var(--ink-secondary)]">
+				{page} / {totalPages}
+			</span>
 			<button
-				class="btn-ghost px-2 py-1.5 disabled:opacity-30"
-				onclick={() => goTo(page + 1)}
+				class="btn-ghost text-sm"
 				disabled={page >= totalPages}
+				onclick={() => onchange(page + 1)}
 			>
 				<ChevronLeft size={16} />
 			</button>

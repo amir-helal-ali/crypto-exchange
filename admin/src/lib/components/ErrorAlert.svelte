@@ -1,23 +1,18 @@
 <script lang="ts">
-	import { AlertOctagon, X } from 'lucide-svelte';
+	import { AlertTriangle } from 'lucide-svelte';
 
-	let {
-		message = '',
-		onclose
-	}: {
+	interface Props {
 		message: string;
-		onclose?: () => void;
-	} = $props();
+		onretry?: () => void;
+	}
+
+	let { message, onretry }: Props = $props();
 </script>
 
-{#if message}
-	<div class="panel panel-rose flex items-center gap-3 px-4 py-3 mb-4">
-		<AlertOctagon size={18} class="text-accent-rose flex-shrink-0" />
-		<span class="text-sm text-accent-rose flex-1">{message}</span>
-		{#if onclose}
-			<button onclick={onclose} class="text-accent-rose/60 hover:text-accent-rose transition-colors">
-				<X size={14} />
-			</button>
-		{/if}
-	</div>
-{/if}
+<div class="panel panel-rose p-4 flex items-center gap-3">
+	<AlertTriangle size={20} class="text-[var(--rose)] flex-shrink-0" />
+	<p class="text-sm text-[var(--rose)] flex-1">{message}</p>
+	{#if onretry}
+		<button class="btn-ghost text-xs text-[var(--rose)]" onclick={onretry}>إعادة المحاولة</button>
+	{/if}
+</div>

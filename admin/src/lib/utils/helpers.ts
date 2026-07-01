@@ -1,8 +1,7 @@
 // ═══════════════════════════════════════════════════════════
-// NEXUS ADMIN v4.0 — Helper Utilities
+// NEXUS ADMIN v6.0 — Helper Utilities
 // ═══════════════════════════════════════════════════════════
 
-// ── Number Formatting ───────────────────────────────────
 export function formatNumber(n: number | undefined | null): string {
 	if (n == null) return '—';
 	return new Intl.NumberFormat('ar-EG').format(n);
@@ -23,32 +22,23 @@ export function formatPercent(n: number | undefined | null): string {
 export function formatCurrency(n: number | undefined | null, currency = 'USD'): string {
 	if (n == null) return '—';
 	return new Intl.NumberFormat('ar-EG', {
-		style: 'currency',
-		currency,
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2
+		style: 'currency', currency,
+		minimumFractionDigits: 2, maximumFractionDigits: 2
 	}).format(n);
 }
 
-// ── Date Formatting ─────────────────────────────────────
 export function formatDate(d: string | undefined | null): string {
 	if (!d) return '—';
 	return new Intl.DateTimeFormat('ar-EG', {
-		year: 'numeric',
-		month: 'long',
-		day: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit'
+		year: 'numeric', month: 'long', day: 'numeric',
+		hour: '2-digit', minute: '2-digit'
 	}).format(new Date(d));
 }
 
 export function formatDateShort(d: string | undefined | null): string {
 	if (!d) return '—';
 	return new Intl.DateTimeFormat('ar-EG', {
-		month: 'short',
-		day: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit'
+		month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
 	}).format(new Date(d));
 }
 
@@ -57,18 +47,11 @@ export function timeAgo(d: string | undefined | null): string {
 	const now = Date.now();
 	const then = new Date(d).getTime();
 	const diff = Math.floor((now - then) / 1000);
-
 	if (diff < 60) return 'الآن';
 	if (diff < 3600) return `منذ ${Math.floor(diff / 60)} دقيقة`;
 	if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} ساعة`;
 	if (diff < 2592000) return `منذ ${Math.floor(diff / 86400)} يوم`;
 	return formatDate(d);
-}
-
-// ── Text Helpers ────────────────────────────────────────
-export function maskString(s: string, visible = 4): string {
-	if (s.length <= visible) return s;
-	return '•'.repeat(s.length - visible) + s.slice(-visible);
 }
 
 export function truncate(s: string, len = 30): string {
@@ -77,16 +60,9 @@ export function truncate(s: string, len = 30): string {
 }
 
 export function getInitials(name: string): string {
-	return name
-		.split(' ')
-		.map((w) => w[0])
-		.filter(Boolean)
-		.slice(0, 2)
-		.join('')
-		.toUpperCase();
+	return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
 }
 
-// ── Action Labels ───────────────────────────────────────
 export const actionLabels: Record<string, string> = {
 	LOGIN: 'تسجيل دخول',
 	LOGOUT: 'تسجيل خروج',
@@ -108,19 +84,16 @@ export const actionLabels: Record<string, string> = {
 	DISABLE_2FA: 'تعطيل التحقق الثنائي'
 };
 
-// ── Status Configs ──────────────────────────────────────
-export const statusConfigs: Record<string, { label: string; pillClass: string; color: string; bg: string }> = {
-	PENDING: { label: 'قيد الانتظار', pillClass: 'pill-pending', color: '#f5b544', bg: 'rgba(245,181,68,0.15)' },
-	APPROVED: { label: 'مقبول', pillClass: 'pill-approved', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
-	VERIFIED: { label: 'موثّق', pillClass: 'pill-verified', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
-	COMPLETED: { label: 'مكتمل', pillClass: 'pill-completed', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
-	REJECTED: { label: 'مرفوض', pillClass: 'pill-rejected', color: '#fb7185', bg: 'rgba(251,113,133,0.15)' },
-	ACTIVE: { label: 'نشط', pillClass: 'pill-active', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
-	INACTIVE: { label: 'غير نشط', pillClass: 'pill-inactive', color: '#5a6478', bg: 'rgba(255,255,255,0.05)' },
-	NONE: { label: 'لا يوجد', pillClass: 'pill-none', color: '#3a4256', bg: 'rgba(255,255,255,0.03)' }
+export const statusConfigs: Record<string, { label: string; color: string }> = {
+	PENDING: { label: 'قيد الانتظار', color: '#f5b544' },
+	APPROVED: { label: 'مقبول', color: '#22d3a4' },
+	VERIFIED: { label: 'موثّق', color: '#22d3a4' },
+	COMPLETED: { label: 'مكتمل', color: '#22d3a4' },
+	REJECTED: { label: 'مرفوض', color: '#fb7185' },
+	ACTIVE: { label: 'نشط', color: '#22d3a4' },
+	INACTIVE: { label: 'غير نشط', color: '#5a6478' }
 };
 
-// ── Document Type Labels ────────────────────────────────
 export const docTypeLabels: Record<string, string> = {
 	PASSPORT: 'جواز سفر',
 	NATIONAL_ID: 'بطاقة وطنية',
@@ -128,33 +101,8 @@ export const docTypeLabels: Record<string, string> = {
 	UTILITY_BILL: 'فاتورة مرافق'
 };
 
-// ── SVG Sparkline Generator ─────────────────────────────
-export function generateSparkline(
-	data: number[],
-	width = 80,
-	height = 28,
-	color = '#f5b544'
-): string {
-	if (!data.length) return '';
-	const max = Math.max(...data);
-	const min = Math.min(...data);
-	const range = max - min || 1;
-	const step = width / (data.length - 1);
-
-	const points = data
-		.map((v, i) => `${i * step},${height - ((v - min) / range) * (height - 4) - 2}`)
-		.join(' ');
-
-	return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
-		<polyline points="${points}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.8"/>
-	</svg>`;
-}
-
 export function generateAreaChart(
-	seed: number,
-	width = 80,
-	height = 28,
-	color = '#f5b544'
+	seed: number, width = 80, height = 28, color = '#f5b544'
 ): string {
 	const data: number[] = [];
 	let val = seed % 100;
@@ -174,18 +122,15 @@ export function generateAreaChart(
 	const areaPath = `M0,${height} L${data.map((v, i) => `${i * step},${height - ((v - min) / range) * (height - 4) - 2}`).join(' L')} L${width},${height} Z`;
 
 	return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-		<defs>
-			<linearGradient id="area-${seed}" x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
-				<stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-			</linearGradient>
-		</defs>
-		<path d="${areaPath}" fill="url(#area-${seed})"/>
+		<defs><linearGradient id="a${seed}" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+			<stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+		</linearGradient></defs>
+		<path d="${areaPath}" fill="url(#a${seed})"/>
 		<polyline points="${linePoints}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 	</svg>`;
 }
 
-// ── Utility ─────────────────────────────────────────────
 export function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
 	let timer: ReturnType<typeof setTimeout>;
 	return ((...args: unknown[]) => {

@@ -1,209 +1,156 @@
 <script lang="ts">
-        import { onMount } from 'svelte';
-        import { goto } from '$app/navigation';
-        import { isAuthenticated, getStoredUser, logout, createAdminStream } from '$lib/api/client';
-        import { toast } from '$lib/stores/toast';
-        import {
-                LayoutDashboard, Users, ShieldCheck, ArrowLeftRight, ScrollText,
-                Megaphone, Coins, Settings, ChevronRight, ChevronLeft,
-                Bell, Menu, LogOut, X
-        } from 'lucide-svelte';
-        import LiveIndicator from '$lib/components/LiveIndicator.svelte';
+	import { isAuthenticated, getStoredUser, logout, createAdminStream } from '$lib/api/client';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import type { Snippet } from 'svelte';
+	import LiveIndicator from '$lib/components/LiveIndicator.svelte';
+	import {
+		LayoutDashboard, Users, ShieldCheck, ArrowLeftRight, ScrollText,
+		Megaphone, Percent, Settings, Lock, Activity, LogOut, ChevronLeft, ChevronRight
+	} from 'lucide-svelte';
 
-        let { children } = $props<{ children: import('svelte').Snippet }>();
+	let { children }: { children: Snippet } = $props();
 
-        let user = $state<any>(null);
-        let sidebarOpen = $state(true);
-        let mobileSidebarOpen = $state(false);
-        let liveConnected = $state(false);
-        let eventSource: EventSource | null = null;
-        let showUserMenu = $state(false);
-        let showNotifs = $state(false);
+	let user = $state<any>(null);
+	let sidebarCollapsed = $state(false);
+	let liveConnected = $state(false);
+	let currentPage = $state('dashboard');
+	let es: EventSource | null = $state(null);
 
-        const navItems = [
-                { href: '/dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
-                { href: '/dashboard/users', icon: Users, label: 'المستخدمين' },
-                { href: '/dashboard/kyc', icon: ShieldCheck, label: 'التحقق KYC' },
-                { href: '/dashboard/transactions', icon: ArrowLeftRight, label: 'المعاملات' },
-                { href: '/dashboard/audit-logs', icon: ScrollText, label: 'سجل المراجعة' },
-                { href: '/dashboard/ads', icon: Megaphone, label: 'الإعلانات' },
-                { href: '/dashboard/fees', icon: Coins, label: 'الرسوم' },
-                { href: '/dashboard/settings', icon: Settings, label: 'الإعدادات' }
-        ];
+	const navItems = [
+		{ path: '/dashboard', label: 'لوحة التحكم', icon: LayoutDashboard, id: 'dashboard' },
+		{ path: '/dashboard/users', label: 'المستخدمين', icon: Users, id: 'users' },
+		{ path: '/dashboard/kyc', label: 'التحقق KYC', icon: ShieldCheck, id: 'kyc' },
+		{ path: '/dashboard/transactions', label: 'المعاملات', icon: ArrowLeftRight, id: 'transactions' },
+		{ path: '/dashboard/audit-logs', label: 'سجل العمليات', icon: ScrollText, id: 'audit-logs' },
+		{ path: '/dashboard/ads', label: 'الإعلانات', icon: Megaphone, id: 'ads' },
+		{ path: '/dashboard/fees', label: 'الرسوم', icon: Percent, id: 'fees' },
+		{ path: '/dashboard/ssl', label: 'شهادات SSL', icon: Lock, id: 'ssl' },
+		{ path: '/dashboard/metrics', label: 'الأداء', icon: Activity, id: 'metrics' },
+		{ path: '/dashboard/settings', label: 'الإعدادات', icon: Settings, id: 'settings' },
+	];
 
-        onMount(() => {
-                if (!isAuthenticated()) {
-                        goto('/login');
-                        return;
-                }
-                user = getStoredUser();
-                if (user?.role !== 'ADMIN') {
-                        logout();
-                        return;
-                }
+	onMount(() => {
+		if (!isAuthenticated()) {
+			goto('/login');
+			return;
+		}
+		user = getStoredUser();
 
-                // Connect SSE
-                eventSource = createAdminStream(['stats']);
-                if (eventSource) {
-                        eventSource.onopen = () => { liveConnected = true; };
-                        eventSource.onerror = () => { liveConnected = false; };
-                }
+		// Detect current page
+		const path = window.location.pathname;
+		const match = navItems.find(n => path === n.path || (n.path !== '/dashboard' && path.startsWith(n.path)));
+		currentPage = match?.id || 'dashboard';
 
-                return () => {
-                        eventSource?.close();
-                };
-        });
+		// Connect SSE
+		connectSSE();
 
-        function handleLogout() {
-                eventSource?.close();
-                logout();
-        }
+		return () => {
+			es?.close();
+		};
+	});
+
+	function connectSSE() {
+		es = createAdminStream(['stats', 'audit']);
+		if (es) {
+			es.onopen = () => { liveConnected = true; };
+			es.onerror = () => { liveConnected = false; };
+			es.addEventListener('heartbeat', () => { liveConnected = true; });
+		}
+	}
+
+	function navigate(path: string, id: string) {
+		currentPage = id;
+		goto(path);
+	}
 </script>
 
-<div class="flex h-screen overflow-hidden relative">
-        <!-- Mobile Overlay -->
-        {#if mobileSidebarOpen}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                        class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
-                        onclick={() => (mobileSidebarOpen = false)}
-                        role="presentation"
-                ></div>
-        {/if}
+<div class="min-h-screen flex relative" style="z-index:1">
+	<!-- Sidebar -->
+	<aside
+		class="fixed top-0 right-0 h-screen flex flex-col border-l transition-all duration-300"
+		class:w-64={!sidebarCollapsed}
+		class:w-20={sidebarCollapsed}
+		style="background: var(--bg-surface); border-color: var(--glass-border); z-index: 50;"
+	>
+		<!-- Logo -->
+		<div class="p-4 flex items-center gap-3 border-b" style="border-color: var(--glass-border)">
+			<div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+				style="background: linear-gradient(135deg, rgba(245,181,68,0.2), rgba(168,85,247,0.2)); border: 1px solid rgba(245,181,68,0.15);">
+				<span class="text-sm font-black text-aurora">N</span>
+			</div>
+			{#if !sidebarCollapsed}
+				<div>
+					<h2 class="text-sm font-black text-aurora">NEXUS</h2>
+					<p class="text-[10px] text-[var(--ink-faint)]">لوحة الإدارة</p>
+				</div>
+			{/if}
+		</div>
 
-        <!-- Sidebar -->
-        <aside
-                class="fixed lg:static inset-y-0 right-0 z-50 flex flex-col h-full
-                        bg-ink-900/80 backdrop-blur-xl border-l border-white/6
-                        transition-all duration-300 ease-[var(--ease-out)]
-                        {sidebarOpen ? 'w-[272px]' : 'w-[72px]'}
-                        {mobileSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}"
-        >
-                <!-- Sidebar Header -->
-                <div class="flex items-center gap-3 px-5 h-16 border-b border-white/6 flex-shrink-0">
-                        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-gold/30 to-accent-violet/20 border border-accent-gold/20 flex items-center justify-center flex-shrink-0">
-                                <span class="text-sm font-extrabold text-aurora">N</span>
-                        </div>
-                        {#if sidebarOpen}
-                                <span class="text-lg font-extrabold text-aurora whitespace-nowrap">NEXUS</span>
-                        {/if}
-                        <!-- Collapse Toggle (Desktop) -->
-                        <button
-                                class="hidden lg:flex items-center justify-center w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-ink-muted hover:text-ink-primary transition-all mr-auto"
-                                onclick={() => (sidebarOpen = !sidebarOpen)}
-                        >
-                                {#if sidebarOpen}<ChevronRight size={14} />{:else}<ChevronLeft size={14} />{/if}
-                        </button>
-                        <!-- Close (Mobile) -->
-                        <button
-                                class="lg:hidden text-ink-muted hover:text-ink-primary transition-colors mr-auto"
-                                onclick={() => (mobileSidebarOpen = false)}
-                        >
-                                <X size={18} />
-                        </button>
-                </div>
+		<!-- Navigation -->
+		<nav class="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-thin">
+			{#each navItems as item}
+				<button
+					class="nav-link {currentPage === item.id ? 'nav-link-active' : ''}"
+					onclick={() => navigate(item.path, item.id)}
+					title={item.label}
+				>
+					<item.icon size={18} class="flex-shrink-0" />
+					{#if !sidebarCollapsed}
+						<span>{item.label}</span>
+					{/if}
+				</button>
+			{/each}
+		</nav>
 
-                <!-- Nav Items -->
-                <nav class="flex-1 overflow-y-auto scrollbar-none py-3 px-3">
-                        <div class="flex flex-col gap-1">
-                                {#each navItems as item}
-                                        {@const isActive = typeof window !== 'undefined' && window.location.pathname === item.href}
-                                        <a
-                                                href={item.href}
-                                                class="nav-link {isActive ? 'nav-link-active' : ''}"
-                                                onclick={() => (mobileSidebarOpen = false)}
-                                        >
-                                                <item.icon size={20} class="flex-shrink-0" />
-                                                {#if sidebarOpen}
-                                                        <span class="whitespace-nowrap">{item.label}</span>
-                                                {/if}
-                                        </a>
-                                {/each}
-                        </div>
-                </nav>
+		<!-- User Section -->
+		<div class="p-3 border-t" style="border-color: var(--glass-border)">
+			{#if !sidebarCollapsed}
+				<div class="flex items-center gap-3 px-2 py-2">
+					<div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+						style="background: rgba(245,181,68,0.15); color: var(--gold);">
+						{user?.username?.[0]?.toUpperCase() || 'A'}
+					</div>
+					<div class="flex-1 min-w-0">
+						<p class="text-xs font-medium truncate">{user?.username || 'المدير'}</p>
+						<p class="text-[10px] text-[var(--ink-muted)] truncate">{user?.email || ''}</p>
+					</div>
+					<button onclick={logout} class="text-[var(--ink-muted)] hover:text-[var(--rose)] transition-colors" title="تسجيل الخروج">
+						<LogOut size={14} />
+					</button>
+				</div>
+			{:else}
+				<button onclick={logout} class="nav-link justify-center" title="تسجيل الخروج">
+					<LogOut size={18} />
+				</button>
+			{/if}
+		</div>
+	</aside>
 
-                <!-- User Section -->
-                <div class="border-t border-white/6 p-3 flex-shrink-0">
-                        {#if user}
-                                <div class="flex items-center gap-3 px-2">
-                                        <div class="w-9 h-9 rounded-xl bg-accent-gold/15 border border-accent-gold/20 flex items-center justify-center flex-shrink-0">
-                                                <span class="text-xs font-bold text-accent-gold">{user.username?.[0]?.toUpperCase() || 'A'}</span>
-                                        </div>
-                                        {#if sidebarOpen}
-                                                <div class="flex-1 min-w-0">
-                                                        <p class="text-sm font-bold text-ink-primary truncate">{user.username}</p>
-                                                        <p class="text-xs text-ink-muted truncate">{user.email}</p>
-                                                </div>
-                                                <button
-                                                        class="text-ink-muted hover:text-accent-rose transition-colors"
-                                                        onclick={handleLogout}
-                                                        title="تسجيل الخروج"
-                                                >
-                                                        <LogOut size={16} />
-                                                </button>
-                                        {/if}
-                                </div>
-                        {/if}
-                </div>
-        </aside>
+	<!-- Main Content -->
+	<div class="flex-1 transition-all duration-300" class:mr-64={!sidebarCollapsed} class:mr-20={sidebarCollapsed}>
+		<!-- Top Bar -->
+		<header class="sticky top-0 h-14 flex items-center justify-between px-6 border-b backdrop-blur-xl"
+			style="background: rgba(3,5,9,0.8); border-color: var(--glass-border); z-index: 40;">
+			<div class="flex items-center gap-4">
+				<button
+					class="btn-ghost p-1.5"
+					onclick={() => sidebarCollapsed = !sidebarCollapsed}
+				>
+					{#if sidebarCollapsed}<ChevronLeft size={18} />{:else}<ChevronRight size={18} />{/if}
+				</button>
+				<LiveIndicator label={liveConnected ? 'متصل مباشر' : 'غير متصل'} />
+			</div>
+			<div class="flex items-center gap-3">
+				<span class="text-xs text-[var(--ink-muted)] tabular-nums">
+					{new Intl.DateTimeFormat('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(new Date())}
+				</span>
+			</div>
+		</header>
 
-        <!-- Main Area -->
-        <div class="flex-1 flex flex-col min-w-0">
-                <!-- Header -->
-                <header class="sticky top-0 z-30 h-16 flex items-center gap-4 px-6 border-b border-white/6 bg-ink-950/80 backdrop-blur-xl flex-shrink-0">
-                        <!-- Topbar Highlight Gradient -->
-                        <div class="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-l from-accent-gold/30 via-accent-violet/20 to-transparent"></div>
-
-                        <!-- Mobile Menu Toggle -->
-                        <button
-                                class="lg:hidden text-ink-secondary hover:text-ink-primary transition-colors"
-                                onclick={() => (mobileSidebarOpen = true)}
-                        >
-                                <Menu size={20} />
-                        </button>
-
-                        <div class="flex-1"></div>
-
-                        <!-- Live Indicator -->
-                        <LiveIndicator connected={liveConnected} />
-
-                        <!-- Notifications -->
-                        <div class="relative">
-                                <button
-                                        class="nav-link px-2 py-1.5 relative"
-                                        onclick={() => { showNotifs = !showNotifs; showUserMenu = false; }}
-                                >
-                                        <Bell size={18} />
-                                </button>
-                        </div>
-
-                        <!-- User Menu -->
-                        <div class="relative">
-                                <button
-                                        class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
-                                        onclick={() => { showUserMenu = !showUserMenu; showNotifs = false; }}
-                                >
-                                        <div class="w-7 h-7 rounded-lg bg-accent-gold/15 flex items-center justify-center">
-                                                <span class="text-xs font-bold text-accent-gold">{user?.username?.[0]?.toUpperCase() || 'A'}</span>
-                                        </div>
-                                </button>
-                                {#if showUserMenu}
-                                        <div class="absolute left-0 top-full mt-2 w-48 panel p-2 animate-scale-in">
-                                                <button
-                                                        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-ink-secondary hover:bg-white/5 hover:text-ink-primary transition-colors"
-                                                        onclick={handleLogout}
-                                                >
-                                                        <LogOut size={16} />
-                                                        تسجيل الخروج
-                                                </button>
-                                        </div>
-                                {/if}
-                        </div>
-                </header>
-
-                <!-- Page Content -->
-                <main class="flex-1 overflow-y-auto p-6 relative">
-                        {@render children()}
-                </main>
-        </div>
+		<!-- Page Content -->
+		<main class="p-6">
+			{@render children()}
+		</main>
+	</div>
 </div>

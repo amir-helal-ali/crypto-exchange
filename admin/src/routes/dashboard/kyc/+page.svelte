@@ -1,224 +1,134 @@
 <script lang="ts">
-        import { onMount } from 'svelte';
-        import { authGet, authPut, createAdminStream } from '$lib/api/client';
-        import { toast } from '$lib/stores/toast';
-        import { formatNumber, formatDate, maskString, docTypeLabels, statusConfigs, debounce } from '$lib/utils/helpers';
-        import StatCard from '$lib/components/StatCard.svelte';
-        import PageHeader from '$lib/components/PageHeader.svelte';
-        import SearchBar from '$lib/components/SearchBar.svelte';
-        import Modal from '$lib/components/Modal.svelte';
-        import ErrorAlert from '$lib/components/ErrorAlert.svelte';
-        import type { KYCRequest, KYCStats } from '$lib/api/types';
-        import { ShieldCheck, Clock, CheckCircle, XCircle, Eye, RefreshCw } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { authGet, authPut } from '$lib/api/client';
+	import { formatDate, docTypeLabels, formatNumber } from '$lib/utils/helpers';
+	import { addToast } from '$lib/stores/toast';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import { ShieldCheck, CheckCircle, XCircle } from 'lucide-svelte';
+	import type { KYCRequest } from '$lib/api/types';
 
-        let requests = $state<KYCRequest[]>([]);
-        let stats = $state<KYCStats | null>(null);
-        let loading = $state(true);
-        let error = $state('');
-        let page = $state(1);
-        let totalPages = $state(1);
-        let search = $state('');
-        let statusFilter = $state('');
-        let eventSource: EventSource | null = null;
+	let requests = $state<KYCRequest[]>([]);
+	let total = $state(0);
+	let page = $state(1);
+	let limit = $state(20);
+	let statusFilter = $state('');
+	let loading = $state(true);
+	let error = $state('');
 
-        // Modal state
-        let previewOpen = $state(false);
-        let previewUrl = $state('');
-        let rejectOpen = $state(false);
-        let rejectId = $state(0);
-        let rejectReason = $state('');
-        let rejectLoading = $state(false);
+	let reviewModal = $state(false);
+	let selectedKYC = $state<KYCRequest | null>(null);
+	let reviewStatus = $state('APPROVED');
+	let rejectionReason = $state('');
 
-        const filters = [
-                {
-                        key: 'status',
-                        label: 'الحالة',
-                        options: [
-                                { value: 'PENDING', label: 'قيد الانتظار' },
-                                { value: 'APPROVED', label: 'مقبول' },
-                                { value: 'REJECTED', label: 'مرفوض' }
-                        ]
-                }
-        ];
-        let filterValues = $state<Record<string, string>>({});
+	const tabs = [
+		{ id: '', label: 'الكل' },
+		{ id: 'PENDING', label: 'قيد الانتظار' },
+		{ id: 'APPROVED', label: 'مقبول' },
+		{ id: 'REJECTED', label: 'مرفوض' }
+	];
 
-        async function loadKYC() {
-                loading = true;
-                error = '';
-                let path = `/api/v1/admin/kyc?page=${page}&limit=12`;
-                if (search) path += `&search=${encodeURIComponent(search)}`;
-                const res = await authGet<KYCRequest[]>(path);
-                if (res.success && res.data) {
-                        requests = (res as any).data || [];
-                        totalPages = Math.ceil(((res as any).total || 0) / 12);
-                } else {
-                        error = res.error || 'فشل تحميل طلبات KYC';
-                }
-                loading = false;
-        }
+	onMount(() => loadKYC());
 
-        async function approveKYC(id: number) {
-                const res = await authPut(`/api/v1/admin/kyc/${id}/review`, { status: 'APPROVED' });
-                if (res.success) {
-                        toast.success('تم قبول طلب التحقق');
-                        loadKYC();
-                } else {
-                        toast.error(res.error || 'فشل مراجعة الطلب');
-                }
-        }
+	async function loadKYC() {
+		loading = true; error = '';
+		const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+		if (statusFilter) params.set('status', statusFilter);
+		const res = await authGet<KYCRequest[]>(`/api/v1/admin/kyc?${params}`);
+		if (res.success && res.data) {
+			requests = Array.isArray(res.data) ? res.data : [];
+			total = res.total || requests.length;
+		} else { error = res.error || 'فشل تحميل طلبات التحقق'; }
+		loading = false;
+	}
 
-        async function rejectKYC() {
-                rejectLoading = true;
-                const res = await authPut(`/api/v1/admin/kyc/${rejectId}/review`, {
-                        status: 'REJECTED',
-                        rejection_reason: rejectReason
-                });
-                if (res.success) {
-                        toast.success('تم رفض طلب التحقق');
-                        rejectOpen = false;
-                        rejectReason = '';
-                        loadKYC();
-                } else {
-                        toast.error(res.error || 'فشل مراجعة الطلب');
-                }
-                rejectLoading = false;
-        }
+	function setFilter(status: string) {
+		statusFilter = status; page = 1; loadKYC();
+	}
 
-        function openPreview(url: string) {
-                previewUrl = url;
-                previewOpen = true;
-        }
+	function openReview(kyc: KYCRequest) {
+		selectedKYC = kyc; reviewStatus = 'APPROVED'; rejectionReason = '';
+		reviewModal = true;
+	}
 
-        function openReject(id: number) {
-                rejectId = id;
-                rejectReason = '';
-                rejectOpen = true;
-        }
-
-        onMount(() => {
-                loadKYC();
-                eventSource = createAdminStream(['kyc']);
-                eventSource?.addEventListener('kyc', () => { loadKYC(); });
-                return () => { eventSource?.close(); };
-        });
+	async function submitReview() {
+		if (!selectedKYC) return;
+		const body: any = { status: reviewStatus };
+		if (reviewStatus === 'REJECTED' && rejectionReason) body.rejection_reason = rejectionReason;
+		const res = await authPut(`/api/v1/admin/kyc/${selectedKYC.id}/review`, body);
+		if (res.success) {
+			addToast('success', reviewStatus === 'APPROVED' ? 'تم قبول الطلب' : 'تم رفض الطلب');
+			reviewModal = false; loadKYC();
+		} else { addToast('error', res.error || 'فشل مراجعة الطلب'); }
+	}
 </script>
 
-<PageHeader title="التحقق KYC" subtitle="مراجعة طلبات التحقق من الهوية">
-        <button class="btn-ghost" onclick={loadKYC} disabled={loading}>
-                <RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
-        </button>
-</PageHeader>
+<PageHeader title="التحقق KYC" subtitle="مراجعة طلبات التحقق من الهوية" />
 
-<!-- Stats -->
-<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <StatCard label="قيد الانتظار" value={stats ? formatNumber(stats.pending) : '—'} icon={Clock} iconColor="#f5b544" iconBg="rgba(245,181,68,0.15)" chartColor="#f5b544" chartSeed={10} loading={loading} />
-        <StatCard label="مقبول" value={stats ? formatNumber(stats.approved) : '—'} icon={CheckCircle} iconColor="#22d3a4" iconBg="rgba(34,211,164,0.15)" chartColor="#22d3a4" chartSeed={20} loading={loading} />
-        <StatCard label="مرفوض" value={stats ? formatNumber(stats.rejected) : '—'} icon={XCircle} iconColor="#fb7185" iconBg="rgba(251,113,133,0.15)" chartColor="#fb7185" chartSeed={30} loading={loading} />
+<div class="flex gap-2 mb-4">
+	{#each tabs as tab}
+		<button class="tab-btn {statusFilter === tab.id ? 'tab-btn-active' : ''}" onclick={() => setFilter(tab.id)}>
+			{tab.label}
+		</button>
+	{/each}
 </div>
 
 {#if error}
-        <ErrorAlert message={error} onclose={() => (error = '')} />
-{/if}
-
-<SearchBar bind:value={search} placeholder="بحث بالاسم..." {filters} bind:filterValues />
-
-<!-- KYC Cards Grid -->
-{#if loading && requests.length === 0}
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {#each Array(6) as _}
-                        <div class="panel p-5"><div class="skeleton h-40"></div></div>
-                {/each}
-        </div>
+	<ErrorAlert message={error} onretry={loadKYC} />
+{:else if loading}
+	<div class="panel p-4"><div class="skeleton h-64"></div></div>
 {:else if requests.length === 0}
-        <div class="panel p-8 text-center text-ink-muted">لا توجد طلبات تحقق</div>
+	<EmptyState message="لا توجد طلبات تحقق" />
 {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {#each requests as req}
-                        <div class="panel p-5 flex flex-col gap-4">
-                                <!-- User Info -->
-                                <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-lg bg-accent-violet/15 border border-accent-violet/20 flex items-center justify-center">
-                                                <span class="text-sm font-bold text-accent-violet">{req.user?.username?.[0]?.toUpperCase() || '?'}</span>
-                                        </div>
-                                        <div class="flex-1 min-w-0">
-                                                <p class="text-sm font-bold text-ink-primary truncate">{req.user?.username}</p>
-                                                <p class="text-xs text-ink-muted truncate" dir="ltr">{req.user?.email}</p>
-                                        </div>
-                                        <span class={statusConfigs[req.status]?.pillClass || 'pill-none'}>
-                                                {statusConfigs[req.status]?.label || req.status}
-                                        </span>
-                                </div>
-
-                                <!-- Document Info -->
-                                <div class="grid grid-cols-2 gap-3 text-sm">
-                                        <div>
-                                                <span class="text-ink-muted block text-xs mb-1">نوع المستند</span>
-                                                <span class="text-ink-primary">{docTypeLabels[req.document_type] || req.document_type}</span>
-                                        </div>
-                                        <div>
-                                                <span class="text-ink-muted block text-xs mb-1">رقم المستند</span>
-                                                <span class="text-ink-primary font-mono text-xs" dir="ltr">{maskString(req.document_number)}</span>
-                                        </div>
-                                        <div>
-                                                <span class="text-ink-muted block text-xs mb-1">تاريخ التقديم</span>
-                                                <span class="text-ink-secondary">{formatDate(req.created_at)}</span>
-                                        </div>
-                                </div>
-
-                                {#if req.status === 'REJECTED' && req.rejection_reason}
-                                        <div class="text-xs text-accent-rose bg-accent-rose/10 border border-accent-rose/15 rounded-lg px-3 py-2">
-                                                سبب الرفض: {req.rejection_reason}
-                                        </div>
-                                {/if}
-
-                                <!-- Document Preview Buttons -->
-                                <div class="flex items-center gap-2">
-                                        <button class="btn-ghost text-xs flex-1" onclick={() => openPreview(req.document_front)}>
-                                                <Eye size={14} /> المستند الأمامي
-                                        </button>
-                                        {#if req.document_back}
-                                                <button class="btn-ghost text-xs flex-1" onclick={() => openPreview(req.document_back)}>
-                                                        <Eye size={14} /> المستند الخلفي
-                                                </button>
-                                        {/if}
-                                </div>
-
-                                <!-- Actions (only for PENDING) -->
-                                {#if req.status === 'PENDING'}
-                                        <div class="flex items-center gap-2 pt-2 border-t border-white/6">
-                                                <button class="btn-buy flex-1 text-xs" onclick={() => approveKYC(req.id)}>
-                                                        <CheckCircle size={14} /> قبول
-                                                </button>
-                                                <button class="btn-danger flex-1 text-xs" onclick={() => openReject(req.id)}>
-                                                        <XCircle size={14} /> رفض
-                                                </button>
-                                        </div>
-                                {/if}
-                        </div>
-                {/each}
-        </div>
+	<div class="grid gap-4">
+		{#each requests as req}
+			<div class="panel p-4 flex items-center gap-4">
+				<div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+					style="background: rgba(34,211,164,0.1);">
+					<ShieldCheck size={22} style="color: var(--mint)" />
+				</div>
+				<div class="flex-1 min-w-0">
+					<div class="flex items-center gap-2 mb-1">
+						<span class="font-medium text-sm">{req.user?.username || '—'}</span>
+						<span class="pill pill-{req.status === 'PENDING' ? 'pending' : req.status === 'APPROVED' ? 'approved' : 'rejected'}">
+							{req.status === 'PENDING' ? 'قيد الانتظار' : req.status === 'APPROVED' ? 'مقبول' : 'مرفوض'}
+						</span>
+					</div>
+					<p class="text-xs text-[var(--ink-muted)]">{docTypeLabels[req.document_type] || req.document_type} — {req.document_number}</p>
+					<p class="text-xs text-[var(--ink-faint)]">{formatDate(req.created_at)}</p>
+				</div>
+				{#if req.status === 'PENDING'}
+					<button class="btn-ghost text-xs" onclick={() => openReview(req)}>مراجعة</button>
+				{/if}
+			</div>
+		{/each}
+	</div>
+	<Pagination {page} {total} {limit} onchange={(p) => { page = p; loadKYC(); }} />
 {/if}
 
-<!-- Preview Modal -->
-<Modal bind:open={previewOpen} title="معاينة المستند" icon={Eye} size="lg">
-        <div class="flex items-center justify-center min-h-[300px]">
-                {#if previewUrl}
-                        <img src={previewUrl} alt="Document" class="max-w-full max-h-[60vh] rounded-lg border border-white/10" />
-                {/if}
-        </div>
-</Modal>
-
-<!-- Reject Modal -->
-<Modal bind:open={rejectOpen} title="رفض طلب التحقق" icon={XCircle} iconColor="#fb7185" iconBg="rgba(251,113,133,0.15)" size="md">
-        <div class="flex flex-col gap-4">
-                <label for="rejectReason" class="text-sm text-ink-secondary">سبب الرفض</label>
-                <textarea id="rejectReason" bind:value={rejectReason} class="input-field min-h-[100px]" placeholder="أدخل سبب الرفض..."></textarea>
-        </div>
-        {#snippet footer()}
-                <button class="btn-ghost" onclick={() => (rejectOpen = false)}>إلغاء</button>
-                <button class="btn-danger" onclick={rejectKYC} disabled={rejectLoading || !rejectReason}>
-                        {#if rejectLoading}<RefreshCw size={14} class="animate-spin" />{/if}
-                        رفض الطلب
-                </button>
-        {/snippet}
+<Modal open={reviewModal} title="مراجعة طلب التحقق" onclose={() => reviewModal = false}>
+	{#snippet children()}
+		<p class="text-sm text-[var(--ink-secondary)] mb-4">المستخدم: <strong>{selectedKYC?.user?.username}</strong></p>
+		<p class="text-sm text-[var(--ink-muted)] mb-4">نوع الوثيقة: {docTypeLabels[selectedKYC?.document_type || ''] || selectedKYC?.document_type}</p>
+		<div class="space-y-3">
+			<label class="flex items-center gap-2 cursor-pointer">
+				<input type="radio" name="review" value="APPROVED" bind:group={reviewStatus} />
+				<span class="text-sm text-[var(--mint)]">قبول</span>
+			</label>
+			<label class="flex items-center gap-2 cursor-pointer">
+				<input type="radio" name="review" value="REJECTED" bind:group={reviewStatus} />
+				<span class="text-sm text-[var(--rose)]">رفض</span>
+			</label>
+			{#if reviewStatus === 'REJECTED'}
+				<textarea class="input-field" placeholder="سبب الرفض..." bind:value={rejectionReason} rows="3"></textarea>
+			{/if}
+		</div>
+	{/snippet}
+	{#snippet footer()}
+		<button class="btn-secondary" onclick={() => reviewModal = false}>إلغاء</button>
+		<button class="btn-primary" onclick={submitReview}>تأكيد</button>
+	{/snippet}
 </Modal>

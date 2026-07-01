@@ -1,23 +1,15 @@
 <script lang="ts">
-	let {
-		title,
-		subtitle,
-		children
-	}: {
+	interface Props {
 		title: string;
 		subtitle?: string;
-		children: import('svelte').Snippet;
-	} = $props();
+	}
+
+	let { title, subtitle }: Props = $props();
 </script>
 
-<div class="flex items-center justify-between mb-6">
-	<div>
-		<h1 class="text-2xl font-extrabold text-gold-gradient">{title}</h1>
-		{#if subtitle}
-			<p class="text-sm text-ink-muted mt-1">{subtitle}</p>
-		{/if}
-	</div>
-	<div class="flex items-center gap-3">
-		{@render children()}
-	</div>
+<div class="mb-6">
+	<h1 class="text-xl font-black text-aurora">{title}</h1>
+	{#if subtitle}
+		<p class="text-sm text-[var(--ink-muted)] mt-1">{subtitle}</p>
+	{/if}
 </div>

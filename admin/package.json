@@ -1,6 +1,6 @@
 {
-  "name": "crypto-exchange-admin",
-  "version": "4.0.0",
+  "name": "nexus-admin",
+  "version": "6.0.0",
   "private": true,
   "type": "module",
   "scripts": {

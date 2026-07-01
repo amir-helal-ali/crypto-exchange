@@ -1,188 +1,130 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { authGet, authPut, createAdminStream } from '$lib/api/client';
-	import { toast } from '$lib/stores/toast';
-	import { formatNumber, formatDate, getInitials, statusConfigs, debounce } from '$lib/utils/helpers';
-	import StatCard from '$lib/components/StatCard.svelte';
+	import { authGet, authPut } from '$lib/api/client';
+	import { formatDate, debounce, statusConfigs } from '$lib/utils/helpers';
+	import { addToast } from '$lib/stores/toast';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import Pagination from '$lib/components/Pagination.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
-	import type { AdminUser, UserStats, PaginatedResponse } from '$lib/api/types';
-	import { Users, ShieldCheck, Mail, UserCheck, RefreshCw } from 'lucide-svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import { UserCheck, Shield, Mail } from 'lucide-svelte';
+	import type { AdminUser } from '$lib/api/types';
 
 	let users = $state<AdminUser[]>([]);
-	let stats = $state<UserStats | null>(null);
+	let total = $state(0);
+	let page = $state(1);
+	let limit = $state(20);
+	let search = $state('');
 	let loading = $state(true);
 	let error = $state('');
-	let page = $state(1);
-	let totalPages = $state(1);
-	let totalItems = $state(0);
-	let search = $state('');
-	let roleFilter = $state('');
-	let kycFilter = $state('');
-	let eventSource: EventSource | null = null;
 
-	const filters = [
-		{
-			key: 'role',
-			label: 'الدور',
-			options: [
-				{ value: 'USER', label: 'مستخدم' },
-				{ value: 'ADMIN', label: 'مدير' },
-				{ value: 'VERIFIED_USER', label: 'موثّق' }
-			]
-		},
-		{
-			key: 'kyc',
-			label: 'حالة KYC',
-			options: [
-				{ value: 'PENDING', label: 'قيد الانتظار' },
-				{ value: 'APPROVED', label: 'مقبول' },
-				{ value: 'REJECTED', label: 'مرفوض' },
-				{ value: 'NONE', label: 'لا يوجد' }
-			]
-		}
-	];
-	let filterValues = $state<Record<string, string>>({});
+	let roleModal = $state(false);
+	let selectedUser = $state<AdminUser | null>(null);
+	let newRole = $state('');
+
+	const roleLabels: Record<string, string> = { USER: 'مستخدم', ADMIN: 'مدير', VERIFIED_USER: 'مستخدم موثق' };
+
+	onMount(() => loadUsers());
 
 	async function loadUsers() {
-		loading = true;
-		error = '';
-		let path = `/api/v1/admin/users?page=${page}&limit=20`;
-		if (search) path += `&search=${encodeURIComponent(search)}`;
-		const res = await authGet<AdminUser[]>(path);
+		loading = true; error = '';
+		const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+		if (search) params.set('search', search);
+		const res = await authGet<AdminUser[]>(`/api/v1/admin/users?${params}`);
 		if (res.success && res.data) {
-			users = (res as any).data || [];
-			totalItems = (res as any).total || 0;
-			totalPages = Math.ceil(totalItems / 20);
-		} else {
-			error = res.error || 'فشل تحميل المستخدمين';
-		}
+			users = Array.isArray(res.data) ? res.data : [];
+			total = res.total || users.length;
+		} else { error = res.error || 'فشل تحميل المستخدمين'; }
 		loading = false;
 	}
 
-	async function loadStats() {
-		const res = await authGet<UserStats>('/api/v1/admin/users?limit=1');
-		if (res.success) {
-			stats = (res as any).stats || null;
-		}
+	const debouncedSearch = debounce(() => { page = 1; loadUsers(); }, 300);
+
+	function onSearch(v: string) { search = v; debouncedSearch(); }
+
+	function openRoleModal(user: AdminUser) {
+		selectedUser = user; newRole = user.role; roleModal = true;
 	}
 
-	async function toggleRole(user: AdminUser) {
-		const newRole = user.role === 'ADMIN' ? 'USER' : 'ADMIN';
-		const res = await authPut(`/api/v1/admin/user/${user.id}/role`, { role: newRole });
+	async function changeRole() {
+		if (!selectedUser || !newRole) return;
+		const res = await authPut(`/api/v1/admin/user/${selectedUser.id}/role`, { role: newRole });
 		if (res.success) {
-			toast.success(`تم تحديث دور ${user.username}`);
-			loadUsers();
-		} else {
-			toast.error(res.error || 'فشل تحديث الدور');
-		}
+			addToast('success', 'تم تحديث الدور بنجاح');
+			roleModal = false; loadUsers();
+		} else { addToast('error', res.error || 'فشل تحديث الدور'); }
 	}
 
 	async function verifyEmail(user: AdminUser) {
 		const res = await authPut(`/api/v1/admin/user/${user.id}/verify-email`);
-		if (res.success) {
-			toast.success(`تم توثيق بريد ${user.username}`);
-			loadUsers();
-		} else {
-			toast.error(res.error || 'فشل توثيق البريد');
-		}
+		if (res.success) { addToast('success', 'تم توثيق البريد'); loadUsers(); }
+		else { addToast('error', res.error || 'فشل التوثيق'); }
 	}
-
-	const debouncedSearch = debounce(() => { page = 1; loadUsers(); }, 350);
-
-	$effect(() => {
-		if (search) debouncedSearch();
-		else { page = 1; loadUsers(); }
-	});
-
-	$effect(() => {
-		roleFilter = filterValues.role || '';
-		kycFilter = filterValues.kyc || '';
-		if (roleFilter || kycFilter) { page = 1; loadUsers(); }
-	});
-
-	$effect(() => { if (page > 1) loadUsers(); });
-
-	onMount(() => {
-		loadUsers();
-		eventSource = createAdminStream(['users', 'user-stats']);
-		eventSource?.addEventListener('users', () => { loadUsers(); });
-		return () => { eventSource?.close(); };
-	});
 </script>
 
-<PageHeader title="إدارة المستخدمين" subtitle="عرض وإدارة حسابات المستخدمين">
-	<button class="btn-ghost" onclick={loadUsers} disabled={loading}>
-		<RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
-	</button>
-</PageHeader>
+<PageHeader title="إدارة المستخدمين" subtitle="عرض وإدارة حسابات المستخدمين" />
 
-<!-- Stats -->
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-	<StatCard label="إجمالي المستخدمين" value={stats ? formatNumber(stats.total) : '—'} icon={Users} iconColor="#a855f7" iconBg="rgba(168,85,247,0.15)" chartColor="#a855f7" chartSeed={10} loading={loading} />
-	<StatCard label="المدراء" value={stats ? formatNumber(stats.admins) : '—'} icon={ShieldCheck} iconColor="#f5b544" iconBg="rgba(245,181,68,0.15)" chartColor="#f5b544" chartSeed={20} loading={loading} />
-	<StatCard label="بريد موثّق" value={stats ? formatNumber(stats.emailVerified) : '—'} icon={Mail} iconColor="#3b82f6" iconBg="rgba(59,130,246,0.15)" chartColor="#3b82f6" chartSeed={30} loading={loading} />
-	<StatCard label="KYC موثّق" value={stats ? formatNumber(stats.kycVerified) : '—'} icon={UserCheck} iconColor="#22d3a4" iconBg="rgba(34,211,164,0.15)" chartColor="#22d3a4" chartSeed={40} loading={loading} />
+<div class="flex items-center gap-4 mb-4">
+	<div class="flex-1 max-w-sm"><SearchBar placeholder="بحث بالاسم أو البريد..." onchange={onSearch} /></div>
 </div>
 
 {#if error}
-	<ErrorAlert message={error} onclose={() => (error = '')} />
+	<ErrorAlert message={error} onretry={loadUsers} />
+{:else if loading}
+	<div class="panel p-4"><div class="skeleton h-64"></div></div>
+{:else if users.length === 0}
+	<EmptyState message="لا يوجد مستخدمين" />
+{:else}
+	<div class="panel overflow-x-auto">
+		<table class="data-table">
+			<thead>
+				<tr>
+					<th>المستخدم</th><th>الدور</th><th>البريد</th><th>2FA</th><th>التسجيل</th><th>إجراءات</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each users as user}
+					<tr>
+						<td>
+							<div class="flex items-center gap-2">
+								<div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+									style="background: rgba(245,181,68,0.1); color: var(--gold);">
+									{user.username?.[0]?.toUpperCase() || '?'}
+								</div>
+								<div><p class="font-medium text-sm">{user.username}</p><p class="text-xs text-[var(--ink-muted)]">{user.email}</p></div>
+							</div>
+						</td>
+						<td><span class="pill pill-{user.role === 'ADMIN' ? 'approved' : user.role === 'VERIFIED_USER' ? 'pending' : 'inactive'}">{roleLabels[user.role] || user.role}</span></td>
+						<td>{#if user.email_verified}<span class="text-[var(--mint)] text-xs">موثّق</span>{:else}<span class="text-[var(--ink-muted)] text-xs">غير موثّق</span>{/if}</td>
+						<td>{#if user.two_fa_enabled}<span class="text-[var(--mint)] text-xs">مفعّل</span>{:else}<span class="text-[var(--ink-muted)] text-xs">معطّل</span>{/if}</td>
+						<td class="text-xs text-[var(--ink-muted)]">{formatDate(user.created_at)}</td>
+						<td>
+							<div class="flex gap-2">
+								<button class="btn-ghost text-xs" onclick={() => openRoleModal(user)}><Shield size={14} /></button>
+								{#if !user.email_verified}<button class="btn-ghost text-xs" onclick={() => verifyEmail(user)}><Mail size={14} /></button>{/if}
+							</div>
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+	<Pagination {page} {total} {limit} onchange={(p) => { page = p; loadUsers(); }} />
 {/if}
 
-<SearchBar bind:value={search} placeholder="بحث بالاسم أو البريد..." {filters} bind:filterValues />
-
-<DataTable headers={['المستخدم', 'الدور', 'البريد', 'الحالة', 'التسجيل', 'إجراءات']} {loading} emptyIcon={Users} emptyTitle="لا يوجد مستخدمين">
-	{#each users as user}
-		<tr>
-			<td>
-				<div class="flex items-center gap-3">
-					<div class="w-9 h-9 rounded-lg bg-accent-violet/15 border border-accent-violet/20 flex items-center justify-center flex-shrink-0">
-						<span class="text-xs font-bold text-accent-violet">{getInitials(user.username)}</span>
-					</div>
-					<div>
-						<p class="text-sm font-medium text-ink-primary">{user.username}</p>
-						<p class="text-xs text-ink-muted">#{user.id}</p>
-					</div>
-				</div>
-			</td>
-			<td>
-				<span class={user.role === 'ADMIN' ? 'pill-approved' : user.role === 'VERIFIED_USER' ? 'pill-pending' : 'pill-inactive'}>
-					{user.role === 'ADMIN' ? 'مدير' : user.role === 'VERIFIED_USER' ? 'موثّق' : 'مستخدم'}
-				</span>
-			</td>
-			<td>
-				<div class="flex items-center gap-1.5">
-					<span class="text-sm text-ink-secondary" dir="ltr">{user.email}</span>
-					{#if user.email_verified}
-						<Mail size={12} class="text-accent-mint" />
-					{/if}
-				</div>
-			</td>
-			<td>
-				<span class={(statusConfigs[user.kyc_status || 'NONE']?.pillClass || 'pill-none')}>
-					{statusConfigs[user.kyc_status || 'NONE']?.label || 'لا يوجد'}
-				</span>
-			</td>
-			<td>
-				<span class="text-sm text-ink-muted">{formatDate(user.created_at)}</span>
-			</td>
-			<td>
-				<div class="flex items-center gap-2">
-					<button class="btn-ghost text-xs px-2 py-1" onclick={() => toggleRole(user)}>
-						{user.role === 'ADMIN' ? 'إزالة صلاحية' : 'ترقية'}
-					</button>
-					{#if !user.email_verified}
-						<button class="btn-ghost text-xs px-2 py-1 text-accent-mint" onclick={() => verifyEmail(user)}>
-							توثيق البريد
-						</button>
-					{/if}
-				</div>
-			</td>
-		</tr>
-	{/each}
-</DataTable>
-
-<Pagination bind:page {totalPages} {totalItems} itemLabel="مستخدم" />
+<Modal open={roleModal} title="تحديث دور المستخدم" onclose={() => roleModal = false}>
+	{#snippet children()}
+		<p class="text-sm text-[var(--ink-secondary)] mb-4">المستخدم: <strong>{selectedUser?.username}</strong></p>
+		<select class="input-field" bind:value={newRole}>
+			<option value="USER">مستخدم</option>
+			<option value="VERIFIED_USER">مستخدم موثق</option>
+			<option value="ADMIN">مدير</option>
+		</select>
+	{/snippet}
+	{#snippet footer()}
+		<button class="btn-secondary" onclick={() => roleModal = false}>إلغاء</button>
+		<button class="btn-primary" onclick={changeRole}>تحديث</button>
+	{/snippet}
+</Modal>

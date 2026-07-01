@@ -1,13 +1,10 @@
 <script lang="ts">
 	import '../app.css';
 	import Toast from '$lib/components/Toast.svelte';
-	import { toast } from '$lib/stores/toast';
+	import type { Snippet } from 'svelte';
 
-	let { children } = $props<{ children: import('svelte').Snippet }>();
-
-	let toasts = $state<import('$lib/stores/toast').ToastItem[]>([]);
-	toast.subscribe((v) => { toasts = v; });
+	let { children }: { children: Snippet } = $props();
 </script>
 
+<Toast />
 {@render children()}
-<Toast bind:items={toasts} />

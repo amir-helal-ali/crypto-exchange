@@ -1,43 +1,40 @@
 <script lang="ts">
-	import { fade, scale } from 'svelte/transition';
-	import type { ToastItem } from '$lib/stores/toast';
-	import { X, CheckCircle, AlertTriangle, Info, AlertOctagon } from 'lucide-svelte';
+	import { getToasts, removeToast } from '$lib/stores/toast';
+	import { X } from 'lucide-svelte';
 
-	let { items = $bindable([]) } = $props<{ items: ToastItem[] }>();
-
-	const iconMap = {
-		success: CheckCircle,
-		error: AlertOctagon,
-		warning: AlertTriangle,
-		info: Info
-	};
-	const colorMap = {
-		success: { border: 'border-accent-mint/25', bg: 'bg-accent-mint/10', icon: 'text-accent-mint' },
-		error: { border: 'border-accent-rose/25', bg: 'bg-accent-rose/10', icon: 'text-accent-rose' },
-		warning: { border: 'border-accent-gold/25', bg: 'bg-accent-gold/10', icon: 'text-accent-gold' },
-		info: { border: 'border-accent-azure/25', bg: 'bg-accent-azure/10', icon: 'text-accent-azure' }
+	const typeStyles: Record<string, string> = {
+		success: 'border-l-4 border-l-[#22d3a4] bg-[rgba(34,211,164,0.1)]',
+		error: 'border-l-4 border-l-[#fb7185] bg-[rgba(251,113,133,0.1)]',
+		warning: 'border-l-4 border-l-[#f5b544] bg-[rgba(245,181,68,0.1)]',
+		info: 'border-l-4 border-l-[#3b82f6] bg-[rgba(59,130,246,0.1)]'
 	};
 
-	function dismiss(id: string) {
-		items = items.filter((i) => i.id !== id);
-	}
+	const typeIcons: Record<string, string> = {
+		success: '#22d3a4',
+		error: '#fb7185',
+		warning: '#f5b544',
+		info: '#3b82f6'
+	};
 </script>
 
-{#if items.length > 0}
-	<div class="fixed top-4 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 w-full max-w-md px-4">
-		{#each items as item (item.id)}
-			{@const colors = colorMap[item.type]}
-			{@const Icon = iconMap[item.type]}
-			<div
-				class="panel {colors.border} {colors.bg} flex items-center gap-3 px-4 py-3 animate-slide-down"
-				transition:scale={{ start: 0.95, duration: 200 }}
-			>
-				<Icon size={18} class={colors.icon} />
-				<span class="text-sm text-ink-primary flex-1">{item.message}</span>
-				<button onclick={() => dismiss(item.id)} class="text-ink-muted hover:text-ink-primary transition-colors">
-					<X size={14} />
-				</button>
-			</div>
-		{/each}
-	</div>
-{/if}
+<div class="fixed top-4 left-4 z-[9999] flex flex-col gap-2 max-w-sm">
+	{#each getToasts() as toast (toast.id)}
+		<div
+			class="panel flex items-center gap-3 px-4 py-3 shadow-lg animate-in {typeStyles[toast.type]}"
+			style="animation: slideIn 0.3s ease-out"
+		>
+			<div class="w-2 h-2 rounded-full flex-shrink-0" style="background: {typeIcons[toast.type]}"></div>
+			<span class="text-sm flex-1">{toast.message}</span>
+			<button onclick={() => removeToast(toast.id)} class="text-[var(--ink-muted)] hover:text-[var(--ink-primary)] transition-colors">
+				<X size={14} />
+			</button>
+		</div>
+	{/each}
+</div>
+
+<style>
+	@keyframes slideIn {
+		from { transform: translateX(-100%); opacity: 0; }
+		to { transform: translateX(0); opacity: 1; }
+	}
+</style>

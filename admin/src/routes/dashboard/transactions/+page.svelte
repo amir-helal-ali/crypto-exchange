@@ -1,205 +1,128 @@
 <script lang="ts">
-        import { onMount } from 'svelte';
-        import { authGet, authPut, createAdminStream } from '$lib/api/client';
-        import { toast } from '$lib/stores/toast';
-        import { formatNumber, formatCurrency, formatDate, statusConfigs, copyToClipboard, debounce } from '$lib/utils/helpers';
-        import PageHeader from '$lib/components/PageHeader.svelte';
-        import DataTable from '$lib/components/DataTable.svelte';
-        import Pagination from '$lib/components/Pagination.svelte';
-        import SearchBar from '$lib/components/SearchBar.svelte';
-        import Modal from '$lib/components/Modal.svelte';
-        import ErrorAlert from '$lib/components/ErrorAlert.svelte';
-        import type { AdminTransaction } from '$lib/api/types';
-        import { ArrowLeftRight, ArrowDownToLine, ArrowUpFromLine, Copy, Check, RefreshCw, XCircle } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { authGet, authPut } from '$lib/api/client';
+	import { formatDate, formatCurrency } from '$lib/utils/helpers';
+	import { addToast } from '$lib/stores/toast';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-svelte';
+	import type { AdminTransaction } from '$lib/api/types';
 
-        let transactions = $state<AdminTransaction[]>([]);
-        let loading = $state(true);
-        let error = $state('');
-        let page = $state(1);
-        let totalPages = $state(1);
-        let totalItems = $state(0);
-        let search = $state('');
-        let copiedId = $state('');
-        let eventSource: EventSource | null = null;
+	let transactions = $state<AdminTransaction[]>([]);
+	let total = $state(0);
+	let page = $state(1);
+	let limit = $state(20);
+	let typeFilter = $state('');
+	let statusFilter = $state('');
+	let loading = $state(true);
+	let error = $state('');
 
-        // Review Modal
-        let reviewOpen = $state(false);
-        let reviewTx = $state<AdminTransaction | null>(null);
-        let reviewAction = $state<'approve' | 'reject'>('approve');
-        let reviewTxId = $state('');
-        let reviewLoading = $state(false);
+	let reviewModal = $state(false);
+	let selectedTx = $state<AdminTransaction | null>(null);
+	let reviewStatus = $state('COMPLETED');
+	let rejectionReason = $state('');
 
-        const filters = [
-                {
-                        key: 'status',
-                        label: 'الحالة',
-                        options: [
-                                { value: 'PENDING', label: 'قيد الانتظار' },
-                                { value: 'COMPLETED', label: 'مكتمل' },
-                                { value: 'REJECTED', label: 'مرفوض' }
-                        ]
-                },
-                {
-                        key: 'type',
-                        label: 'النوع',
-                        options: [
-                                { value: 'DEPOSIT', label: 'إيداع' },
-                                { value: 'WITHDRAWAL', label: 'سحب' }
-                        ]
-                }
-        ];
-        let filterValues = $state<Record<string, string>>({});
+	const typeTabs = [
+		{ id: '', label: 'الكل' },
+		{ id: 'DEPOSIT', label: 'إيداع' },
+		{ id: 'WITHDRAWAL', label: 'سحب' }
+	];
+	const statusTabs = [
+		{ id: '', label: 'الكل' },
+		{ id: 'PENDING', label: 'معلق' },
+		{ id: 'COMPLETED', label: 'مكتمل' },
+		{ id: 'REJECTED', label: 'مرفوض' }
+	];
 
-        async function loadTransactions() {
-                loading = true;
-                error = '';
-                let path = `/api/v1/admin/transactions?page=${page}&limit=20`;
-                if (search) path += `&search=${encodeURIComponent(search)}`;
-                const res = await authGet<AdminTransaction[]>(path);
-                if (res.success && res.data) {
-                        transactions = (res as any).data || [];
-                        totalItems = (res as any).total || 0;
-                        totalPages = Math.ceil(totalItems / 20);
-                } else {
-                        error = res.error || 'فشل تحميل المعاملات';
-                }
-                loading = false;
-        }
+	onMount(() => loadTransactions());
 
-        async function handleReview() {
-                if (!reviewTx) return;
-                reviewLoading = true;
-                const body: any = { action: reviewAction };
-                if (reviewAction === 'approve' && reviewTxId) body.tx_id = reviewTxId;
-                const res = await authPut(`/api/v1/admin/transactions/${reviewTx.id}/review`, body);
-                if (res.success) {
-                        toast.success(reviewAction === 'approve' ? 'تم قبول المعاملة' : 'تم رفض المعاملة');
-                        reviewOpen = false;
-                        reviewTx = null;
-                        reviewTxId = '';
-                        loadTransactions();
-                } else {
-                        toast.error(res.error || 'فشل مراجعة المعاملة');
-                }
-                reviewLoading = false;
-        }
+	async function loadTransactions() {
+		loading = true; error = '';
+		const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+		if (typeFilter) params.set('type', typeFilter);
+		if (statusFilter) params.set('status', statusFilter);
+		const res = await authGet<AdminTransaction[]>(`/api/v1/admin/transactions?${params}`);
+		if (res.success && res.data) {
+			transactions = Array.isArray(res.data) ? res.data : [];
+			total = res.total || transactions.length;
+		} else { error = res.error || 'فشل تحميل المعاملات'; }
+		loading = false;
+	}
 
-        function openReview(tx: AdminTransaction, action: 'approve' | 'reject') {
-                reviewTx = tx;
-                reviewAction = action;
-                reviewTxId = '';
-                reviewOpen = true;
-        }
+	function setTypeFilter(t: string) { typeFilter = t; page = 1; loadTransactions(); }
+	function setStatusFilter(s: string) { statusFilter = s; page = 1; loadTransactions(); }
 
-        async function copyTxId(txId: string | undefined) {
-                if (!txId) return;
-                await copyToClipboard(txId);
-                copiedId = txId;
-                setTimeout(() => { copiedId = ''; }, 2000);
-        }
+	function openReview(tx: AdminTransaction) {
+		selectedTx = tx; reviewStatus = 'COMPLETED'; rejectionReason = '';
+		reviewModal = true;
+	}
 
-        onMount(() => {
-                loadTransactions();
-                eventSource = createAdminStream(['tx']);
-                eventSource?.addEventListener('tx', () => { loadTransactions(); });
-                return () => { eventSource?.close(); };
-        });
+	async function submitReview() {
+		if (!selectedTx) return;
+		const body: any = { status: reviewStatus };
+		if (reviewStatus === 'REJECTED' && rejectionReason) body.rejection_reason = rejectionReason;
+		const res = await authPut(`/api/v1/admin/transactions/${selectedTx.id}/review`, body);
+		if (res.success) {
+			addToast('success', 'تم مراجعة المعاملة');
+			reviewModal = false; loadTransactions();
+		} else { addToast('error', res.error || 'فشل المراجعة'); }
+	}
 </script>
 
-<PageHeader title="إدارة المعاملات" subtitle="مراجعة الودائع والسحوبات">
-        <button class="btn-ghost" onclick={loadTransactions} disabled={loading}>
-                <RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
-        </button>
-</PageHeader>
+<PageHeader title="المعاملات المالية" subtitle="إدارة الإيداعات والسحوبات" />
+
+<div class="flex flex-wrap gap-2 mb-4">
+	{#each typeTabs as tab}
+		<button class="tab-btn {typeFilter === tab.id ? 'tab-btn-active' : ''}" onclick={() => setTypeFilter(tab.id)}>{tab.label}</button>
+	{/each}
+	<span class="mx-2 text-[var(--ink-faint)]">|</span>
+	{#each statusTabs as tab}
+		<button class="tab-btn {statusFilter === tab.id ? 'tab-btn-active' : ''}" onclick={() => setStatusFilter(tab.id)}>{tab.label}</button>
+	{/each}
+</div>
 
 {#if error}
-        <ErrorAlert message={error} onclose={() => (error = '')} />
+	<ErrorAlert message={error} onretry={loadTransactions} />
+{:else if loading}
+	<div class="panel p-4"><div class="skeleton h-64"></div></div>
+{:else if transactions.length === 0}
+	<EmptyState message="لا توجد معاملات" />
+{:else}
+	<div class="panel overflow-x-auto">
+		<table class="data-table">
+			<thead><tr><th>المستخدم</th><th>النوع</th><th>العملة</th><th>المبلغ</th><th>الحالة</th><th>التاريخ</th><th>إجراءات</th></tr></thead>
+			<tbody>
+				{#each transactions as tx}
+					<tr>
+						<td><p class="text-sm font-medium">{tx.username}</p><p class="text-xs text-[var(--ink-muted)]">{tx.email}</p></td>
+						<td>{#if tx.type === 'DEPOSIT'}<span class="text-[var(--mint)] text-xs flex items-center gap-1"><ArrowDownToLine size={12}/>إيداع</span>{:else}<span class="text-[var(--rose)] text-xs flex items-center gap-1"><ArrowUpFromLine size={12}/>سحب</span>{/if}</td>
+						<td class="text-sm">{tx.currency}</td>
+						<td class="text-sm tabular-nums font-medium">{formatCurrency(tx.amount)}</td>
+						<td><span class="pill pill-{tx.status === 'COMPLETED' ? 'completed' : tx.status === 'PENDING' ? 'pending' : 'rejected'}">{tx.status === 'COMPLETED' ? 'مكتمل' : tx.status === 'PENDING' ? 'معلق' : 'مرفوض'}</span></td>
+						<td class="text-xs text-[var(--ink-muted)]">{formatDate(tx.createdAt)}</td>
+						<td>{#if tx.status === 'PENDING'}<button class="btn-ghost text-xs" onclick={() => openReview(tx)}>مراجعة</button>{/if}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+	<Pagination {page} {total} {limit} onchange={(p) => { page = p; loadTransactions(); }} />
 {/if}
 
-<SearchBar bind:value={search} placeholder="بحث بالاسم أو المعرف..." {filters} bind:filterValues />
-
-<DataTable headers={['المستخدم', 'النوع', 'المبلغ', 'الحالة', 'TxID', 'التاريخ', 'إجراءات']} {loading} emptyIcon={ArrowLeftRight} emptyTitle="لا توجد معاملات">
-        {#each transactions as tx}
-                <tr>
-                        <td>
-                                <div>
-                                        <p class="text-sm font-medium text-ink-primary">{tx.username}</p>
-                                        <p class="text-xs text-ink-muted" dir="ltr">{tx.email}</p>
-                                </div>
-                        </td>
-                        <td>
-                                <div class="flex items-center gap-2">
-                                        {#if tx.type === 'DEPOSIT'}
-                                                <ArrowDownToLine size={14} class="text-accent-mint" />
-                                                <span class="text-sm text-accent-mint">إيداع</span>
-                                        {:else}
-                                                <ArrowUpFromLine size={14} class="text-accent-rose" />
-                                                <span class="text-sm text-accent-rose">سحب</span>
-                                        {/if}
-                                </div>
-                        </td>
-                        <td>
-                                <span class="text-sm font-bold text-ink-primary tabular-nums">{formatCurrency(tx.amount, tx.currency)}</span>
-                        </td>
-                        <td>
-                                <span class={statusConfigs[tx.status]?.pillClass || 'pill-none'}>
-                                        {statusConfigs[tx.status]?.label || tx.status}
-                                </span>
-                        </td>
-                        <td>
-                                {#if tx.tx_id}
-                                        <div class="flex items-center gap-1.5">
-                                                <span class="text-xs text-ink-muted font-mono truncate max-w-[120px]" dir="ltr">{tx.tx_id}</span>
-                                                <button class="text-ink-faint hover:text-ink-primary transition-colors" onclick={() => copyTxId(tx.tx_id)}>
-                                                        {#if copiedId === tx.tx_id}<Check size={12} class="text-accent-mint" />{:else}<Copy size={12} />{/if}
-                                                </button>
-                                        </div>
-                                {:else}
-                                        <span class="text-xs text-ink-faint">—</span>
-                                {/if}
-                        </td>
-                        <td>
-                                <span class="text-sm text-ink-muted">{formatDate(tx.createdAt)}</span>
-                        </td>
-                        <td>
-                                {#if tx.status === 'PENDING'}
-                                        <div class="flex items-center gap-2">
-                                                <button class="btn-buy text-xs px-2 py-1" onclick={() => openReview(tx, 'approve')}>قبول</button>
-                                                <button class="btn-danger text-xs px-2 py-1" onclick={() => openReview(tx, 'reject')}>رفض</button>
-                                        </div>
-                                {:else}
-                                        <span class="text-xs text-ink-faint">—</span>
-                                {/if}
-                        </td>
-                </tr>
-        {/each}
-</DataTable>
-
-<Pagination bind:page {totalPages} {totalItems} itemLabel="معاملة" />
-
-<!-- Review Modal -->
-<Modal bind:open={reviewOpen} title={reviewAction === 'approve' ? 'قبول المعاملة' : 'رفض المعاملة'} icon={reviewAction === 'approve' ? Check : XCircle} iconColor={reviewAction === 'approve' ? '#22d3a4' : '#fb7185'} iconBg={reviewAction === 'approve' ? 'rgba(34,211,164,0.15)' : 'rgba(251,113,133,0.15)'} size="md">
-        {#if reviewTx}
-                <div class="flex flex-col gap-4">
-                        <div class="grid grid-cols-2 gap-3 text-sm">
-                                <div><span class="text-ink-muted">المستخدم:</span> <span class="text-ink-primary">{reviewTx.username}</span></div>
-                                <div><span class="text-ink-muted">النوع:</span> <span class={reviewTx.type === 'DEPOSIT' ? 'text-accent-mint' : 'text-accent-rose'}>{reviewTx.type === 'DEPOSIT' ? 'إيداع' : 'سحب'}</span></div>
-                                <div><span class="text-ink-muted">المبلغ:</span> <span class="text-ink-primary tabular-nums">{formatCurrency(reviewTx.amount, reviewTx.currency)}</span></div>
-                                <div><span class="text-ink-muted">العملة:</span> <span class="text-ink-primary">{reviewTx.currency}</span></div>
-                        </div>
-                        {#if reviewAction === 'approve'}
-                                <div>
-                                        <label for="txId" class="block text-sm text-ink-secondary mb-2">معرف المعاملة (TxID)</label>
-                                        <input id="txId" type="text" bind:value={reviewTxId} class="input-field font-mono" placeholder="أدخل معرف المعاملة على البلوكتشين..." dir="ltr" />
-                                </div>
-                        {/if}
-                </div>
-        {/if}
-        {#snippet footer()}
-                <button class="btn-ghost" onclick={() => (reviewOpen = false)}>إلغاء</button>
-                <button class={reviewAction === 'approve' ? 'btn-buy' : 'btn-danger'} onclick={handleReview} disabled={reviewLoading}>
-                        {#if reviewLoading}<RefreshCw size={14} class="animate-spin" />{/if}
-                        {reviewAction === 'approve' ? 'قبول' : 'رفض'}
-                </button>
-        {/snippet}
+<Modal open={reviewModal} title="مراجعة المعاملة" onclose={() => reviewModal = false}>
+	{#snippet children()}
+		<p class="text-sm text-[var(--ink-secondary)] mb-4">{selectedTx?.type === 'DEPOSIT' ? 'إيداع' : 'سحب'} — {formatCurrency(selectedTx?.amount || 0)}</p>
+		<div class="space-y-3">
+			<label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="txReview" value="COMPLETED" bind:group={reviewStatus} /><span class="text-sm text-[var(--mint)]">إكمال</span></label>
+			<label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="txReview" value="REJECTED" bind:group={reviewStatus} /><span class="text-sm text-[var(--rose)]">رفض</span></label>
+			{#if reviewStatus === 'REJECTED'}<textarea class="input-field" placeholder="سبب الرفض..." bind:value={rejectionReason} rows="3"></textarea>{/if}
+		</div>
+	{/snippet}
+	{#snippet footer()}
+		<button class="btn-secondary" onclick={() => reviewModal = false}>إلغاء</button>
+		<button class="btn-primary" onclick={submitReview}>تأكيد</button>
+	{/snippet}
 </Modal>

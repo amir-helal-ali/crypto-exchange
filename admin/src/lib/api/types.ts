@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// NEXUS ADMIN v4.0 — Type Definitions
+// NEXUS ADMIN v6.0 — Type Definitions
 // ═══════════════════════════════════════════════════════════
 
 export interface AdminStats {
@@ -217,4 +217,14 @@ export interface LoginResponse {
 export interface SSEMessage {
 	type: string;
 	data: unknown;
+}
+
+export interface PublicConfig {
+	main_domain: string;
+	frontend_domain: string;
+	backend_domain: string;
+	admin_domain: string;
+	ssl_enabled: boolean;
+	registration_open: boolean;
+	maintenance_mode: boolean;
 }
