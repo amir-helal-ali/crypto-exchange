@@ -1,361 +1,177 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { API, setTokens, setUser, clearTokens } from '$lib/api/client';
-  import { toast } from '$lib/stores/toast';
-  import { Shield, Eye, EyeOff, Mail, Lock, Loader2, LogIn, KeyRound, AlertCircle, CheckCircle2, Fingerprint } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { login, verify2FA, setTokens, setStoredUser } from '$lib/api/client';
+	import { toast } from '$lib/stores/toast';
+	import { ShieldCheck, Eye, EyeOff, Loader2 } from 'lucide-svelte';
 
-  let email = $state('');
-  let password = $state('');
-  let showPassword = $state(false);
-  let loading = $state(false);
-  let error = $state('');
-  let step: 'login' | '2fa' = $state('login');
-  let tempToken = $state('');
-  let code = $state('');
-  let loading2fa = $state(false);
+	let email = $state('');
+	let password = $state('');
+	let showPassword = $state(false);
+	let loading = $state(false);
+	let error = $state('');
+	let requires2FA = $state(false);
+	let tempToken = $state('');
+	let twoFACode = $state('');
 
-  async function handleLogin(e: Event) {
-    e.preventDefault();
-    error = '';
-    if (!email.trim() || !password.trim()) { error = 'يرجى ملء جميع الحقول'; return; }
-    loading = true;
-    try {
-      const res = await fetch(`${API}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password })
-      });
-      const data = await res.json();
-      if (!res.ok) { error = data.message || data.error || 'فشل تسجيل الدخول'; return; }
-      if (data.requires_2fa) { tempToken = data.temp_token; step = '2fa'; toast.info('يرجى إدخال رمز التحقق الثنائي'); return; }
-      if (data.user?.role !== 'ADMIN') { error = 'ليس لديك صلاحية الوصول إلى لوحة الإدارة'; clearTokens(); return; }
-      setTokens(data.token, data.refresh_token);
-      setUser(data.user);
-      toast.success('تم تسجيل الدخول بنجاح');
-      setTimeout(() => goto('/dashboard'), 500);
-    } catch { error = 'حدث خطأ في الاتصال بالخادم'; }
-    finally { loading = false; }
-  }
+	async function handleLogin() {
+		error = '';
+		loading = true;
 
-  async function handleVerify2FA(e: Event) {
-    e.preventDefault();
-    error = '';
-    if (!code.trim()) { error = 'يرجى إدخال رمز التحقق'; return; }
-    loading2fa = true;
-    try {
-      const res = await fetch(`${API}/api/v1/auth/verify-2fa`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ temp_token: tempToken, code: code.trim() })
-      });
-      const data = await res.json();
-      if (!res.ok) { error = data.message || data.error || 'رمز التحقق غير صحيح'; return; }
-      if (data.user?.role !== 'ADMIN') { error = 'ليس لديك صلاحية الوصول إلى لوحة الإدارة'; clearTokens(); return; }
-      setTokens(data.token, data.refresh_token);
-      setUser(data.user);
-      toast.success('تم التحقق بنجاح');
-      setTimeout(() => goto('/dashboard'), 500);
-    } catch { error = 'حدث خطأ في الاتصال بالخادم'; }
-    finally { loading2fa = false; }
-  }
+		try {
+			const res = await login(email, password);
 
-  function backToLogin() { step = 'login'; code = ''; tempToken = ''; error = ''; }
+			if (res.success && res.data) {
+				if (res.data.requires_2fa) {
+					requires2FA = true;
+					tempToken = res.data.token;
+				} else if (res.data.user?.role === 'ADMIN') {
+					setTokens(res.data.token, res.data.refresh_token);
+					setStoredUser(res.data.user);
+					toast.success('تم تسجيل الدخول بنجاح');
+					goto('/dashboard');
+				} else {
+					error = 'ليس لديك صلاحية الوصول';
+				}
+			} else {
+				error = res.data?.message || 'بيانات الدخول غير صحيحة';
+			}
+		} catch {
+			error = 'حدث خطأ في الاتصال';
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function handle2FA() {
+		error = '';
+		loading = true;
+
+		try {
+			const res = await verify2FA(twoFACode, tempToken);
+			if (res.success && res.data?.user?.role === 'ADMIN') {
+				setTokens(res.data.token, res.data.refresh_token);
+				setStoredUser(res.data.user);
+				toast.success('تم التحقق بنجاح');
+				goto('/dashboard');
+			} else {
+				error = 'رمز التحقق غير صحيح';
+			}
+		} catch {
+			error = 'حدث خطأ في الاتصال';
+		} finally {
+			loading = false;
+		}
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !loading) {
+			if (requires2FA) handle2FA();
+			else handleLogin();
+		}
+	}
 </script>
 
-<svelte:head>
-  <title>تسجيل الدخول - لوحة الإدارة</title>
-</svelte:head>
+<svelte:window onkeydown={handleKeydown} />
 
-<div class="login-page">
-  <!-- Aurora Background -->
-  <div class="aurora-bg">
-    <div class="blob blob-1"></div>
-    <div class="blob blob-2"></div>
-    <div class="blob blob-3"></div>
-    <div class="blob blob-4"></div>
-  </div>
+<div class="min-h-screen flex items-center justify-center relative overflow-hidden">
+	<!-- Aurora Background Blobs -->
+	<div class="absolute inset-0 pointer-events-none overflow-hidden">
+		<div class="absolute w-[500px] h-[400px] rounded-full blur-[120px] bg-accent-gold/[0.07] top-[10%] right-[10%] animate-aurora-1"></div>
+		<div class="absolute w-[400px] h-[400px] rounded-full blur-[100px] bg-accent-violet/[0.06] bottom-[10%] left-[15%] animate-aurora-2"></div>
+		<div class="absolute w-[300px] h-[300px] rounded-full blur-[80px] bg-accent-mint/[0.04] top-[50%] left-[50%] animate-aurora-3"></div>
+		<div class="absolute w-[250px] h-[250px] rounded-full blur-[80px] bg-accent-azure/[0.05] top-[5%] left-[60%] animate-aurora-4"></div>
+	</div>
 
-  <!-- Login Card -->
-  <div class="login-card panel-glow">
-    <!-- Header -->
-    <div class="card-header">
-      <div class="icon-circle">
-        {#if step === 'login'}
-          <Shield size={28} class="icon-main" />
-        {:else}
-          <KeyRound size={28} class="icon-main" />
-        {/if}
-      </div>
-      <h1 class="card-title">
-        {step === 'login' ? 'تسجيل الدخول' : 'التحقق الثنائي'}
-      </h1>
-      <p class="card-subtitle">
-        {step === 'login' ? 'لوحة تحكم المسؤول' : 'أدخل رمز التحقق من تطبيق المصادقة'}
-      </p>
-      {#if step === 'login'}
-        <div class="pill-gold mt-3 gap-1.5">
-          <Fingerprint size={11} />
-          مسؤول النظام
-        </div>
-      {/if}
-    </div>
+	<!-- Login Card -->
+	<div class="relative z-10 w-full max-w-md mx-4">
+		<div class="panel p-8 panel-glow">
+			<!-- Logo -->
+			<div class="flex flex-col items-center mb-8">
+				<div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-gold/30 to-accent-violet/20 border border-accent-gold/20 flex items-center justify-center mb-4 shadow-lg">
+					<ShieldCheck size={28} class="text-accent-gold" />
+				</div>
+				<h1 class="text-2xl font-extrabold text-aurora">NEXUS</h1>
+				<p class="text-sm text-ink-muted mt-1">لوحة الإدارة</p>
+			</div>
 
-    <div class="glass-divider"></div>
+			{#if error}
+				<div class="panel panel-rose px-4 py-3 mb-5 text-sm text-accent-rose text-center">
+					{error}
+				</div>
+			{/if}
 
-    <!-- Error -->
-    {#if error}
-      <div class="error-box">
-        <AlertCircle size={16} />
-        <span>{error}</span>
-      </div>
-    {/if}
-
-    <!-- Login Form -->
-    {#if step === 'login'}
-      <form onsubmit={handleLogin} class="form-body">
-        <div class="field-group">
-          <label for="email" class="field-label">
-            <Mail size={14} />
-            البريد الإلكتروني
-          </label>
-          <div class="input-wrapper">
-            <Mail size={16} class="input-icon" />
-            <input id="email" type="email" class="input-field input-has-icon"
-              placeholder="admin@example.com" bind:value={email} autocomplete="email" dir="ltr" disabled={loading} />
-          </div>
-        </div>
-        <div class="field-group">
-          <label for="password" class="field-label">
-            <Lock size={14} />
-            كلمة المرور
-          </label>
-          <div class="input-wrapper">
-            <Lock size={16} class="input-icon" />
-            <input id="password" type={showPassword ? 'text' : 'password'} class="input-field input-has-icon input-has-action"
-              placeholder="أدخل كلمة المرور" bind:value={password} autocomplete="current-password" dir="ltr" disabled={loading} />
-            <button type="button" class="toggle-password" onclick={() => showPassword = !showPassword} tabindex={-1}>
-              {#if showPassword}<EyeOff size={16} />{:else}<Eye size={16} />{/if}
-            </button>
-          </div>
-        </div>
-        <button type="submit" class="btn-primary btn-full" disabled={loading}>
-          {#if loading}
-            <Loader2 size={18} class="animate-spin" />
-            <span>جاري تسجيل الدخول...</span>
-          {:else}
-            <LogIn size={18} />
-            <span>تسجيل الدخول</span>
-          {/if}
-        </button>
-      </form>
-    {:else}
-      <!-- 2FA Form -->
-      <form onsubmit={handleVerify2FA} class="form-body">
-        <div class="twofa-info">
-          <KeyRound size={20} style="color: #f5b544;" />
-          <span>تم إرسال رمز التحقق إلى تطبيق المصادقة الخاص بك</span>
-        </div>
-        <div class="field-group">
-          <label for="code" class="field-label">
-            <KeyRound size={14} />
-            رمز التحقق
-          </label>
-          <div class="input-wrapper">
-            <KeyRound size={16} class="input-icon" />
-            <input id="code" type="text" class="input-field input-has-icon"
-              placeholder="000000" bind:value={code} autocomplete="one-time-code" dir="ltr" maxlength={6} disabled={loading2fa} />
-          </div>
-        </div>
-        <button type="submit" class="btn-primary btn-full" disabled={loading2fa}>
-          {#if loading2fa}
-            <Loader2 size={18} class="animate-spin" />
-            <span>جاري التحقق...</span>
-          {:else}
-            <Shield size={18} />
-            <span>تحقق</span>
-          {/if}
-        </button>
-        <button type="button" class="btn-back" onclick={backToLogin} disabled={loading2fa}>
-          <span>العودة إلى تسجيل الدخول</span>
-        </button>
-      </form>
-    {/if}
-
-    <!-- Footer -->
-    <div class="glass-divider"></div>
-    <div class="card-footer">
-      <span class="text-aurora font-bold text-xs tracking-wider">NEXUS</span>
-      <span class="footer-dot"></span>
-      <span class="text-xs" style="color: var(--text-quaternary);">لوحة الإدارة v3.0</span>
-    </div>
-  </div>
+			{#if !requires2FA}
+				<!-- Login Form -->
+				<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }} class="flex flex-col gap-5">
+					<div>
+						<label for="loginEmail" class="block text-sm font-medium text-ink-secondary mb-2">البريد الإلكتروني</label>
+						<input
+								id="loginEmail"
+							type="email"
+							bind:value={email}
+							placeholder="admin@example.com"
+							class="input-field"
+							required
+							dir="ltr"
+						/>
+					</div>
+					<div>
+						<label for="loginPassword" class="block text-sm font-medium text-ink-secondary mb-2">كلمة المرور</label>
+						<div class="relative">
+							<input
+								type={showPassword ? 'text' : 'password'}
+								id="loginPassword"
+								bind:value={password}
+								placeholder="••••••••"
+								class="input-field pl-10"
+								required
+								dir="ltr"
+							/>
+							<button
+								type="button"
+								class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink-primary transition-colors"
+								onclick={() => (showPassword = !showPassword)}
+							>
+								{#if showPassword}<EyeOff size={16} />{:else}<Eye size={16} />{/if}
+							</button>
+						</div>
+					</div>
+					<button type="submit" class="btn-primary w-full py-3" disabled={loading}>
+						{#if loading}
+							<Loader2 size={18} class="animate-spin" />
+						{/if}
+						تسجيل الدخول
+					</button>
+				</form>
+			{:else}
+				<!-- 2FA Form -->
+				<form onsubmit={(e) => { e.preventDefault(); handle2FA(); }} class="flex flex-col gap-5">
+					<div class="text-center mb-2">
+						<p class="text-sm text-ink-secondary">أدخل رمز التحقق الثنائي</p>
+					</div>
+					<div>
+						<input
+							type="text"
+							bind:value={twoFACode}
+							placeholder="000000"
+							class="input-field text-center text-2xl tracking-[0.5em] font-mono"
+							maxlength="6"
+							dir="ltr"
+							
+						/>
+					</div>
+					<button type="submit" class="btn-primary w-full py-3" disabled={loading || twoFACode.length < 6}>
+						{#if loading}
+							<Loader2 size={18} class="animate-spin" />
+						{/if}
+						تحقق
+					</button>
+					<button type="button" class="btn-ghost w-full" onclick={() => { requires2FA = false; tempToken = ''; }}>
+						رجوع
+					</button>
+				</form>
+			{/if}
+		</div>
+	</div>
 </div>
-
-<style>
-  .login-page {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    overflow: hidden;
-    padding: 2rem 1rem;
-  }
-  .aurora-bg {
-    position: fixed; inset: 0; z-index: 0;
-    pointer-events: none; overflow: hidden;
-  }
-  .blob {
-    position: absolute; border-radius: 50%;
-    filter: blur(120px); opacity: 0.3;
-  }
-  .blob-1 {
-    width: 600px; height: 600px;
-    background: radial-gradient(circle, rgba(168,85,247,0.5), transparent 70%);
-    top: -15%; right: -10%;
-    animation: drift1 18s ease-in-out infinite;
-  }
-  .blob-2 {
-    width: 500px; height: 500px;
-    background: radial-gradient(circle, rgba(245,181,68,0.4), transparent 70%);
-    bottom: -10%; left: -5%;
-    animation: drift2 22s ease-in-out infinite;
-  }
-  .blob-3 {
-    width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(34,211,164,0.35), transparent 70%);
-    top: 40%; left: 30%;
-    animation: drift3 20s ease-in-out infinite;
-  }
-  .blob-4 {
-    width: 350px; height: 350px;
-    background: radial-gradient(circle, rgba(59,130,246,0.3), transparent 70%);
-    bottom: 20%; right: 20%;
-    animation: drift4 24s ease-in-out infinite;
-  }
-  @keyframes drift1 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(-60px, 40px) scale(1.1); }
-    66% { transform: translate(30px, -30px) scale(0.95); }
-  }
-  @keyframes drift2 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(50px, -50px) scale(1.05); }
-    66% { transform: translate(-40px, 30px) scale(0.9); }
-  }
-  @keyframes drift3 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(-40px, -30px) scale(1.08); }
-    66% { transform: translate(60px, 50px) scale(0.92); }
-  }
-  @keyframes drift4 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(30px, 50px) scale(1.12); }
-    66% { transform: translate(-50px, -40px) scale(0.88); }
-  }
-
-  .login-card {
-    position: relative; z-index: 1; width: 100%; max-width: 420px;
-    padding: 2.5rem 2rem 1.5rem;
-    animation: cardAppear 0.6s var(--ease-out-expo);
-  }
-  @keyframes cardAppear {
-    from { opacity: 0; transform: translateY(24px) scale(0.96); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
-
-  .card-header {
-    display: flex; flex-direction: column; align-items: center;
-    text-align: center; padding-bottom: 1.5rem;
-  }
-  .icon-circle {
-    width: 64px; height: 64px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(245,181,68,0.08); border: 1px solid rgba(245,181,68,0.15);
-    box-shadow: 0 0 40px rgba(245,181,68,0.08);
-    margin-bottom: 1rem;
-    animation: glowPulse 3s ease-in-out infinite;
-  }
-  @keyframes glowPulse {
-    0%, 100% { box-shadow: 0 0 24px rgba(245,181,68,0.08); }
-    50% { box-shadow: 0 0 48px rgba(245,181,68,0.15); }
-  }
-  .icon-main { color: #f5b544; }
-  .card-title { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.375rem; }
-  .card-subtitle { font-size: 0.875rem; color: var(--text-tertiary); margin: 0; }
-
-  .error-box {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.75rem 1rem; margin: 1rem 0 0; border-radius: 0.75rem;
-    background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15);
-    color: #fca5a5; font-size: 0.8125rem;
-    animation: shake 0.4s ease-in-out;
-  }
-  @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-6px); }
-    40% { transform: translateX(6px); }
-    60% { transform: translateX(-4px); }
-    80% { transform: translateX(4px); }
-  }
-
-  .form-body {
-    display: flex; flex-direction: column; gap: 1.25rem; padding-top: 1.25rem;
-  }
-  .field-group { display: flex; flex-direction: column; gap: 0.5rem; }
-  .field-label {
-    display: flex; align-items: center; gap: 0.375rem;
-    font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary);
-  }
-  .input-wrapper { position: relative; display: flex; align-items: center; }
-  .input-icon {
-    position: absolute; right: 0.875rem; color: var(--text-quaternary);
-    pointer-events: none; transition: color 0.2s; z-index: 1;
-  }
-  .input-wrapper:focus-within .input-icon { color: #f5b544; }
-  .input-has-icon { padding-right: 2.5rem !important; }
-  .input-has-action { padding-left: 2.5rem !important; }
-  .toggle-password {
-    position: absolute; left: 0.75rem;
-    display: flex; align-items: center; justify-content: center;
-    background: none; border: none; color: var(--text-quaternary);
-    cursor: pointer; padding: 0.25rem; border-radius: 0.375rem;
-    transition: color 0.2s, background 0.2s; z-index: 1;
-  }
-  .toggle-password:hover { color: var(--text-secondary); background: rgba(255,255,255,0.05); }
-
-  .btn-full {
-    width: 100%; display: flex; align-items: center; justify-content: center;
-    gap: 0.5rem; padding: 0.875rem 1.5rem; font-size: 0.9375rem; margin-top: 0.25rem;
-  }
-  .btn-back {
-    display: flex; align-items: center; justify-content: center;
-    width: 100%; padding: 0.625rem; background: none; border: none;
-    color: var(--text-tertiary); font-size: 0.8125rem; cursor: pointer;
-    border-radius: 0.75rem; transition: color 0.2s, background 0.2s; font-family: inherit;
-  }
-  .btn-back:hover { color: var(--text-secondary); background: rgba(255,255,255,0.03); }
-  .btn-back:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  .twofa-info {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.75rem 1rem; border-radius: 0.75rem;
-    background: rgba(245,181,68,0.04); border: 1px solid rgba(245,181,68,0.1);
-    color: var(--text-secondary); font-size: 0.8125rem;
-  }
-
-  .card-footer {
-    display: flex; align-items: center; justify-content: center;
-    gap: 0.75rem; padding-top: 1rem;
-  }
-  .footer-dot {
-    width: 3px; height: 3px; border-radius: 50%;
-    background: var(--text-quaternary);
-  }
-
-  @media (max-width: 480px) {
-    .login-card { padding: 2rem 1.25rem 1.25rem; }
-    .card-title { font-size: 1.25rem; }
-    .blob { filter: blur(80px); opacity: 0.2; }
-  }
-</style>

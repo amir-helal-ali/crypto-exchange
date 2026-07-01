@@ -1,23 +1,23 @@
 <script lang="ts">
-  import { AlertCircle, X } from 'lucide-svelte';
+	import { AlertOctagon, X } from 'lucide-svelte';
 
-  let {
-    message = '',
-    onclose
-  } = $props<{
-    message: string;
-    onclose?: () => void;
-  }>();
+	let {
+		message = '',
+		onclose
+	}: {
+		message: string;
+		onclose?: () => void;
+	} = $props();
 </script>
 
 {#if message}
-  <div class="panel p-4 flex items-center gap-3 animate-slide-down" style="border-color: rgba(244,63,122,0.2);">
-    <AlertCircle size={20} class="shrink-0" style="color: #f43f7a;" />
-    <p class="text-sm flex-1" style="color: #fca5a5;">{message}</p>
-    {#if onclose}
-      <button class="btn-ghost text-xs p-1 rounded" onclick={onclose}>
-        <X size={14} />
-      </button>
-    {/if}
-  </div>
+	<div class="panel panel-rose flex items-center gap-3 px-4 py-3 mb-4">
+		<AlertOctagon size={18} class="text-accent-rose flex-shrink-0" />
+		<span class="text-sm text-accent-rose flex-1">{message}</span>
+		{#if onclose}
+			<button onclick={onclose} class="text-accent-rose/60 hover:text-accent-rose transition-colors">
+				<X size={14} />
+			</button>
+		{/if}
+	</div>
 {/if}

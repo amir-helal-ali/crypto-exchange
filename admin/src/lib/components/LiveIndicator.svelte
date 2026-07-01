@@ -1,17 +1,17 @@
 <script lang="ts">
-  let { connected = false } = $props<{ connected: boolean }>();
+	let { connected = false } = $props<{ connected: boolean }>();
 </script>
 
-<div class="flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-300"
-  style="background: {connected ? 'rgba(34,211,164,0.08)' : 'rgba(244,63,122,0.08)'}; border: 1px solid {connected ? 'rgba(34,211,164,0.15)' : 'rgba(244,63,122,0.15)'};"
->
-  <span class="relative flex h-2 w-2">
-    {#if connected}
-      <span class="animate-ping-slow absolute inline-flex h-full w-full rounded-full opacity-75" style="background: #22d3a4;"></span>
-    {/if}
-    <span class="relative inline-flex rounded-full h-2 w-2" style="background: {connected ? '#22d3a4' : '#f43f7a'};"></span>
-  </span>
-  <span style="color: {connected ? '#22d3a4' : '#f43f7a'};">
-    {connected ? 'مباشر' : 'غير متصل'}
-  </span>
+<div class="flex items-center gap-2">
+	<div class="relative flex items-center justify-center w-2.5 h-2.5">
+		{#if connected}
+			<div class="absolute w-2.5 h-2.5 rounded-full bg-accent-mint animate-ping opacity-75"></div>
+			<div class="w-2 h-2 rounded-full bg-accent-mint"></div>
+		{:else}
+			<div class="w-2 h-2 rounded-full bg-accent-rose"></div>
+		{/if}
+	</div>
+	<span class="text-xs font-medium {connected ? 'text-accent-mint' : 'text-accent-rose'}">
+		{connected ? 'مباشر' : 'غير متصل'}
+	</span>
 </div>

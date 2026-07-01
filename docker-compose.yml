@@ -115,13 +115,14 @@ services:
       context: ./admin
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
     container_name: crypto-exchange-admin
     restart: always
     ports:
       - "3002:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3002}
     depends_on:
       backend:
         condition: service_healthy

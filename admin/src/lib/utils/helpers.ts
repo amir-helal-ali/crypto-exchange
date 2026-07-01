@@ -1,244 +1,211 @@
-// ─── Number Formatting ────────────────────────────────────────
-export function formatNumber(n: number): string {
-  return n.toLocaleString('ar-EG');
+// ═══════════════════════════════════════════════════════════
+// NEXUS ADMIN v4.0 — Helper Utilities
+// ═══════════════════════════════════════════════════════════
+
+// ── Number Formatting ───────────────────────────────────
+export function formatNumber(n: number | undefined | null): string {
+	if (n == null) return '—';
+	return new Intl.NumberFormat('ar-EG').format(n);
 }
 
-export function formatCompact(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString('ar-EG');
+export function formatCompact(n: number | undefined | null): string {
+	if (n == null) return '—';
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}م`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}ك`;
+	return n.toFixed(0);
 }
 
-export function formatPercent(n: number, decimals: number = 3): string {
-  return `${n.toFixed(decimals)}%`;
+export function formatPercent(n: number | undefined | null): string {
+	if (n == null) return '—';
+	return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
 }
 
-export function formatCurrency(amount: number, currency: string = 'USD'): string {
-  return new Intl.NumberFormat('ar-EG', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 8,
-  }).format(amount);
+export function formatCurrency(n: number | undefined | null, currency = 'USD'): string {
+	if (n == null) return '—';
+	return new Intl.NumberFormat('ar-EG', {
+		style: 'currency',
+		currency,
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2
+	}).format(n);
 }
 
-// ─── Date Formatting ─────────────────────────────────────────
-export function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString('ar-EG', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+// ── Date Formatting ─────────────────────────────────────
+export function formatDate(d: string | undefined | null): string {
+	if (!d) return '—';
+	return new Intl.DateTimeFormat('ar-EG', {
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit'
+	}).format(new Date(d));
 }
 
-export function formatDateShort(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString('ar-EG', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+export function formatDateShort(d: string | undefined | null): string {
+	if (!d) return '—';
+	return new Intl.DateTimeFormat('ar-EG', {
+		month: 'short',
+		day: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit'
+	}).format(new Date(d));
 }
 
-export function timeAgo(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diff = now - then;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
+export function timeAgo(d: string | undefined | null): string {
+	if (!d) return '—';
+	const now = Date.now();
+	const then = new Date(d).getTime();
+	const diff = Math.floor((now - then) / 1000);
 
-  if (days > 7) return formatDate(iso);
-  if (days > 0) return `منذ ${days} يوم`;
-  if (hours > 0) return `منذ ${hours} ساعة`;
-  if (minutes > 0) return `منذ ${minutes} دقيقة`;
-  return 'الآن';
+	if (diff < 60) return 'الآن';
+	if (diff < 3600) return `منذ ${Math.floor(diff / 60)} دقيقة`;
+	if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} ساعة`;
+	if (diff < 2592000) return `منذ ${Math.floor(diff / 86400)} يوم`;
+	return formatDate(d);
 }
 
-// ─── Text Helpers ─────────────────────────────────────────────
-export function maskString(s: string, visibleChars: number = 4): string {
-  if (!s || s.length <= visibleChars) return s;
-  return s.slice(0, -visibleChars).replace(/./g, '\u2022') + s.slice(-visibleChars);
+// ── Text Helpers ────────────────────────────────────────
+export function maskString(s: string, visible = 4): string {
+	if (s.length <= visible) return s;
+	return '•'.repeat(s.length - visible) + s.slice(-visible);
 }
 
-export function truncate(s: string, maxLen: number = 40): string {
-  if (!s || s.length <= maxLen) return s;
-  return s.slice(0, maxLen - 3) + '...';
+export function truncate(s: string, len = 30): string {
+	if (s.length <= len) return s;
+	return s.slice(0, len) + '…';
 }
 
 export function getInitials(name: string): string {
-  if (!name) return '؟';
-  const parts = name.trim().split(/\s+/);
-  return parts.length >= 2 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2);
+	return name
+		.split(' ')
+		.map((w) => w[0])
+		.filter(Boolean)
+		.slice(0, 2)
+		.join('')
+		.toUpperCase();
 }
 
-// ─── Action Labels (Arabic) ──────────────────────────────────
+// ── Action Labels ───────────────────────────────────────
 export const actionLabels: Record<string, string> = {
-  REGISTER: 'تسجيل',
-  LOGIN: 'تسجيل دخول',
-  LOGIN_2FA: 'تسجيل 2FA',
-  LOGOUT: 'تسجيل خروج',
-  EMAIL_VERIFIED: 'توثيق بريد',
-  UPDATE_USER_ROLE: 'تحديث دور',
-  KYC_SUBMITTED: 'تقديم KYC',
-  KYC_APPROVED: 'قبول KYC',
-  KYC_REJECTED: 'رفض KYC',
-  DEPOSIT_APPROVED: 'قبول إيداع',
-  DEPOSIT_REJECTED: 'رفض إيداع',
-  WITHDRAWAL_APPROVED: 'قبول سحب',
-  WITHDRAWAL_REJECTED: 'رفض سحب',
-  ORDER_PLACED: 'طلب جديد',
-  ORDER_CANCELLED: 'إلغاء طلب',
-  SETTINGS_UPDATE: 'تحديث إعدادات',
-  PASSWORD_CHANGED: 'تغيير كلمة مرور',
-  TWO_FA_ENABLED: 'تفعيل 2FA',
-  TWO_FA_DISABLED: 'تعطيل 2FA',
-  PROFILE_UPDATED: 'تحديث ملف',
-  REVIEW_KYC: 'مراجعة KYC',
-  REVIEW_TRANSACTION: 'مراجعة معاملة',
+	LOGIN: 'تسجيل دخول',
+	LOGOUT: 'تسجيل خروج',
+	REGISTER: 'تسجيل حساب',
+	UPDATE_USER_ROLE: 'تحديث دور المستخدم',
+	ADMIN_VERIFY_EMAIL: 'توثيق البريد',
+	REVIEW_KYC: 'مراجعة KYC',
+	REVIEW_TRANSACTION: 'مراجعة معاملة',
+	UPDATE_FEE_SCHEDULE: 'تحديث الرسوم',
+	SETTINGS_UPDATE: 'تحديث الإعدادات',
+	SSL_CERT_GENERATED: 'توليد شهادة SSL',
+	SSL_CERT_RENEWED: 'تجديد شهادة SSL',
+	SSL_CERT_INSTALLED: 'تثبيت شهادة SSL',
+	PLACE_ORDER: 'وضع طلب',
+	CANCEL_ORDER: 'إلغاء طلب',
+	CREATE_WITHDRAWAL: 'طلب سحب',
+	DEPOSIT: 'إيداع',
+	ENABLE_2FA: 'تفعيل التحقق الثنائي',
+	DISABLE_2FA: 'تعطيل التحقق الثنائي'
 };
 
-export function getActionLabel(action: string): string {
-  return actionLabels[action] || action;
-}
-
-// ─── Status Config ────────────────────────────────────────────
-export interface StatusConfig {
-  label: string;
-  pillClass: string;
-  color: string;
-  bg: string;
-  icon?: string;
-}
-
-export const statusConfigs: Record<string, StatusConfig> = {
-  PENDING: { label: 'قيد المراجعة', pillClass: 'pill-gold', color: '#f5b544', bg: 'rgba(245,181,68,0.12)' },
-  APPROVED: { label: 'مقبول', pillClass: 'pill-mint', color: '#22d3a4', bg: 'rgba(34,211,164,0.12)' },
-  VERIFIED: { label: 'موثّق', pillClass: 'pill-mint', color: '#22d3a4', bg: 'rgba(34,211,164,0.12)' },
-  COMPLETED: { label: 'مكتمل', pillClass: 'pill-mint', color: '#22d3a4', bg: 'rgba(34,211,164,0.12)' },
-  REJECTED: { label: 'مرفوض', pillClass: 'pill-rose', color: '#f43f7a', bg: 'rgba(244,63,122,0.12)' },
-  ACTIVE: { label: 'نشط', pillClass: 'pill-mint', color: '#22d3a4', bg: 'rgba(34,211,164,0.12)' },
-  INACTIVE: { label: 'غير نشط', pillClass: 'pill-rose', color: '#f43f7a', bg: 'rgba(244,63,122,0.12)' },
-  NONE: { label: 'لا يوجد', pillClass: 'pill-azure', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+// ── Status Configs ──────────────────────────────────────
+export const statusConfigs: Record<string, { label: string; pillClass: string; color: string; bg: string }> = {
+	PENDING: { label: 'قيد الانتظار', pillClass: 'pill-pending', color: '#f5b544', bg: 'rgba(245,181,68,0.15)' },
+	APPROVED: { label: 'مقبول', pillClass: 'pill-approved', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
+	VERIFIED: { label: 'موثّق', pillClass: 'pill-verified', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
+	COMPLETED: { label: 'مكتمل', pillClass: 'pill-completed', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
+	REJECTED: { label: 'مرفوض', pillClass: 'pill-rejected', color: '#fb7185', bg: 'rgba(251,113,133,0.15)' },
+	ACTIVE: { label: 'نشط', pillClass: 'pill-active', color: '#22d3a4', bg: 'rgba(34,211,164,0.15)' },
+	INACTIVE: { label: 'غير نشط', pillClass: 'pill-inactive', color: '#5a6478', bg: 'rgba(255,255,255,0.05)' },
+	NONE: { label: 'لا يوجد', pillClass: 'pill-none', color: '#3a4256', bg: 'rgba(255,255,255,0.03)' }
 };
 
-export function getStatusConfig(status: string): StatusConfig {
-  return statusConfigs[status] || statusConfigs.PENDING;
-}
-
-// ─── Document Type Labels ────────────────────────────────────
+// ── Document Type Labels ────────────────────────────────
 export const docTypeLabels: Record<string, string> = {
-  PASSPORT: 'جواز سفر',
-  NATIONAL_ID: 'بطاقة وطنية',
-  DRIVERS_LICENSE: 'رخصة قيادة',
-  UTILITY_BILL: 'فاتورة مرافق',
-  BANK_STATEMENT: 'كشف حساب بنكي',
-  SELFIE: 'صورة شخصية'
+	PASSPORT: 'جواز سفر',
+	NATIONAL_ID: 'بطاقة وطنية',
+	DRIVERS_LICENSE: 'رخصة قيادة',
+	UTILITY_BILL: 'فاتورة مرافق'
 };
 
-export function getDocTypeLabel(type: string): string {
-  return docTypeLabels[type] || type;
+// ── SVG Sparkline Generator ─────────────────────────────
+export function generateSparkline(
+	data: number[],
+	width = 80,
+	height = 28,
+	color = '#f5b544'
+): string {
+	if (!data.length) return '';
+	const max = Math.max(...data);
+	const min = Math.min(...data);
+	const range = max - min || 1;
+	const step = width / (data.length - 1);
+
+	const points = data
+		.map((v, i) => `${i * step},${height - ((v - min) / range) * (height - 4) - 2}`)
+		.join(' ');
+
+	return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<polyline points="${points}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.8"/>
+	</svg>`;
 }
 
-// ─── Sparkline SVG Generator ─────────────────────────────────
-export function generateSparkline(color: string, seed: number = 0, width: number = 80, height: number = 28): string {
-  const points: string[] = [];
-  const steps = 8;
-  let y = height / 2;
-  for (let i = 0; i <= steps; i++) {
-    const x = (i / steps) * width;
-    const variation = Math.sin(seed * 7 + i * 3.7) * 6;
-    y = Math.max(4, Math.min(height - 4, height / 2 + variation));
-    points.push(`${x},${y}`);
-  }
-  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg" class="opacity-30">
-    <polyline points="${points.join(' ')}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  </svg>`;
+export function generateAreaChart(
+	seed: number,
+	width = 80,
+	height = 28,
+	color = '#f5b544'
+): string {
+	const data: number[] = [];
+	let val = seed % 100;
+	for (let i = 0; i < 12; i++) {
+		val += Math.sin(seed + i * 0.7) * 15 + 5;
+		data.push(Math.max(0, val));
+	}
+	const max = Math.max(...data);
+	const min = Math.min(...data);
+	const range = max - min || 1;
+	const step = width / (data.length - 1);
+
+	const linePoints = data
+		.map((v, i) => `${i * step},${height - ((v - min) / range) * (height - 4) - 2}`)
+		.join(' ');
+
+	const areaPath = `M0,${height} L${data.map((v, i) => `${i * step},${height - ((v - min) / range) * (height - 4) - 2}`).join(' L')} L${width},${height} Z`;
+
+	return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+		<defs>
+			<linearGradient id="area-${seed}" x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+				<stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+			</linearGradient>
+		</defs>
+		<path d="${areaPath}" fill="url(#area-${seed})"/>
+		<polyline points="${linePoints}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+	</svg>`;
 }
 
-// ─── Mini Area Chart SVG ──────────────────────────────────────
-export function generateAreaChart(color: string, seed: number = 0, width: number = 120, height: number = 40): string {
-  const steps = 12;
-  let y = height / 2;
-  const points: string[] = [];
-  const areaPoints: string[] = [`0,${height}`];
-
-  for (let i = 0; i <= steps; i++) {
-    const x = (i / steps) * width;
-    const variation = Math.sin(seed * 5.3 + i * 2.1) * (height * 0.35);
-    y = Math.max(4, Math.min(height - 4, height / 2 + variation));
-    points.push(`${x},${y}`);
-    areaPoints.push(`${x},${y}`);
-  }
-  areaPoints.push(`${width},${height}`);
-
-  const id = `area-${seed}-${color.replace('#', '')}`;
-  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${color}" stop-opacity="0.25"/>
-        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-      </linearGradient>
-    </defs>
-    <polygon points="${areaPoints.join(' ')}" fill="url(#${id})"/>
-    <polyline points="${points.join(' ')}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  </svg>`;
+// ── Utility ─────────────────────────────────────────────
+export function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
+	let timer: ReturnType<typeof setTimeout>;
+	return ((...args: unknown[]) => {
+		clearTimeout(timer);
+		timer = setTimeout(() => fn(...args), ms);
+	}) as T;
 }
 
-// ─── Debounce ─────────────────────────────────────────────────
-export function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
-  let timer: ReturnType<typeof setTimeout>;
-  return ((...args: any[]) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
-  }) as T;
+export function copyToClipboard(text: string): Promise<void> {
+	return navigator.clipboard.writeText(text);
 }
 
-// ─── Copy to Clipboard ───────────────────────────────────────
-export async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ─── Action Pill Class Lookup ────────────────────────────────
-export const actionPillClass: Record<string, string> = {
-  REGISTER: 'pill-azure',
-  LOGIN: 'pill-azure',
-  LOGIN_2FA: 'pill-violet',
-  LOGOUT: 'pill-rose',
-  UPDATE_USER_ROLE: 'pill-violet',
-  KYC_SUBMITTED: 'pill-azure',
-  KYC_APPROVED: 'pill-mint',
-  KYC_REJECTED: 'pill-rose',
-  DEPOSIT_APPROVED: 'pill-mint',
-  DEPOSIT_REJECTED: 'pill-rose',
-  WITHDRAWAL_APPROVED: 'pill-mint',
-  WITHDRAWAL_REJECTED: 'pill-rose',
-  ORDER_PLACED: 'pill-gold',
-  ORDER_CANCELLED: 'pill-rose',
-  SETTINGS_UPDATE: 'pill-violet'
-};
-
-export function getActionPill(action: string): string {
-  return actionPillClass[action] || 'pill-azure';
-}
-
-// ─── Uptime formatter ────────────────────────────────────────
-export function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}ي ${hours}س ${mins}د`;
-  if (hours > 0) return `${hours}س ${mins}د`;
-  return `${mins}د`;
+export function formatUptime(ms: number): string {
+	const s = Math.floor(ms / 1000);
+	const d = Math.floor(s / 86400);
+	const h = Math.floor((s % 86400) / 3600);
+	const m = Math.floor((s % 3600) / 60);
+	const parts: string[] = [];
+	if (d > 0) parts.push(`${d} يوم`);
+	if (h > 0) parts.push(`${h} ساعة`);
+	if (m > 0) parts.push(`${m} دقيقة`);
+	return parts.join(' ') || 'أقل من دقيقة';
 }

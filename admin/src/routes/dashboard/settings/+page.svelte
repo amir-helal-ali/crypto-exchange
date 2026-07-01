@@ -1,1157 +1,559 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { authGet, authPost, authPut } from '$lib/api/client';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import ErrorAlert from '$lib/components/ErrorAlert.svelte';
-  import {
-    Settings, Globe, ShieldCheck, Lock, Loader2, Save, AlertCircle,
-    CheckCircle2, RefreshCw, Activity, Server, Wrench, ExternalLink,
-    ToggleLeft, ToggleRight, Wifi, Shield, Zap, Users, Rocket, Megaphone,
-    ArrowLeftRight
-  } from 'lucide-svelte';
+        import { onMount } from 'svelte';
+        import { authGet, authPut, authPost } from '$lib/api/client';
+        import { toast } from '$lib/stores/toast';
+        import PageHeader from '$lib/components/PageHeader.svelte';
+        import Modal from '$lib/components/Modal.svelte';
+        import ErrorAlert from '$lib/components/ErrorAlert.svelte';
+        import type { SystemSettings, SSLStatus, MetricsData } from '$lib/api/types';
+        import {
+                Settings, Globe, Shield, Lock, RefreshCw, Save,
+                CheckCircle, AlertTriangle, XCircle, Server, Wifi, Activity
+        } from 'lucide-svelte';
 
-  // ─── Types ───────────────────────────────────────────────────
-  interface DomainSettings {
-    main_domain: string;
-    admin_domain: string;
-    api_domain: string;
-  }
+        let settings = $state<SystemSettings | null>(null);
+        let sslStatus = $state<SSLStatus | null>(null);
+        let metrics = $state<MetricsData | null>(null);
+        let loading = $state(true);
+        let error = $state('');
+        let activeTab = $state('overview');
+        let saving = $state(false);
 
-  interface SslSettings {
-    ssl_enabled: boolean;
-    ssl_email: string;
-    ssl_type: 'letsencrypt' | 'custom';
-  }
+        let frontendDomain = $state('');
+        let backendDomain = $state('');
+        let adminDomain = $state('');
+        let mainDomain = $state('');
+        let sslEnabled = $state(false);
+        let sslEmail = $state('');
+        let sslType = $state('letsencrypt');
+        let registrationOpen = $state(true);
+        let maintenanceMode = $state(false);
+        let maintenanceMessage = $state('');
+        let corsOrigins = $state('');
+        let sslModalOpen = $state(false);
+        let sslModalLoading = $state(false);
+        let certPem = $state('');
+        let keyPem = $state('');
 
-  interface SecuritySettings {
-    registration_enabled: boolean;
-    two_fa_enabled: boolean;
-    kyc_required: boolean;
-    max_login_attempts: number;
-  }
+        // Computed health icon/color
+        let sslHealthIcon = $derived(
+                sslStatus?.health === 'healthy' ? CheckCircle :
+                sslStatus?.health === 'warning' ? AlertTriangle : XCircle
+        );
+        let sslHealthColor = $derived(
+                sslStatus?.health === 'healthy' ? 'text-accent-mint' :
+                sslStatus?.health === 'warning' ? 'text-accent-gold' : 'text-accent-rose'
+        );
+        let sslHealthLabel = $derived(
+                sslStatus?.health === 'healthy' ? 'سليم' :
+                sslStatus?.health === 'warning' ? 'تحذير' : 'خطر'
+        );
 
-  interface FeatureSettings {
-    p2p_enabled: boolean;
-    futures_enabled: boolean;
-    staking_enabled: boolean;
-    referral_enabled: boolean;
-    ads_enabled: boolean;
-  }
+        const tabs = [
+                { id: 'overview', label: 'نظرة عامة', icon: Settings },
+                { id: 'domains', label: 'النطاقات', icon: Globe },
+                { id: 'ssl', label: 'SSL', icon: Lock },
+                { id: 'security', label: 'الأمان', icon: Shield },
+                { id: 'features', label: 'الميزات', icon: Activity }
+        ];
 
-  interface AllSettings {
-    domains: DomainSettings;
-    ssl: SslSettings;
-    security: SecuritySettings;
-    features: FeatureSettings;
-  }
+        async function loadSettings() {
+                loading = true;
+                error = '';
+                const res = await authGet<SystemSettings>('/api/v1/admin/settings');
+                if (res.success && res.data) {
+                        settings = res.data;
+                        frontendDomain = res.data.domains?.frontend_domain || '';
+                        backendDomain = res.data.domains?.backend_domain || '';
+                        adminDomain = res.data.domains?.admin_domain || '';
+                        mainDomain = res.data.domains?.main_domain || '';
+                        sslEnabled = res.data.ssl?.ssl_enabled === 'true';
+                        corsOrigins = res.data.security?.cors_extra_origins || '';
+                        registrationOpen = res.data.features?.registration_open !== 'false';
+                        maintenanceMode = res.data.features?.maintenance_mode === 'true';
+                        maintenanceMessage = res.data.features?.maintenance_message || '';
+                } else {
+                        error = res.error || 'فشل تحميل الإعدادات';
+                }
+                loadSSLStatus();
+                loadMetrics();
+                loading = false;
+        }
 
-  type TabKey = 'overview' | 'domains' | 'ssl' | 'security' | 'features';
+        async function loadSSLStatus() {
+                const res = await authGet<SSLStatus>('/api/v1/admin/ssl/status');
+                if (res.success && res.data) sslStatus = res.data;
+        }
 
-  // ─── State ───────────────────────────────────────────────────
-  let activeTab = $state<TabKey>('overview');
-  let loading = $state(true);
-  let saving = $state(false);
-  let error = $state<string | null>(null);
-  let successMessage = $state<string | null>(null);
-  let nginxReloading = $state(false);
-  let nginxMessage = $state<string | null>(null);
+        async function loadMetrics() {
+                const res = await authGet<MetricsData>('/api/v1/admin/metrics');
+                if (res.success && res.data) metrics = res.data;
+        }
 
-  let savedSettings = $state<AllSettings | null>(null);
-  let currentSettings = $state<AllSettings | null>(null);
+        async function saveSettings(keys: Record<string, string>) {
+                saving = true;
+                const res = await authPut('/api/v1/admin/settings', { settings: keys });
+                if (res.success) {
+                        toast.success('تم حفظ الإعدادات');
+                        loadSettings();
+                } else {
+                        toast.error(res.error || 'فشل حفظ الإعدادات');
+                }
+                saving = false;
+        }
 
-  // ─── Tabs Config ─────────────────────────────────────────────
-  const tabs: { key: TabKey; label: string; icon: typeof Settings }[] = [
-    { key: 'overview', label: 'نظرة عامة', icon: Activity },
-    { key: 'domains', label: 'النطاقات', icon: Globe },
-    { key: 'ssl', label: 'SSL', icon: Lock },
-    { key: 'security', label: 'الأمان', icon: Shield },
-    { key: 'features', label: 'الميزات', icon: Wrench }
-  ];
+        async function saveDomains() {
+                await saveSettings({
+                        frontend_domain: frontendDomain,
+                        backend_domain: backendDomain,
+                        admin_domain: adminDomain,
+                        main_domain: mainDomain
+                });
+        }
 
-  // ─── Derived ─────────────────────────────────────────────────
-  let hasChanges = $derived.by(() => {
-    if (!savedSettings || !currentSettings) return false;
-    return JSON.stringify(savedSettings) !== JSON.stringify(currentSettings);
-  });
+        async function saveSSL() {
+                await saveSettings({
+                        ssl_enabled: String(sslEnabled),
+                        ssl_cert_path: sslStatus?.cert_path || '',
+                        ssl_key_path: sslStatus?.key_path || ''
+                });
+        }
 
-  let changedCategories = $derived.by(() => {
-    if (!savedSettings || !currentSettings) return new Set<string>();
-    const changed = new Set<string>();
-    const categories: (keyof AllSettings)[] = ['domains', 'ssl', 'security', 'features'];
-    for (const cat of categories) {
-      if (JSON.stringify(savedSettings[cat]) !== JSON.stringify(currentSettings[cat])) {
-        changed.add(cat);
-      }
-    }
-    return changed;
-  });
+        async function saveSecurity() {
+                await saveSettings({ cors_extra_origins: corsOrigins });
+        }
 
-  let securityScore = $derived.by(() => {
-    if (!currentSettings) return 0;
-    return [currentSettings.security.registration_enabled, currentSettings.security.two_fa_enabled, currentSettings.security.kyc_required, currentSettings.security.max_login_attempts >= 3].filter(Boolean).length;
-  });
+        async function saveFeatures() {
+                await saveSettings({
+                        registration_open: String(registrationOpen),
+                        maintenance_mode: String(maintenanceMode),
+                        maintenance_message: maintenanceMessage
+                });
+        }
 
-  let enabledFeaturesCount = $derived.by(() => {
-    if (!currentSettings) return 0;
-    return [currentSettings.features.p2p_enabled, currentSettings.features.futures_enabled, currentSettings.features.staking_enabled, currentSettings.features.referral_enabled, currentSettings.features.ads_enabled].filter(Boolean).length;
-  });
+        async function generateSSL() {
+                sslModalLoading = true;
+                const res = await authPost('/api/v1/admin/ssl/generate', {
+                        type: sslType,
+                        email: sslEmail,
+                        domains: [mainDomain, adminDomain, frontendDomain].filter(Boolean)
+                });
+                if (res.success) {
+                        toast.success('تم توليد شهادة SSL بنجاح');
+                        loadSSLStatus();
+                } else {
+                        toast.error(res.error || 'فشل توليد شهادة SSL');
+                }
+                sslModalLoading = false;
+        }
 
-  // ─── Data Loading ────────────────────────────────────────────
-  async function fetchSettings() {
-    error = null;
-    try {
-      const res = await authGet('/api/v1/admin/settings');
-      if (!res.ok) throw new Error('فشل تحميل الإعدادات');
-      const json = await res.json();
-      if (json.success && json.data) {
-        savedSettings = JSON.parse(JSON.stringify(json.data));
-        currentSettings = JSON.parse(JSON.stringify(json.data));
-      }
-    } catch (e: any) {
-      error = e.message || 'حدث خطأ أثناء تحميل الإعدادات';
-    } finally {
-      loading = false;
-    }
-  }
+        async function renewSSL() {
+                sslModalLoading = true;
+                const res = await authPost('/api/v1/admin/ssl/renew');
+                if (res.success) {
+                        toast.success('تم تجديد شهادة SSL');
+                        loadSSLStatus();
+                } else {
+                        toast.error(res.error || 'فشل تجديد شهادة SSL');
+                }
+                sslModalLoading = false;
+        }
 
-  // ─── Save ────────────────────────────────────────────────────
-  async function saveSettings() {
-    if (!hasChanges || !savedSettings || !currentSettings) return;
-    saving = true;
-    successMessage = null;
-    error = null;
+        async function installCustomSSL() {
+                if (!certPem || !keyPem) { toast.error('يرجى إدخال الشهادة والمفتاح'); return; }
+                sslModalLoading = true;
+                const res = await authPost('/api/v1/admin/ssl/install', {
+                        cert_pem: certPem,
+                        key_pem: keyPem,
+                        domains: [mainDomain].filter(Boolean)
+                });
+                if (res.success) {
+                        toast.success('تم تثبيت الشهادة');
+                        sslModalOpen = false;
+                        loadSSLStatus();
+                } else {
+                        toast.error(res.error || 'فشل تثبيت الشهادة');
+                }
+                sslModalLoading = false;
+        }
 
-    try {
-      const payload: Record<string, any> = {};
-      for (const cat of changedCategories) {
-        payload[cat] = currentSettings[cat as keyof AllSettings];
-      }
+        async function reloadNginx() {
+                const res = await authPost('/api/v1/admin/nginx/reload');
+                if (res.success) {
+                        toast.success('تم إعادة تحميل Nginx');
+                } else {
+                        toast.error(res.error || 'فشل إعادة تحميل Nginx');
+                }
+        }
 
-      const res = await authPut('/api/v1/admin/settings', payload);
-      if (!res.ok) throw new Error('فشل حفظ الإعدادات');
-      const json = await res.json();
-      if (json.success) {
-        savedSettings = JSON.parse(JSON.stringify(currentSettings));
-        successMessage = 'تم حفظ الإعدادات بنجاح';
-        setTimeout(() => { successMessage = null; }, 4000);
-      } else {
-        throw new Error(json.message || 'فشل حفظ الإعدادات');
-      }
-    } catch (e: any) {
-      error = e.message || 'حدث خطأ أثناء حفظ الإعدادات';
-    } finally {
-      saving = false;
-    }
-  }
-
-  // ─── Revert ──────────────────────────────────────────────────
-  function revertChanges() {
-    if (savedSettings) {
-      currentSettings = JSON.parse(JSON.stringify(savedSettings));
-    }
-  }
-
-  // ─── Nginx Reload ────────────────────────────────────────────
-  async function reloadNginx() {
-    nginxReloading = true;
-    nginxMessage = null;
-    try {
-      const res = await authPost('/api/v1/admin/nginx/reload');
-      const json = await res.json();
-      if (json.success) {
-        nginxMessage = 'تم إعادة تحميل Nginx بنجاح';
-      } else {
-        nginxMessage = 'فشل إعادة تحميل Nginx';
-      }
-    } catch {
-      nginxMessage = 'فشل الاتصال بالخادم';
-    } finally {
-      nginxReloading = false;
-      setTimeout(() => { nginxMessage = null; }, 4000);
-    }
-  }
-
-  // ─── Toggle Helper ───────────────────────────────────────────
-  function toggleField(category: keyof AllSettings, field: string) {
-    if (!currentSettings) return;
-    const cat = currentSettings[category] as Record<string, any>;
-    cat[field] = !cat[field];
-    currentSettings = { ...currentSettings };
-  }
-
-  // ─── Field Update Helper ─────────────────────────────────────
-  function updateField(category: keyof AllSettings, field: string, value: any) {
-    if (!currentSettings) return;
-    const cat = currentSettings[category] as Record<string, any>;
-    cat[field] = value;
-    currentSettings = { ...currentSettings };
-  }
-
-  // ─── Lifecycle ───────────────────────────────────────────────
-  onMount(() => {
-    fetchSettings();
-  });
+        onMount(() => { loadSettings(); });
 </script>
 
-<!-- Aurora Background -->
-<div class="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
-  <div class="absolute -top-32 right-1/4 w-[500px] h-[500px] rounded-full opacity-[0.06] blur-[120px]" style="background: var(--accent-gold);"></div>
-  <div class="absolute top-1/3 -left-20 w-[400px] h-[400px] rounded-full opacity-[0.05] blur-[100px]" style="background: var(--accent-violet);"></div>
-  <div class="absolute bottom-10 right-10 w-[350px] h-[350px] rounded-full opacity-[0.04] blur-[100px]" style="background: var(--accent-mint);"></div>
+<PageHeader title="إعدادات النظام" subtitle="إدارة النطاقات والشهادات والميزات">
+        <button class="btn-ghost" onclick={loadSettings} disabled={loading}>
+                <RefreshCw size={16} class={loading ? 'animate-spin' : ''} />
+        </button>
+</PageHeader>
+
+{#if error}
+        <ErrorAlert message={error} onclose={() => (error = '')} />
+{/if}
+
+<!-- Tabs -->
+<div class="flex items-center gap-1 mb-6 p-1 panel w-fit">
+        {#each tabs as tab}
+                <button
+                        class="tab-btn {activeTab === tab.id ? 'tab-btn-active' : ''} flex items-center gap-2"
+                        onclick={() => (activeTab = tab.id)}
+                >
+                        <tab.icon size={14} />
+                        {tab.label}
+                </button>
+        {/each}
 </div>
 
-<div class="relative z-10 space-y-6">
-  <!-- Page Header -->
-  <PageHeader title="إعدادات النظام" subtitle="إدارة إعدادات المنصة">
-    {#if hasChanges}
-      <button
-        class="btn-ghost flex items-center gap-2 text-sm"
-        onclick={revertChanges}
-        disabled={saving}
-      >
-        <RefreshCw size={16} />
-        <span>تراجع</span>
-      </button>
-    {/if}
-    <button
-      class="btn-primary flex items-center gap-2 text-sm"
-      onclick={saveSettings}
-      disabled={!hasChanges || saving}
-    >
-      {#if saving}
-        <Loader2 size={16} class="animate-spin" />
-        <span>جاري الحفظ...</span>
-      {:else}
-        <Save size={16} />
-        <span>حفظ التغييرات</span>
-      {/if}
-    </button>
-  </PageHeader>
+<!-- Tab: Overview -->
+{#if activeTab === 'overview'}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="panel p-5">
+                        <h3 class="text-base font-bold text-ink-primary mb-4 flex items-center gap-2">
+                                <Server size={18} class="text-accent-violet" /> معلومات النظام
+                        </h3>
+                        {#if metrics}
+                                <div class="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Goroutines</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.goroutines}</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Heap Alloc</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.heap_alloc_mb.toFixed(1)} MB</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Heap In Use</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.heap_in_use_mb.toFixed(1)} MB</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">GC Count</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.num_gc}</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Go Version</span>
+                                                <span class="text-ink-primary">{metrics.runtime.go_version}</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">CPU Cores</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.runtime.num_cpu}</span>
+                                        </div>
+                                </div>
+                        {:else}
+                                <div class="skeleton h-32"></div>
+                        {/if}
+                </div>
 
-  <!-- Success Message -->
-  {#if successMessage}
-    <div class="panel p-4 flex items-center gap-3 animate-slide-down" style="border-color: rgba(34,211,164,0.2);">
-      <CheckCircle2 size={20} class="shrink-0" style="color: #22d3a4;" />
-      <p class="text-sm" style="color: #22d3a4;">{successMessage}</p>
-    </div>
-  {/if}
+                <div class="panel p-5">
+                        <h3 class="text-base font-bold text-ink-primary mb-4 flex items-center gap-2">
+                                <Wifi size={18} class="text-accent-azure" /> الاتصالات
+                        </h3>
+                        {#if metrics}
+                                <div class="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Market Clients</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.websocket.market_clients}</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">User Clients</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.websocket.user_clients}</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Online Users</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.websocket.online_users}</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">SSE Subscribers</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.sse.admin_subscribers}</span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Binance</span>
+                                                <span class={metrics.upstream.binance_connected ? 'text-accent-mint' : 'text-accent-rose'}>
+                                                        {metrics.upstream.binance_connected ? 'متصل' : 'غير متصل'}
+                                                </span>
+                                        </div>
+                                        <div>
+                                                <span class="text-ink-muted block text-xs mb-1">Binance Symbols</span>
+                                                <span class="text-ink-primary tabular-nums">{metrics.upstream.binance_symbols}</span>
+                                        </div>
+                                </div>
+                        {:else}
+                                <div class="skeleton h-32"></div>
+                        {/if}
+                </div>
 
-  <!-- Error Alert -->
-  {#if error}
-    <ErrorAlert message={error} onclose={() => { error = null; }} />
-  {/if}
+                <div class="panel p-5">
+                        <h3 class="text-base font-bold text-ink-primary mb-4 flex items-center gap-2">
+                                <Lock size={18} class="text-accent-gold" /> حالة SSL
+                        </h3>
+                        {#if sslStatus}
+                                <div class="flex items-center gap-3 mb-4">
+                                        {#if sslStatus.health === 'healthy'}
+                                                <CheckCircle size={20} class="text-accent-mint" />
+                                        {:else if sslStatus.health === 'warning'}
+                                                <AlertTriangle size={20} class="text-accent-gold" />
+                                        {:else}
+                                                <XCircle size={20} class="text-accent-rose" />
+                                        {/if}
+                                        <div>
+                                                <p class="text-sm font-bold {sslHealthColor}">{sslHealthLabel}</p>
+                                                <p class="text-xs text-ink-muted">{sslStatus.enabled ? 'مفعّل' : 'معطّل'}</p>
+                                        </div>
+                                </div>
+                                {#if sslStatus.days_remaining != null}
+                                        <div class="text-sm text-ink-secondary mb-2">
+                                                الأيام المتبقية: <span class="tabular-nums font-bold {sslStatus.days_remaining < 30 ? 'text-accent-rose' : 'text-accent-mint'}">{sslStatus.days_remaining}</span>
+                                        </div>
+                                {/if}
+                                {#if sslStatus.issuer_org}
+                                        <div class="text-xs text-ink-muted">الجهة المصدرة: {sslStatus.issuer_org}</div>
+                                {/if}
+                        {:else}
+                                <div class="skeleton h-24"></div>
+                        {/if}
+                </div>
 
-  <!-- Tab Bar -->
-  <div class="panel p-1.5 flex items-center gap-1 overflow-x-auto scrollbar-none">
-    {#each tabs as tab}
-      <button
-        class="tab-btn {activeTab === tab.key ? 'active' : ''}"
-        onclick={() => activeTab = tab.key}
-      >
-        <tab.icon size={16} />
-        <span>{tab.label}</span>
-        {#if changedCategories.has(tab.key) && tab.key !== 'overview'}
-          <span class="w-2 h-2 rounded-full bg-[#f5b544] shrink-0"></span>
-        {/if}
-      </button>
-    {/each}
-  </div>
-
-  <!-- Loading State -->
-  {#if loading}
-    <div class="panel p-12 flex flex-col items-center justify-center gap-4">
-      <Loader2 size={32} class="animate-spin" style="color: var(--text-quaternary);" />
-      <p class="text-sm" style="color: var(--text-quaternary);">جاري تحميل الإعدادات...</p>
-    </div>
-  {:else if currentSettings}
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- OVERVIEW TAB -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    {#if activeTab === 'overview'}
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <!-- Domains Card -->
-        <div class="panel p-6 space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(59,130,246,0.1);">
-                <Globe size={20} style="color: #3b82f6;" />
-              </div>
-              <div>
-                <h3 class="font-bold text-sm">النطاقات</h3>
-                <p class="text-xs" style="color: var(--text-quaternary);">إعدادات النطاق والـ DNS</p>
-              </div>
-            </div>
-            <span class="status-pill active">مكوّن</span>
-          </div>
-          <div class="space-y-2">
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">النطاق الرئيسي</span>
-              <span class="text-xs font-medium">{currentSettings.domains.main_domain || '—'}</span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">نطاق الإدارة</span>
-              <span class="text-xs font-medium">{currentSettings.domains.admin_domain || '—'}</span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">نطاق API</span>
-              <span class="text-xs font-medium">{currentSettings.domains.api_domain || '—'}</span>
-            </div>
-          </div>
-          <button class="btn-ghost w-full text-xs justify-center" onclick={() => activeTab = 'domains'}>
-            إدارة النطاقات
-            <ExternalLink size={12} />
-          </button>
+                <div class="panel p-5">
+                        <h3 class="text-base font-bold text-ink-primary mb-4">إجراءات سريعة</h3>
+                        <div class="flex flex-col gap-2">
+                                <button class="btn-secondary w-full justify-start" onclick={reloadNginx}>
+                                        <RefreshCw size={16} /> إعادة تحميل Nginx
+                                </button>
+                                <button class="btn-secondary w-full justify-start" onclick={() => (activeTab = 'ssl')}>
+                                        <Lock size={16} /> إدارة SSL
+                                </button>
+                                <button class="btn-secondary w-full justify-start" onclick={() => (activeTab = 'domains')}>
+                                        <Globe size={16} /> إدارة النطاقات
+                                </button>
+                        </div>
+                </div>
         </div>
+{/if}
 
-        <!-- SSL Card -->
-        <div class="panel p-6 space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(34,211,164,0.1);">
-                <Lock size={20} style="color: #22d3a4;" />
-              </div>
-              <div>
-                <h3 class="font-bold text-sm">شهادة SSL</h3>
-                <p class="text-xs" style="color: var(--text-quaternary);">تشفير وإصدار الشهادات</p>
-              </div>
-            </div>
-            <span class="status-pill {currentSettings.ssl.ssl_enabled ? 'active' : 'inactive'}">
-              {currentSettings.ssl.ssl_enabled ? 'مفعّل' : 'معطّل'}
-            </span>
-          </div>
-          <div class="space-y-2">
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">الحالة</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.ssl.ssl_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.ssl.ssl_enabled ? 'مفعّل' : 'معطّل'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">النوع</span>
-              <span class="text-xs font-medium">{currentSettings.ssl.ssl_type === 'letsencrypt' ? "Let's Encrypt" : 'مخصص'}</span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">البريد الإلكتروني</span>
-              <span class="text-xs font-medium">{currentSettings.ssl.ssl_email || '—'}</span>
-            </div>
-          </div>
-          <button class="btn-ghost w-full text-xs justify-center" onclick={() => activeTab = 'ssl'}>
-            إدارة SSL
-            <ExternalLink size={12} />
-          </button>
+<!-- Tab: Domains -->
+{#if activeTab === 'domains'}
+        <div class="panel p-6 max-w-2xl">
+                <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+                        <Globe size={18} class="text-accent-gold" /> إعدادات النطاقات
+                </h3>
+                <form onsubmit={(e) => { e.preventDefault(); saveDomains(); }} class="flex flex-col gap-5">
+                        <div>
+                                <label for="mainDomain" class="block text-sm font-medium text-ink-secondary mb-2">النطاق الرئيسي</label>
+                                <input id="mainDomain" type="text" bind:value={mainDomain} class="input-field" placeholder="example.com" dir="ltr" />
+                        </div>
+                        <div>
+                                <label for="frontendDomain" class="block text-sm font-medium text-ink-secondary mb-2">نطاق الواجهة</label>
+                                <input id="frontendDomain" type="text" bind:value={frontendDomain} class="input-field" placeholder="www.example.com" dir="ltr" />
+                        </div>
+                        <div>
+                                <label for="backendDomain" class="block text-sm font-medium text-ink-secondary mb-2">نطاق API</label>
+                                <input id="backendDomain" type="text" bind:value={backendDomain} class="input-field" placeholder="api.example.com" dir="ltr" />
+                        </div>
+                        <div>
+                                <label for="adminDomain" class="block text-sm font-medium text-ink-secondary mb-2">نطاق لوحة الإدارة</label>
+                                <input id="adminDomain" type="text" bind:value={adminDomain} class="input-field" placeholder="admin.example.com" dir="ltr" />
+                        </div>
+                        <div class="flex items-center gap-3 pt-2">
+                                <button type="submit" class="btn-primary" disabled={saving}>
+                                        {#if saving}<RefreshCw size={14} class="animate-spin" />{:else}<Save size={14} />{/if}
+                                        حفظ النطاقات
+                                </button>
+                                <button type="button" class="btn-secondary" onclick={reloadNginx}>
+                                        <RefreshCw size={14} /> إعادة تحميل Nginx
+                                </button>
+                        </div>
+                </form>
         </div>
+{/if}
 
-        <!-- Security Card -->
-        <div class="panel p-6 space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(168,85,247,0.1);">
-                <Shield size={20} style="color: #a855f7;" />
-              </div>
-              <div>
-                <h3 class="font-bold text-sm">الأمان</h3>
-                <p class="text-xs" style="color: var(--text-quaternary);">التسجيل والمصادقة والتحقق</p>
-              </div>
-            </div>
-            <span class="status-pill {currentSettings.security.two_fa_enabled ? 'active' : 'inactive'}">
-              {currentSettings.security.two_fa_enabled ? 'محمي' : 'تحذير'}
-            </span>
-          </div>
-          <div class="space-y-2">
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">التسجيل</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.security.registration_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.security.registration_enabled ? 'مفتوح' : 'مغلق'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">المصادقة الثنائية</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.security.two_fa_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.security.two_fa_enabled ? 'مفعّلة' : 'معطّلة'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">التحقق KYC</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.security.kyc_required ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.security.kyc_required ? 'مطلوب' : 'اختياري'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">حد المحاولات</span>
-              <span class="text-xs font-medium">{currentSettings.security.max_login_attempts} محاولات</span>
-            </div>
-          </div>
-          <button class="btn-ghost w-full text-xs justify-center" onclick={() => activeTab = 'security'}>
-            إدارة الأمان
-            <ExternalLink size={12} />
-          </button>
+<!-- Tab: SSL -->
+{#if activeTab === 'ssl'}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="panel p-6">
+                        <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+                                <Lock size={18} class="text-accent-gold" /> إعدادات SSL
+                        </h3>
+                        <div class="flex flex-col gap-5">
+                                <div class="flex items-center gap-3">
+                                        <button
+                                                type="button"
+                                                onclick={() => (sslEnabled = !sslEnabled)}
+                                                class="toggle-track {sslEnabled ? 'toggle-track-active' : ''}"
+                                                aria-label="تفعيل SSL"
+                                        >
+                                                <div class="toggle-thumb {sslEnabled ? 'toggle-thumb-active right-1' : 'right-[22px]'}"></div>
+                                        </button>
+                                        <span class="text-sm text-ink-secondary">{sslEnabled ? 'SSL مفعّل' : 'SSL معطّل'}</span>
+                                </div>
+                                <div>
+                                        <label for="sslType" class="block text-sm font-medium text-ink-secondary mb-2">نوع الشهادة</label>
+                                        <select id="sslType" bind:value={sslType} class="input-field">
+                                                <option value="letsencrypt">Let's Encrypt</option>
+                                                <option value="local">محلي (Self-signed)</option>
+                                                <option value="custom">مخصص</option>
+                                        </select>
+                                </div>
+                                {#if sslType === 'letsencrypt'}
+                                        <div>
+                                                <label for="sslEmail" class="block text-sm font-medium text-ink-secondary mb-2">البريد الإلكتروني</label>
+                                                <input id="sslEmail" type="email" bind:value={sslEmail} class="input-field" placeholder="admin@example.com" dir="ltr" />
+                                        </div>
+                                {/if}
+                                <div class="flex items-center gap-3 pt-2">
+                                        <button class="btn-primary" onclick={() => {
+                                                if (sslType === 'custom') { sslModalOpen = true; }
+                                                else { generateSSL(); }
+                                        }} disabled={sslModalLoading}>
+                                                {#if sslModalLoading}<RefreshCw size={14} class="animate-spin" />{:else}<Lock size={14} />{/if}
+                                                {sslType === 'custom' ? 'تثبيت شهادة' : 'توليد شهادة'}
+                                        </button>
+                                        {#if sslStatus?.type === 'letsencrypt'}
+                                                <button class="btn-secondary" onclick={renewSSL} disabled={sslModalLoading}>
+                                                        <RefreshCw size={14} /> تجديد
+                                                </button>
+                                        {/if}
+                                        <button class="btn-secondary" onclick={saveSSL} disabled={saving}>
+                                                <Save size={14} /> حفظ الإعدادات
+                                        </button>
+                                </div>
+                        </div>
+                </div>
+
+                <div class="panel p-6">
+                        <h3 class="text-base font-bold text-ink-primary mb-6">حالة الشهادة</h3>
+                        {#if sslStatus}
+                                <div class="flex flex-col gap-4 text-sm">
+                                        <div class="flex items-center gap-2">
+                                                {#if sslStatus.health === 'healthy'}
+                                                        <CheckCircle size={18} class="text-accent-mint" />
+                                                {:else if sslStatus.health === 'warning'}
+                                                        <AlertTriangle size={18} class="text-accent-gold" />
+                                                {:else}
+                                                        <XCircle size={18} class="text-accent-rose" />
+                                                {/if}
+                                                <span class="font-bold {sslHealthColor}">{sslHealthLabel}</span>
+                                        </div>
+                                        {#if sslStatus.subject}
+                                                <div><span class="text-ink-muted">الموضوع:</span> <span class="text-ink-primary" dir="ltr">{sslStatus.subject}</span></div>
+                                        {/if}
+                                        {#if sslStatus.issuer_org}
+                                                <div><span class="text-ink-muted">الجهة المصدرة:</span> <span class="text-ink-primary">{sslStatus.issuer_org}</span></div>
+                                        {/if}
+                                        {#if sslStatus.not_before}
+                                                <div><span class="text-ink-muted">تاريخ الإصدار:</span> <span class="text-ink-primary">{sslStatus.not_before}</span></div>
+                                        {/if}
+                                        {#if sslStatus.not_after}
+                                                <div><span class="text-ink-muted">تاريخ الانتهاء:</span> <span class="text-ink-primary">{sslStatus.not_after}</span></div>
+                                        {/if}
+                                        {#if sslStatus.days_remaining != null}
+                                                <div>
+                                                        <span class="text-ink-muted">الأيام المتبقية:</span>
+                                                        <span class="tabular-nums font-bold {sslStatus.days_remaining < 30 ? 'text-accent-rose' : 'text-accent-mint'}">{sslStatus.days_remaining}</span>
+                                                </div>
+                                        {/if}
+                                        {#if sslStatus.sans?.length}
+                                                <div>
+                                                        <span class="text-ink-muted block mb-1">النطاقات المشمولة (SANs):</span>
+                                                        <div class="flex flex-wrap gap-1">
+                                                                {#each sslStatus.sans as san}
+                                                                        <span class="pill-pending text-[10px]" dir="ltr">{san}</span>
+                                                                {/each}
+                                                        </div>
+                                                </div>
+                                        {/if}
+                                </div>
+                        {:else}
+                                <div class="skeleton h-48"></div>
+                        {/if}
+                </div>
         </div>
+{/if}
 
-        <!-- Features Card -->
-        <div class="panel p-6 space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(245,181,68,0.1);">
-                <Wrench size={20} style="color: #f5b544;" />
-              </div>
-              <div>
-                <h3 class="font-bold text-sm">الميزات</h3>
-                <p class="text-xs" style="color: var(--text-quaternary);">التحكم في ميزات المنصة</p>
-              </div>
-            </div>
-            <span class="status-pill active">نشط</span>
-          </div>
-          <div class="space-y-2">
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">تداول P2P</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.features.p2p_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.features.p2p_enabled ? 'مفعّل' : 'معطّل'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">العقود الآجلة</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.features.futures_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.features.futures_enabled ? 'مفعّل' : 'معطّل'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">الستيكينغ</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.features.staking_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.features.staking_enabled ? 'مفعّل' : 'معطّل'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">الإحالة</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.features.referral_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.features.referral_enabled ? 'مفعّل' : 'معطّل'}
-              </span>
-            </div>
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg" style="background: var(--bg-overlay-5);">
-              <span class="text-xs" style="color: var(--text-tertiary);">الإعلانات</span>
-              <span class="text-xs font-medium" style="color: {currentSettings.features.ads_enabled ? '#22d3a4' : '#f43f7a'};">
-                {currentSettings.features.ads_enabled ? 'مفعّل' : 'معطّل'}
-              </span>
-            </div>
-          </div>
-          <button class="btn-ghost w-full text-xs justify-center" onclick={() => activeTab = 'features'}>
-            إدارة الميزات
-            <ExternalLink size={12} />
-          </button>
+<!-- Tab: Security -->
+{#if activeTab === 'security'}
+        <div class="panel p-6 max-w-2xl">
+                <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+                        <Shield size={18} class="text-accent-azure" /> إعدادات الأمان
+                </h3>
+                <form onsubmit={(e) => { e.preventDefault(); saveSecurity(); }} class="flex flex-col gap-5">
+                        <div>
+                                <label for="corsOrigins" class="block text-sm font-medium text-ink-secondary mb-2">أصول CORS إضافية</label>
+                                <textarea id="corsOrigins" bind:value={corsOrigins} class="input-field min-h-[100px] font-mono text-xs" placeholder="https://example.com, https://admin.example.com" dir="ltr"></textarea>
+                                <p class="text-xs text-ink-muted mt-1">افصل بين النطاقات بفواصل</p>
+                        </div>
+                        <button type="submit" class="btn-primary w-fit" disabled={saving}>
+                                {#if saving}<RefreshCw size={14} class="animate-spin" />{:else}<Save size={14} />{/if}
+                                حفظ
+                        </button>
+                </form>
         </div>
-      </div>
-    {/if}
+{/if}
 
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- DOMAINS TAB -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    {#if activeTab === 'domains'}
-      <div class="panel p-6 space-y-6">
-        <div class="flex items-center gap-3">
-          <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(59,130,246,0.1);">
-            <Globe size={20} style="color: #3b82f6;" />
-          </div>
-          <div>
-            <h2 class="text-lg font-bold">إعدادات النطاقات</h2>
-            <p class="text-xs" style="color: var(--text-quaternary);">تكوين النطاقات الرئيسية للمنصة</p>
-          </div>
+<!-- Tab: Features -->
+{#if activeTab === 'features'}
+        <div class="panel p-6 max-w-2xl">
+                <h3 class="text-base font-bold text-ink-primary mb-6 flex items-center gap-2">
+                        <Activity size={18} class="text-accent-mint" /> ميزات النظام
+                </h3>
+                <form onsubmit={(e) => { e.preventDefault(); saveFeatures(); }} class="flex flex-col gap-6">
+                        <div class="flex items-center justify-between">
+                                <div>
+                                        <p class="text-sm font-medium text-ink-primary">التسجيل المفتوح</p>
+                                        <p class="text-xs text-ink-muted">السماح للمستخدمين الجدد بالتسجيل</p>
+                                </div>
+                                <button type="button" onclick={() => (registrationOpen = !registrationOpen)} class="toggle-track {registrationOpen ? 'toggle-track-active' : ''}" aria-label="تفعيل التسجيل">
+                                        <div class="toggle-thumb {registrationOpen ? 'toggle-thumb-active right-1' : 'right-[22px]'}"></div>
+                                </button>
+                        </div>
+                        <div class="glass-divider"></div>
+                        <div class="flex items-center justify-between">
+                                <div>
+                                        <p class="text-sm font-medium text-ink-primary">وضع الصيانة</p>
+                                        <p class="text-xs text-ink-muted">تعطيل الواجهة للمستخدمين مع عرض رسالة صيانة</p>
+                                </div>
+                                <button type="button" onclick={() => (maintenanceMode = !maintenanceMode)} class="toggle-track {maintenanceMode ? 'toggle-track-active' : ''}" aria-label="وضع الصيانة">
+                                        <div class="toggle-thumb {maintenanceMode ? 'toggle-thumb-active right-1' : 'right-[22px]'}"></div>
+                                </button>
+                        </div>
+                        {#if maintenanceMode}
+                                <div>
+                                        <label for="maintenanceMsg" class="block text-sm font-medium text-ink-secondary mb-2">رسالة الصيانة</label>
+                                        <textarea id="maintenanceMsg" bind:value={maintenanceMessage} class="input-field min-h-[80px]" placeholder="الموقع تحت الصيانة، سنعود قريباً..."></textarea>
+                                </div>
+                        {/if}
+                        <div class="glass-divider"></div>
+                        <button type="submit" class="btn-primary w-fit" disabled={saving}>
+                                {#if saving}<RefreshCw size={14} class="animate-spin" />{:else}<Save size={14} />{/if}
+                                حفظ الميزات
+                        </button>
+                </form>
         </div>
+{/if}
 
-        <div class="glass-divider"></div>
-
-        <div class="space-y-5">
-          <!-- Main Domain -->
-          <div class="space-y-2">
-            <label class="text-sm font-medium" style="color: var(--text-secondary);">
-              <span class="flex items-center gap-2">
-                <Server size={14} style="color: var(--accent-azure);" />
-                النطاق الرئيسي
-              </span>
-            </label>
-            <input
-              type="text"
-              class="input-field w-full"
-              placeholder="example.com"
-              value={currentSettings.domains.main_domain}
-              oninput={(e) => updateField('domains', 'main_domain', (e.target as HTMLInputElement).value)}
-              dir="ltr"
-            />
-            <p class="text-xs" style="color: var(--text-quaternary);">النطاق الأساسي للموقع</p>
-          </div>
-
-          <!-- Admin Domain -->
-          <div class="space-y-2">
-            <label class="text-sm font-medium" style="color: var(--text-secondary);">
-              <span class="flex items-center gap-2">
-                <ShieldCheck size={14} style="color: var(--accent-violet);" />
-                نطاق لوحة الإدارة
-              </span>
-            </label>
-            <input
-              type="text"
-              class="input-field w-full"
-              placeholder="admin.example.com"
-              value={currentSettings.domains.admin_domain}
-              oninput={(e) => updateField('domains', 'admin_domain', (e.target as HTMLInputElement).value)}
-              dir="ltr"
-            />
-            <p class="text-xs" style="color: var(--text-quaternary);">النطاق المخصص للوحة التحكم</p>
-          </div>
-
-          <!-- API Domain -->
-          <div class="space-y-2">
-            <label class="text-sm font-medium" style="color: var(--text-secondary);">
-              <span class="flex items-center gap-2">
-                <Wifi size={14} style="color: var(--accent-mint);" />
-                نطاق API
-              </span>
-            </label>
-            <input
-              type="text"
-              class="input-field w-full"
-              placeholder="api.example.com"
-              value={currentSettings.domains.api_domain}
-              oninput={(e) => updateField('domains', 'api_domain', (e.target as HTMLInputElement).value)}
-              dir="ltr"
-            />
-            <p class="text-xs" style="color: var(--text-quaternary);">النطاق المخصص لواجهة البرمجة</p>
-          </div>
+<!-- Custom SSL Install Modal -->
+<Modal bind:open={sslModalOpen} title="تثبيت شهادة SSL مخصصة" icon={Lock} size="lg">
+        <div class="flex flex-col gap-4">
+                <div>
+                        <label for="certPem" class="block text-sm font-medium text-ink-secondary mb-2">شهادة PEM</label>
+                        <textarea id="certPem" bind:value={certPem} class="input-field min-h-[120px] font-mono text-xs" placeholder="-----BEGIN CERTIFICATE-----..." dir="ltr"></textarea>
+                </div>
+                <div>
+                        <label for="keyPem" class="block text-sm font-medium text-ink-secondary mb-2">مفتاح PEM</label>
+                        <textarea id="keyPem" bind:value={keyPem} class="input-field min-h-[120px] font-mono text-xs" placeholder="-----BEGIN PRIVATE KEY-----..." dir="ltr"></textarea>
+                </div>
         </div>
-
-        <div class="glass-divider"></div>
-
-        <!-- Nginx Reload -->
-        <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-          <div class="flex items-center gap-3">
-            <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(59,130,246,0.08);">
-              <RefreshCw size={16} style="color: #3b82f6;" class={nginxReloading ? 'animate-spin' : ''} />
-            </div>
-            <div>
-              <p class="text-sm font-medium">إعادة تحميل Nginx</p>
-              <p class="text-xs" style="color: var(--text-quaternary);">تطبيق التغييرات على خادم الويب</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-3">
-            {#if nginxMessage}
-              <span class="text-xs" style="color: {nginxMessage.includes('بنجاح') ? '#22d3a4' : '#f43f7a'};">
-                {nginxMessage}
-              </span>
-            {/if}
-            <button
-              class="btn-ghost flex items-center gap-2 text-xs"
-              onclick={reloadNginx}
-              disabled={nginxReloading}
-            >
-              {#if nginxReloading}
-                <Loader2 size={14} class="animate-spin" />
-              {:else}
-                <RefreshCw size={14} />
-              {/if}
-              <span>إعادة تحميل</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    {/if}
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- SSL TAB -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    {#if activeTab === 'ssl'}
-      <div class="panel p-6 space-y-6">
-        <div class="flex items-center gap-3">
-          <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(34,211,164,0.1);">
-            <Lock size={20} style="color: #22d3a4;" />
-          </div>
-          <div>
-            <h2 class="text-lg font-bold">إعدادات SSL</h2>
-            <p class="text-xs" style="color: var(--text-quaternary);">إدارة شهادات الأمان والتشفير</p>
-          </div>
-        </div>
-
-        <div class="glass-divider"></div>
-
-        <div class="space-y-5">
-          <!-- SSL Enabled Toggle -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(34,211,164,0.08);">
-                <ShieldCheck size={16} style="color: #22d3a4;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">تفعيل SSL</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">تشغيل تشفير HTTPS لجميع النطاقات</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.ssl.ssl_enabled ? 'active' : ''}"
-              onclick={() => toggleField('ssl', 'ssl_enabled')}
-              role="switch"
-              aria-checked={currentSettings.ssl.ssl_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- SSL Email -->
-          <div class="space-y-2">
-            <label class="text-sm font-medium" style="color: var(--text-secondary);">
-              <span class="flex items-center gap-2">
-                <Zap size={14} style="color: var(--accent-gold);" />
-                البريد الإلكتروني لـ SSL
-              </span>
-            </label>
-            <input
-              type="email"
-              class="input-field w-full"
-              placeholder="admin@example.com"
-              value={currentSettings.ssl.ssl_email}
-              oninput={(e) => updateField('ssl', 'ssl_email', (e.target as HTMLInputElement).value)}
-              dir="ltr"
-            />
-            <p class="text-xs" style="color: var(--text-quaternary);">البريد الإلكتروني المستخدم لإشعارات SSL وتجديد الشهادات</p>
-          </div>
-
-          <!-- SSL Type Select -->
-          <div class="space-y-2">
-            <label class="text-sm font-medium" style="color: var(--text-secondary);">
-              <span class="flex items-center gap-2">
-                <Lock size={14} style="color: var(--accent-azure);" />
-                نوع الشهادة
-              </span>
-            </label>
-            <select
-              class="input-field w-full"
-              value={currentSettings.ssl.ssl_type}
-              onchange={(e) => updateField('ssl', 'ssl_type', (e.target as HTMLSelectElement).value)}
-            >
-              <option value="letsencrypt">Let's Encrypt (تلقائي)</option>
-              <option value="custom">شهادة مخصصة</option>
-            </select>
-            <p class="text-xs" style="color: var(--text-quaternary);">
-              {#if currentSettings.ssl.ssl_type === 'letsencrypt'}
-                سيتم إصدار وتجديد الشهادات تلقائياً عبر Let's Encrypt
-              {:else}
-                يجب رفع شهادة SSL مخصصة يدوياً على الخادم
-              {/if}
-            </p>
-          </div>
-        </div>
-
-        <!-- SSL Status Banner -->
-        <div class="p-4 rounded-xl border" style="background: {currentSettings.ssl.ssl_enabled ? 'rgba(34,211,164,0.05)' : 'rgba(244,63,122,0.05)'}; border-color: {currentSettings.ssl.ssl_enabled ? 'rgba(34,211,164,0.15)' : 'rgba(244,63,122,0.15)'};">
-          <div class="flex items-center gap-3">
-            {#if currentSettings.ssl.ssl_enabled}
-              <CheckCircle2 size={20} style="color: #22d3a4;" />
-              <div>
-                <p class="text-sm font-medium" style="color: #22d3a4;">SSL مفعّل</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">جميع الاتصالات مشفرة وآمنة</p>
-              </div>
-            {:else}
-              <AlertCircle size={20} style="color: #f43f7a;" />
-              <div>
-                <p class="text-sm font-medium" style="color: #f43f7a;">SSL معطّل</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">الاتصالات غير مشفرة — يُنصح بتفعيل SSL فوراً</p>
-              </div>
-            {/if}
-          </div>
-        </div>
-      </div>
-    {/if}
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- SECURITY TAB -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    {#if activeTab === 'security'}
-      <div class="panel p-6 space-y-6">
-        <div class="flex items-center gap-3">
-          <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(168,85,247,0.1);">
-            <Shield size={20} style="color: #a855f7;" />
-          </div>
-          <div>
-            <h2 class="text-lg font-bold">إعدادات الأمان</h2>
-            <p class="text-xs" style="color: var(--text-quaternary);">التحكم في سياسات الأمان والمصادقة</p>
-          </div>
-        </div>
-
-        <div class="glass-divider"></div>
-
-        <div class="space-y-4">
-          <!-- Registration Enabled -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(59,130,246,0.08);">
-                <Users size={16} style="color: #3b82f6;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">فتح التسجيل</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">السماح للمستخدمين الجدد بإنشاء حسابات</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.security.registration_enabled ? 'active' : ''}"
-              onclick={() => toggleField('security', 'registration_enabled')}
-              role="switch"
-              aria-checked={currentSettings.security.registration_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- Two-Factor Authentication -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(168,85,247,0.08);">
-                <ShieldCheck size={16} style="color: #a855f7;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">المصادقة الثنائية (2FA)</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">إلزام المستخدمين بتفعيل المصادقة الثنائية</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.security.two_fa_enabled ? 'active' : ''}"
-              onclick={() => toggleField('security', 'two_fa_enabled')}
-              role="switch"
-              aria-checked={currentSettings.security.two_fa_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- KYC Required -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(34,211,164,0.08);">
-                <ShieldCheck size={16} style="color: #22d3a4;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">إلزام التحقق KYC</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">طلب التحقق من الهوية قبل إجراء المعاملات</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.security.kyc_required ? 'active' : ''}"
-              onclick={() => toggleField('security', 'kyc_required')}
-              role="switch"
-              aria-checked={currentSettings.security.kyc_required}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- Max Login Attempts -->
-          <div class="p-4 rounded-xl space-y-3" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(244,63,122,0.08);">
-                <Lock size={16} style="color: #f43f7a;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">الحد الأقصى لمحاولات تسجيل الدخول</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">عدد المحاولات المسموح بها قبل حظر الحساب مؤقتاً</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-4">
-              <input
-                type="number"
-                class="input-field w-32 text-center"
-                min="1"
-                max="20"
-                value={currentSettings.security.max_login_attempts}
-                oninput={(e) => {
-                  const val = parseInt((e.target as HTMLInputElement).value) || 5;
-                  updateField('security', 'max_login_attempts', Math.max(1, Math.min(20, val)));
-                }}
-              />
-              <span class="text-xs" style="color: var(--text-quaternary);">محاولة (1 - 20)</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Security Score -->
-        <div class="p-4 rounded-xl border" style="background: rgba(168,85,247,0.03); border-color: rgba(168,85,247,0.12);">
-          <div class="flex items-center gap-3 mb-3">
-            <Shield size={18} style="color: #a855f7;" />
-            <p class="text-sm font-bold" style="color: #a855f7;">مستوى الأمان</p>
-          </div>
-          <div class="flex items-center gap-3">
-            <div class="flex-1 h-2 rounded-full overflow-hidden" style="background: var(--bg-overlay-10);">
-              <div
-                class="h-full rounded-full transition-all duration-700"
-                style="width: {(securityScore / 4) * 100}%; background: {securityScore >= 3 ? '#22d3a4' : securityScore >= 2 ? '#f5b544' : '#f43f7a'};"
-              ></div>
-            </div>
-            <span class="text-xs font-bold tabular-nums" style="color: {securityScore >= 3 ? '#22d3a4' : securityScore >= 2 ? '#f5b544' : '#f43f7a'};">{securityScore}/4</span>
-          </div>
-          <p class="text-xs mt-2" style="color: var(--text-quaternary);">
-            {#if securityScore >= 3}
-              مستوى أمان عالي — معظم إعدادات الحماية مفعّلة
-            {:else if securityScore >= 2}
-              مستوى أمان متوسط — يُنصح بتفعيل المزيد من إعدادات الحماية
-            {:else}
-              مستوى أمان منخفض — يجب تفعيل إعدادات الحماية الأساسية فوراً
-            {/if}
-          </p>
-        </div>
-      </div>
-    {/if}
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- FEATURES TAB -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    {#if activeTab === 'features'}
-      <div class="panel p-6 space-y-6">
-        <div class="flex items-center gap-3">
-          <div class="flex items-center justify-center w-10 h-10 rounded-xl" style="background: rgba(245,181,68,0.1);">
-            <Wrench size={20} style="color: #f5b544;" />
-          </div>
-          <div>
-            <h2 class="text-lg font-bold">إعدادات الميزات</h2>
-            <p class="text-xs" style="color: var(--text-quaternary);">التحكم في ميزات المنصة المتاحة للمستخدمين</p>
-          </div>
-        </div>
-
-        <div class="glass-divider"></div>
-
-        <div class="space-y-4">
-          <!-- P2P Trading -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(59,130,246,0.08);">
-                <ArrowLeftRight size={16} style="color: #3b82f6;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">تداول P2P</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">السماح بالتداول المباشر بين المستخدمين</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.features.p2p_enabled ? 'active' : ''}"
-              onclick={() => toggleField('features', 'p2p_enabled')}
-              role="switch"
-              aria-checked={currentSettings.features.p2p_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- Futures Trading -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(245,181,68,0.08);">
-                <Rocket size={16} style="color: #f5b544;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">العقود الآجلة</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">تفعيل تداول العقود الآجلة والرافعة المالية</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.features.futures_enabled ? 'active' : ''}"
-              onclick={() => toggleField('features', 'futures_enabled')}
-              role="switch"
-              aria-checked={currentSettings.features.futures_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- Staking -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(34,211,164,0.08);">
-                <Zap size={16} style="color: #22d3a4;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">الستيكينغ</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">تفعيل ميزة حجز العملات وكسب المكافآت</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.features.staking_enabled ? 'active' : ''}"
-              onclick={() => toggleField('features', 'staking_enabled')}
-              role="switch"
-              aria-checked={currentSettings.features.staking_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- Referral -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(168,85,247,0.08);">
-                <Users size={16} style="color: #a855f7;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">برنامج الإحالة</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">تفعيل نظام الدعوات والمكافآت</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.features.referral_enabled ? 'active' : ''}"
-              onclick={() => toggleField('features', 'referral_enabled')}
-              role="switch"
-              aria-checked={currentSettings.features.referral_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-
-          <!-- Ads -->
-          <div class="flex items-center justify-between p-4 rounded-xl" style="background: var(--bg-overlay-5);">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-9 h-9 rounded-lg" style="background: rgba(244,63,122,0.08);">
-                <Megaphone size={16} style="color: #f43f7a;" />
-              </div>
-              <div>
-                <p class="text-sm font-medium">الإعلانات</p>
-                <p class="text-xs" style="color: var(--text-quaternary);">تفعيل نظام الإعلانات على المنصة</p>
-              </div>
-            </div>
-            <button
-              class="toggle-track {currentSettings.features.ads_enabled ? 'active' : ''}"
-              onclick={() => toggleField('features', 'ads_enabled')}
-              role="switch"
-              aria-checked={currentSettings.features.ads_enabled}
-            >
-              <span class="toggle-thumb"></span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Active Features Summary -->
-        <div class="p-4 rounded-xl border" style="background: rgba(245,181,68,0.03); border-color: rgba(245,181,68,0.12);">
-          <div class="flex items-center gap-3 mb-3">
-            <Activity size={18} style="color: #f5b544;" />
-            <p class="text-sm font-bold" style="color: #f5b544;">ملخص الميزات النشطة</p>
-          </div>
-          <div class="flex items-center gap-4 flex-wrap">
-            <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg" style="background: rgba(34,211,164,0.08);">
-              <CheckCircle2 size={14} style="color: #22d3a4;" />
-              <span class="text-xs font-medium" style="color: #22d3a4;">{enabledFeaturesCount} مفعّلة</span>
-            </div>
-            <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg" style="background: rgba(244,63,122,0.08);">
-              <AlertCircle size={14} style="color: #f43f7a;" />
-              <span class="text-xs font-medium" style="color: #f43f7a;">{5 - enabledFeaturesCount} معطّلة</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    {/if}
-  {:else if !loading}
-    <div class="panel p-12 flex flex-col items-center justify-center gap-4">
-      <AlertCircle size={32} style="color: var(--text-quaternary);" />
-      <p class="text-sm" style="color: var(--text-quaternary);">فشل تحميل الإعدادات</p>
-      <button class="btn-ghost flex items-center gap-2 text-sm" onclick={fetchSettings}>
-        <RefreshCw size={14} />
-        <span>إعادة المحاولة</span>
-      </button>
-    </div>
-  {/if}
-
-  <!-- Unsaved Changes Footer -->
-  {#if hasChanges && !loading}
-    <div class="fixed bottom-0 left-0 right-0 z-50 animate-slide-up" style="margin-right: var(--sidebar-width, 272px);">
-      <div class="mx-6 mb-4 panel p-4 flex items-center justify-between" style="border-color: rgba(245,181,68,0.25); background: rgba(245,181,68,0.05);">
-        <div class="flex items-center gap-3">
-          <AlertCircle size={18} style="color: #f5b544;" />
-          <p class="text-sm" style="color: #f5b544;">لديك تغييرات غير محفوظة</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <button class="btn-ghost text-xs" onclick={revertChanges} disabled={saving}>
-            تراجع
-          </button>
-          <button
-            class="btn-primary flex items-center gap-2 text-xs"
-            onclick={saveSettings}
-            disabled={saving}
-          >
-            {#if saving}
-              <Loader2 size={14} class="animate-spin" />
-              <span>جاري الحفظ...</span>
-            {:else}
-              <Save size={14} />
-              <span>حفظ التغييرات</span>
-            {/if}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
-</div>
-
-<style>
-  /* ─── Status Pill ─────────────────────────────────────────── */
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 9999px;
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-    line-height: 1;
-  }
-  .status-pill.active {
-    background: rgba(34, 211, 164, 0.1);
-    color: #22d3a4;
-    border: 1px solid rgba(34, 211, 164, 0.2);
-  }
-  .status-pill.inactive {
-    background: rgba(244, 63, 122, 0.1);
-    color: #f43f7a;
-    border: 1px solid rgba(244, 63, 122, 0.2);
-  }
-
-  /* ─── Toggle Track ────────────────────────────────────────── */
-  .toggle-track {
-    position: relative;
-    display: flex;
-    align-items: center;
-    width: 44px;
-    height: 24px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    flex-shrink: 0;
-    padding: 0;
-  }
-  .toggle-track:hover {
-    background: rgba(255, 255, 255, 0.12);
-  }
-  .toggle-track.active {
-    background: rgba(34, 211, 164, 0.25);
-    border-color: rgba(34, 211, 164, 0.4);
-  }
-
-  /* ─── Toggle Thumb ────────────────────────────────────────── */
-  .toggle-thumb {
-    position: absolute;
-    right: 3px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.5);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  }
-  .toggle-track.active .toggle-thumb {
-    right: 23px;
-    background: #22d3a4;
-    box-shadow: 0 0 8px rgba(34, 211, 164, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
-  }
-
-  /* ─── Tab Button ──────────────────────────────────────────── */
-  .tab-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-tertiary);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-    font-family: inherit;
-  }
-  .tab-btn:hover {
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--text-secondary);
-  }
-  .tab-btn.active {
-    background: rgba(245, 181, 68, 0.1);
-    color: #f5b544;
-    box-shadow: 0 0 0 1px rgba(245, 181, 68, 0.15);
-  }
-
-  /* ─── Input Field ─────────────────────────────────────────── */
-  .input-field {
-    width: 100%;
-    padding: 10px 14px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--text-primary);
-    font-size: 14px;
-    font-family: inherit;
-    outline: none;
-    transition: all 0.2s ease;
-  }
-  .input-field:focus {
-    border-color: rgba(245, 181, 68, 0.4);
-    background: rgba(255, 255, 255, 0.05);
-    box-shadow: 0 0 0 3px rgba(245, 181, 68, 0.08);
-  }
-  .input-field::placeholder {
-    color: var(--text-quaternary);
-  }
-  .input-field:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  select.input-field {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: left 12px center;
-    padding-left: 36px;
-  }
-  select.input-field option {
-    background: #0f0f1a;
-    color: var(--text-primary);
-  }
-
-  /* ─── Glass Divider ───────────────────────────────────────── */
-  .glass-divider {
-    height: 1px;
-    background: linear-gradient(to left, transparent, rgba(255, 255, 255, 0.06), transparent);
-  }
-
-  /* ─── Panel ───────────────────────────────────────────────── */
-  .panel {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 16px;
-    backdrop-filter: blur(12px);
-  }
-
-  /* ─── Animations ──────────────────────────────────────────── */
-  @keyframes slide-up {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  .animate-slide-up {
-    animation: slide-up 0.3s ease-out;
-  }
-
-  @keyframes slide-down {
-    from { transform: translateY(-10px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  .animate-slide-down {
-    animation: slide-down 0.3s ease-out;
-  }
-
-  @keyframes scale-in {
-    from { transform: scale(0.95); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-  }
-  .animate-scale-in {
-    animation: scale-in 0.2s ease-out;
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-  .animate-fade-in {
-    animation: fade-in 0.3s ease-out;
-  }
-</style>
+        {#snippet footer()}
+                <button class="btn-ghost" onclick={() => (sslModalOpen = false)}>إلغاء</button>
+                <button class="btn-primary" onclick={installCustomSSL} disabled={sslModalLoading || !certPem || !keyPem}>
+                        {#if sslModalLoading}<RefreshCw size={14} class="animate-spin" />{/if}
+                        تثبيت
+                </button>
+        {/snippet}
+</Modal>

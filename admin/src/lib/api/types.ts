@@ -1,168 +1,220 @@
-import { API, getToken } from './client';
+// ═══════════════════════════════════════════════════════════
+// NEXUS ADMIN v4.0 — Type Definitions
+// ═══════════════════════════════════════════════════════════
 
-// ─── Admin Stats ──────────────────────────────────────────────
 export interface AdminStats {
-  totalUsers: number;
-  totalOrders: number;
-  totalTransactions: number;
-  pendingWithdrawals: number;
-  pendingDeposits: number;
-  pendingKYC: number;
-  totalVolume24h?: number;
-  activeUsers24h?: number;
+	totalUsers: number;
+	totalOrders: number;
+	totalTransactions: number;
+	pendingWithdrawals: number;
+	pendingDeposits: number;
+	pendingKYC: number;
 }
 
-// ─── Users ────────────────────────────────────────────────────
 export interface AdminUser {
-  id: number;
-  email: string;
-  username: string;
-  role: string;
-  email_verified: boolean;
-  two_fa_enabled: boolean;
-  kyc_status?: 'VERIFIED' | 'PENDING' | 'REJECTED' | 'NONE';
-  created_at: string;
-  last_login?: string;
-  balance?: number;
+	id: number;
+	email: string;
+	username: string;
+	role: 'USER' | 'ADMIN' | 'VERIFIED_USER';
+	email_verified: boolean;
+	two_fa_enabled: boolean;
+	created_at: string;
+	kyc_status?: string;
 }
 
 export interface UserStats {
-  total: number;
-  admins: number;
-  emailVerified: number;
-  kycVerified: number;
-  newToday: number;
-  activeToday: number;
+	total: number;
+	admins: number;
+	emailVerified: number;
+	kycVerified: number;
 }
 
-// ─── KYC ──────────────────────────────────────────────────────
 export interface KYCRequest {
-  id: number;
-  user_id: number;
-  full_name: string;
-  document_type: string;
-  document_number: string;
-  document_url: string;
-  selfie_url?: string;
-  status: string;
-  rejection_reason: string;
-  created_at: string;
-  updated_at: string;
-  user: { id: number; username: string; email: string };
+	id: number;
+	user_id: number;
+	document_type: string;
+	document_number: string;
+	document_front: string;
+	document_back?: string;
+	selfie_image?: string;
+	status: 'PENDING' | 'APPROVED' | 'REJECTED';
+	rejection_reason?: string;
+	created_at: string;
+	reviewed_at?: string;
+	user: AdminUser;
 }
 
 export interface KYCStats {
-  pending: number;
-  approved: number;
-  rejected: number;
+	pending: number;
+	approved: number;
+	rejected: number;
 }
 
-// ─── Transactions ─────────────────────────────────────────────
 export interface AdminTransaction {
-  id: number;
-  user_id: number;
-  username: string;
-  email: string;
-  type: string;
-  currency: string;
-  amount: number;
-  status: string;
-  address: string;
-  tx_id: string;
-  createdAt: string;
+	id: number;
+	user_id: number;
+	username: string;
+	email: string;
+	type: 'DEPOSIT' | 'WITHDRAWAL';
+	currency: string;
+	amount: number;
+	status: 'PENDING' | 'COMPLETED' | 'REJECTED';
+	address?: string;
+	tx_id?: string;
+	createdAt: string;
 }
 
-// ─── Audit Logs ───────────────────────────────────────────────
 export interface AuditLog {
-  id: number;
-  user_id: number;
-  action: string;
-  details: string;
-  ipAddress: string;
-  username: string;
-  createdAt: string;
+	id: number;
+	user_id: number;
+	action: string;
+	details: string;
+	ipAddress: string;
+	username: string;
+	createdAt: string;
 }
 
-// ─── Ads ──────────────────────────────────────────────────────
+export interface AuditStats {
+	authEvents: number;
+	adminActions: number;
+	tradeActions: number;
+}
+
 export interface Ad {
-  id: number;
-  title: string;
-  link: string;
-  image_url: string;
-  button_text: string;
-  button_link: string;
-  position: string;
-  active: boolean;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
+	id: number;
+	title: string;
+	link: string;
+	image_url: string;
+	button_text: string;
+	button_link: string;
+	position: 'hero' | 'section' | 'bottom' | 'floating';
+	active: boolean;
+	sort_order: number;
+	created_at: string;
+	updated_at: string;
 }
 
-// ─── Fees ─────────────────────────────────────────────────────
 export interface FeeSchedule {
-  id: number;
-  user_type: string;
-  order_type: string;
-  maker_fee: number;
-  taker_fee: number;
-  min_fee: number;
-  created_at: string;
-  updated_at: string;
+	id: number;
+	user_type: string;
+	order_type: string;
+	maker_fee: number;
+	taker_fee: number;
+	min_fee: number;
+	created_at: string;
+	updated_at: string;
 }
 
-// ─── System Settings ──────────────────────────────────────────
 export interface SystemSettings {
-  domains: Record<string, string>;
-  ssl: Record<string, string>;
-  security: Record<string, string>;
-  features: Record<string, string>;
+	domains: {
+		frontend_domain: string;
+		backend_domain: string;
+		admin_domain: string;
+		main_domain: string;
+	};
+	ssl: {
+		ssl_enabled: string;
+		ssl_cert_path: string;
+		ssl_key_path: string;
+	};
+	security: {
+		cors_extra_origins: string;
+	};
+	features: {
+		registration_open: string;
+		maintenance_mode: string;
+		maintenance_message: string;
+	};
 }
 
-// ─── SSL Status ───────────────────────────────────────────────
 export interface SSLStatus {
-  enabled: boolean;
-  type: string;
-  exists: boolean;
-  issuer: string;
-  subject: string;
-  domains: string;
-  not_after: string;
-  days_remaining: number;
-  health: string;
-  cert_path: string;
-  key_path: string;
+	enabled: boolean;
+	type: string;
+	issuer: string;
+	cert_path: string;
+	key_path: string;
+	domains: string[];
+	email: string;
+	generated_at: string;
+	exists: boolean;
+	subject?: string;
+	issuer_org?: string;
+	not_before?: string;
+	not_after?: string;
+	expires_at?: string;
+	days_remaining?: number;
+	health: 'healthy' | 'warning' | 'critical' | 'expired';
+	sans?: string[];
+	key_algorithm?: string;
+	signature_algorithm?: string;
+	serial_number?: string;
+	key_exists?: boolean;
+	error?: string;
 }
 
-// ─── Metrics ──────────────────────────────────────────────────
 export interface MetricsData {
-  cpu: number;
-  memory: number;
-  disk: number;
-  uptime: number;
-  goroutines: number;
-  activeConnections: number;
-  requestsPerSecond: number;
-  errorRate: number;
+	ts: number;
+	websocket: {
+		market_clients: number;
+		user_clients: number;
+		online_users: number;
+	};
+	sse: {
+		admin_subscribers: number;
+		active_conns: number;
+		max_conns: number;
+	};
+	upstream: {
+		binance_connected: boolean;
+		binance_symbols: number;
+		binance_intervals: number;
+		binance_sub_streams: number;
+		redis_pubsub_enabled: boolean;
+	};
+	runtime: {
+		goroutines: number;
+		heap_alloc_mb: number;
+		heap_in_use_mb: number;
+		num_gc: number;
+		gc_pause_ms_total: number;
+		go_version: string;
+		num_cpu: number;
+	};
+	tickers: { symbol: string; price: number; age_ms: number; stale: boolean }[];
 }
 
-// ─── Pagination ───────────────────────────────────────────────
 export interface PaginationMeta {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
+	total: number;
+	page: number;
+	limit: number;
 }
 
 export interface PaginatedResponse<T> {
-  success: boolean;
-  data: T[];
-  pagination: PaginationMeta;
+	success: boolean;
+	data: T[];
+	total: number;
+	page: number;
+	limit: number;
 }
 
-// ─── SSE Stream ───────────────────────────────────────────────
-export function createAdminStream(types: string[] = ['*']): EventSource | null {
-  const token = getToken();
-  if (!token) return null;
-  const url = `${API}/api/v1/admin/stream?token=${encodeURIComponent(token)}&types=${types.join(',')}`;
-  return new EventSource(url);
+export interface ApiResponse<T> {
+	success: boolean;
+	data?: T;
+	message?: string;
+	error?: string;
+}
+
+export interface LoginResponse {
+	success: boolean;
+	data: {
+		token: string;
+		refresh_token: string;
+		user: AdminUser;
+		requires_2fa?: boolean;
+	};
+}
+
+export interface SSEMessage {
+	type: string;
+	data: unknown;
 }
