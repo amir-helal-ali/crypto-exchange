@@ -1,7 +1,7 @@
 #!/bin/sh
 # regen-config.sh — regenerate /etc/nginx/nginx.conf from current DB settings
 #
-# Reads domain/SSL configuration from the backend /api/v1/config endpoint
+# Reads domain/SSL/port configuration from the backend /api/v1/config endpoint
 # and substitutes into nginx.conf.template to produce the final nginx.conf.
 #
 # Usage:
@@ -45,6 +45,11 @@ if [ -z "$RESPONSE" ]; then
   SSL_ENABLED="${SSL_ENABLED:-false}"
   SSL_CERT_PATH="${SSL_CERT_PATH:-/etc/nginx/certs/local.pem}"
   SSL_KEY_PATH="${SSL_KEY_PATH:-/etc/nginx/certs/local-key.pem}"
+  NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
+  NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-443}"
+  BACKEND_INTERNAL_PORT="${BACKEND_INTERNAL_PORT:-3000}"
+  FRONTEND_INTERNAL_PORT="${FRONTEND_INTERNAL_PORT:-3000}"
+  ADMIN_INTERNAL_PORT="${ADMIN_INTERNAL_PORT:-3000}"
 else
   FRONTEND_DOMAIN=$(echo "$RESPONSE" | sed -n 's/.*"frontend_domain":"\([^"]*\)".*/\1/p')
   BACKEND_DOMAIN=$(echo "$RESPONSE" | sed -n 's/.*"backend_domain":"\([^"]*\)".*/\1/p')
@@ -54,9 +59,22 @@ else
   SSL_ENABLED=$(echo "$RESPONSE" | sed -n 's/.*"ssl_enabled":\([^,}]*\).*/\1/p')
   SSL_CERT_PATH="${SSL_CERT_PATH:-/etc/nginx/certs/local.pem}"
   SSL_KEY_PATH="${SSL_KEY_PATH:-/etc/nginx/certs/local-key.pem}"
+  # Ports from backend settings
+  NGINX_HTTP_PORT=$(echo "$RESPONSE" | sed -n 's/.*"nginx_http_port":"\([^"]*\)".*/\1/p')
+  NGINX_HTTPS_PORT=$(echo "$RESPONSE" | sed -n 's/.*"nginx_https_port":"\([^"]*\)".*/\1/p')
+  BACKEND_INTERNAL_PORT=$(echo "$RESPONSE" | sed -n 's/.*"backend_internal_port":"\([^"]*\)".*/\1/p')
+  FRONTEND_INTERNAL_PORT=$(echo "$RESPONSE" | sed -n 's/.*"frontend_internal_port":"\([^"]*\)".*/\1/p')
+  ADMIN_INTERNAL_PORT=$(echo "$RESPONSE" | sed -n 's/.*"admin_internal_port":"\([^"]*\)".*/\1/p')
+  # Fallback to env/defaults if not in response
+  [ -z "$NGINX_HTTP_PORT" ] && NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
+  [ -z "$NGINX_HTTPS_PORT" ] && NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-443}"
+  [ -z "$BACKEND_INTERNAL_PORT" ] && BACKEND_INTERNAL_PORT="${BACKEND_INTERNAL_PORT:-3000}"
+  [ -z "$FRONTEND_INTERNAL_PORT" ] && FRONTEND_INTERNAL_PORT="${FRONTEND_INTERNAL_PORT:-3000}"
+  [ -z "$ADMIN_INTERNAL_PORT" ] && ADMIN_INTERNAL_PORT="${ADMIN_INTERNAL_PORT:-3000}"
 fi
 
 echo "[regen-config] frontend=$FRONTEND_DOMAIN backend=$BACKEND_DOMAIN admin=$ADMIN_DOMAIN main=$MAIN_DOMAIN ssl=$SSL_ENABLED"
+echo "[regen-config] ports: http=$NGINX_HTTP_PORT https=$NGINX_HTTPS_PORT backend_int=$BACKEND_INTERNAL_PORT frontend_int=$FRONTEND_INTERNAL_PORT admin_int=$ADMIN_INTERNAL_PORT"
 
 # ── Derived values ───────────────────────────────────────────────
 ALL_DOMAINS="$MAIN_DOMAIN $FRONTEND_DOMAIN $BACKEND_DOMAIN $ADMIN_DOMAIN"
@@ -138,7 +156,7 @@ if [ "$SSL_ENABLED" = "true" ]; then
   HTTP_BLOCK_CONTENT="return 301 https://\$host\$request_uri;"
 
   HTTPS_SERVER_BLOCK="server {
-    listen 443 ssl;
+    listen ${NGINX_HTTPS_PORT} ssl;
     http2 on;
     server_name $ALL_DOMAINS;
 
@@ -167,7 +185,7 @@ else
 
     $PROXY_LOCATIONS"
 
-  HTTPS_SERVER_BLOCK="# HTTPS server disabled — SSL is off. All traffic served on port 80."
+  HTTPS_SERVER_BLOCK="# HTTPS server disabled — SSL is off. All traffic served on port ${NGINX_HTTP_PORT}."
 fi
 
 # ── Substitute placeholders ──────────────────────────────────────
@@ -184,6 +202,11 @@ sed \
   -e "s|\${FRONTEND_UPSTREAM_URL}|$FRONTEND_UPSTREAM_URL|g" \
   -e "s|\${BACKEND_UPSTREAM_URL}|$BACKEND_UPSTREAM_URL|g" \
   -e "s|\${ADMIN_UPSTREAM_URL}|$ADMIN_UPSTREAM_URL|g" \
+  -e "s|\${NGINX_HTTP_PORT}|$NGINX_HTTP_PORT|g" \
+  -e "s|\${NGINX_HTTPS_PORT}|$NGINX_HTTPS_PORT|g" \
+  -e "s|\${BACKEND_INTERNAL_PORT}|$BACKEND_INTERNAL_PORT|g" \
+  -e "s|\${FRONTEND_INTERNAL_PORT}|$FRONTEND_INTERNAL_PORT|g" \
+  -e "s|\${ADMIN_INTERNAL_PORT}|$ADMIN_INTERNAL_PORT|g" \
   -e "s|\${SSL_ENABLED}|$SSL_ENABLED|g" \
   -e "s|\${SSL_CERT_PATH}|$SSL_CERT_PATH|g" \
   -e "s|\${SSL_KEY_PATH}|$SSL_KEY_PATH|g" \

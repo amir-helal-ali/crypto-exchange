@@ -23,17 +23,25 @@ import (
 // /api/v1/admin/ssl/* endpoints directly — they don't need to be in this
 // allowlist because they're never written via /api/v1/admin/settings.
 var allowedSettingKeys = map[string]string{
-        "frontend_domain":     "domains",
-        "backend_domain":      "domains",
-        "admin_domain":        "domains",
-        "main_domain":         "domains",
-        "ssl_enabled":         "ssl",
-        "ssl_cert_path":       "ssl",
-        "ssl_key_path":        "ssl",
-        "cors_extra_origins":  "security",
-        "registration_open":   "features",
-        "maintenance_mode":    "features",
-        "maintenance_message": "features",
+        "frontend_domain":        "domains",
+        "backend_domain":         "domains",
+        "admin_domain":           "domains",
+        "main_domain":            "domains",
+        "nginx_http_port":        "ports",
+        "nginx_https_port":       "ports",
+        "backend_internal_port":  "ports",
+        "frontend_internal_port": "ports",
+        "admin_internal_port":    "ports",
+        "backend_host_port":      "ports",
+        "frontend_host_port":     "ports",
+        "admin_host_port":        "ports",
+        "ssl_enabled":            "ssl",
+        "ssl_cert_path":          "ssl",
+        "ssl_key_path":           "ssl",
+        "cors_extra_origins":     "security",
+        "registration_open":      "features",
+        "maintenance_mode":       "features",
+        "maintenance_message":    "features",
 }
 
 // GetSystemSettings returns all system settings grouped by category.
@@ -106,6 +114,15 @@ func UpdateSystemSettings(c *gin.Context) {
                 if strings.HasSuffix(key, "_domain") && value != "" {
                         if len(value) < 3 || strings.Contains(value, " ") || strings.Contains(value, "://") {
                                 rejected = append(rejected, key+" (invalid domain format)")
+                                continue
+                        }
+                }
+                // Validate port settings (must be 1-65535)
+                if strings.HasSuffix(key, "_port") && value != "" {
+                        var port int
+                        _, err := fmt.Sscanf(value, "%d", &port)
+                        if err != nil || port < 1 || port > 65535 {
+                                rejected = append(rejected, key+" (must be 1-65535)")
                                 continue
                         }
                 }
@@ -215,14 +232,22 @@ func GetPublicConfig(c *gin.Context) {
         }
 
         c.JSON(http.StatusOK, gin.H{
-                "backend_domain":      backendDomain,
-                "frontend_domain":     settings.GetDefault("frontend_domain", ""),
-                "admin_domain":        settings.GetDefault("admin_domain", ""),
-                "main_domain":         settings.GetDefault("main_domain", ""),
-                "ssl_enabled":         settings.GetBool("ssl_enabled"),
-                "registration_open":   settings.GetBool("registration_open"),
-                "maintenance_mode":    settings.GetBool("maintenance_mode"),
-                "maintenance_message": settings.GetDefault("maintenance_message", ""),
-                "timestamp":           time.Now().UTC().Format(time.RFC3339),
+                "backend_domain":         backendDomain,
+                "frontend_domain":        settings.GetDefault("frontend_domain", ""),
+                "admin_domain":           settings.GetDefault("admin_domain", ""),
+                "main_domain":            settings.GetDefault("main_domain", ""),
+                "ssl_enabled":            settings.GetBool("ssl_enabled"),
+                "registration_open":      settings.GetBool("registration_open"),
+                "maintenance_mode":       settings.GetBool("maintenance_mode"),
+                "maintenance_message":    settings.GetDefault("maintenance_message", ""),
+                "nginx_http_port":        settings.GetDefault("nginx_http_port", "80"),
+                "nginx_https_port":       settings.GetDefault("nginx_https_port", "443"),
+                "backend_internal_port":  settings.GetDefault("backend_internal_port", "3000"),
+                "frontend_internal_port": settings.GetDefault("frontend_internal_port", "3000"),
+                "admin_internal_port":    settings.GetDefault("admin_internal_port", "3000"),
+                "backend_host_port":      settings.GetDefault("backend_host_port", "3000"),
+                "frontend_host_port":     settings.GetDefault("frontend_host_port", "3001"),
+                "admin_host_port":        settings.GetDefault("admin_host_port", "3002"),
+                "timestamp":              time.Now().UTC().Format(time.RFC3339),
         })
 }

@@ -6,7 +6,8 @@
         import ErrorAlert from '$lib/components/ErrorAlert.svelte';
         import {
                 Settings, Globe, Shield, Lock, ToggleLeft, MessageSquare,
-                Save, RotateCw, Rocket, AlertTriangle, CheckCircle, Server, ExternalLink
+                Save, RotateCw, Rocket, AlertTriangle, CheckCircle, Server, ExternalLink,
+                Network, Cpu, Wifi
         } from 'lucide-svelte';
         import type { SystemSettings, PublicConfig } from '$lib/api/types';
 
@@ -24,6 +25,16 @@
         let adminDomain = $state('');
         let mainDomain = $state('');
 
+        // Port form fields
+        let nginxHttpPort = $state('80');
+        let nginxHttpsPort = $state('443');
+        let backendInternalPort = $state('3000');
+        let frontendInternalPort = $state('3000');
+        let adminInternalPort = $state('3000');
+        let backendHostPort = $state('3000');
+        let frontendHostPort = $state('3001');
+        let adminHostPort = $state('3002');
+
         // SSL fields
         let sslEnabled = $state(false);
         let sslCertPath = $state('');
@@ -39,6 +50,7 @@
 
         const tabs = [
                 { id: 'domains', label: 'النطاقات', icon: Globe },
+                { id: 'ports', label: 'المنافذ', icon: Network },
                 { id: 'ssl', label: 'SSL', icon: Lock },
                 { id: 'security', label: 'الأمان', icon: Shield },
                 { id: 'features', label: 'الميزات', icon: ToggleLeft },
@@ -57,10 +69,22 @@
                         backendDomain = res.data.domains?.backend_domain || '';
                         adminDomain = res.data.domains?.admin_domain || '';
                         mainDomain = res.data.domains?.main_domain || '';
+                        // Ports
+                        nginxHttpPort = res.data.ports?.nginx_http_port || '80';
+                        nginxHttpsPort = res.data.ports?.nginx_https_port || '443';
+                        backendInternalPort = res.data.ports?.backend_internal_port || '3000';
+                        frontendInternalPort = res.data.ports?.frontend_internal_port || '3000';
+                        adminInternalPort = res.data.ports?.admin_internal_port || '3000';
+                        backendHostPort = res.data.ports?.backend_host_port || '3000';
+                        frontendHostPort = res.data.ports?.frontend_host_port || '3001';
+                        adminHostPort = res.data.ports?.admin_host_port || '3002';
+                        // SSL
                         sslEnabled = res.data.ssl?.ssl_enabled === 'true';
                         sslCertPath = res.data.ssl?.ssl_cert_path || '';
                         sslKeyPath = res.data.ssl?.ssl_key_path || '';
+                        // Security
                         corsOrigins = res.data.security?.cors_extra_origins || '';
+                        // Features
                         registrationOpen = res.data.features?.registration_open === 'true';
                         maintenanceMode = res.data.features?.maintenance_mode === 'true';
                         maintenanceMessage = res.data.features?.maintenance_message || '';
@@ -68,15 +92,45 @@
                 loading = false;
         }
 
+        function isValidPort(value: string): boolean {
+                const num = parseInt(value, 10);
+                return !isNaN(num) && num > 0 && num <= 65535;
+        }
+
         async function saveSettings() {
+                // Validate ports before saving
+                const portFields = [
+                        { key: 'nginx_http_port', value: nginxHttpPort, label: 'منفذ HTTP' },
+                        { key: 'nginx_https_port', value: nginxHttpsPort, label: 'منفذ HTTPS' },
+                        { key: 'backend_internal_port', value: backendInternalPort, label: 'منفذ Backend الداخلي' },
+                        { key: 'frontend_internal_port', value: frontendInternalPort, label: 'منفذ Frontend الداخلي' },
+                        { key: 'admin_internal_port', value: adminInternalPort, label: 'منفذ Admin الداخلي' },
+                        { key: 'backend_host_port', value: backendHostPort, label: 'منفذ الوصول Backend' },
+                        { key: 'frontend_host_port', value: frontendHostPort, label: 'منفذ الوصول Frontend' },
+                        { key: 'admin_host_port', value: adminHostPort, label: 'منفذ الوصول Admin' },
+                ];
+                for (const pf of portFields) {
+                        if (!isValidPort(pf.value)) {
+                                addToast('error', `${pf.label}: قيمة غير صالحة (${pf.value}). يجب أن تكون بين 1 و 65535`);
+                                return;
+                        }
+                }
+
                 saving = true;
-                // Backend expects flat { settings: { key: value } } format
                 const body = {
                         settings: {
                                 frontend_domain: frontendDomain,
                                 backend_domain: backendDomain,
                                 admin_domain: adminDomain,
                                 main_domain: mainDomain,
+                                nginx_http_port: nginxHttpPort,
+                                nginx_https_port: nginxHttpsPort,
+                                backend_internal_port: backendInternalPort,
+                                frontend_internal_port: frontendInternalPort,
+                                admin_internal_port: adminInternalPort,
+                                backend_host_port: backendHostPort,
+                                frontend_host_port: frontendHostPort,
+                                admin_host_port: adminHostPort,
                                 ssl_enabled: String(sslEnabled),
                                 ssl_cert_path: sslCertPath,
                                 ssl_key_path: sslKeyPath,
@@ -96,13 +150,12 @@
         }
 
         async function applyToProduction() {
-                if (!confirm('هل تريد تطبيق التغييرات على بيئة التشغيل؟ سيتم إعادة تحميل إعدادات nginx والشهادات.')) return;
+                if (!confirm('هل تريد تطبيق التغييرات على بيئة التشغيل؟ سيتم إعادة تحميل إعدادات nginx والشهادات والمنافذ.')) return;
                 reloading = true; applyResult = null;
                 const res = await authPost('/api/v1/admin/nginx/reload', {});
                 if (res.success) {
                         addToast('success', 'تم تطبيق التغييرات على بيئة التشغيل بنجاح');
-                        applyResult = { success: true, message: 'تم إعادة تحميل nginx وتحديث الإعدادات. الدومينات والشهادات الجديدة تعمل الآن.' };
-                        // Reload settings to reflect changes
+                        applyResult = { success: true, message: 'تم إعادة تحميل nginx وتحديث الإعدادات. النطاقات والمنافذ والشهادات الجديدة تعمل الآن.' };
                         await loadSettings();
                 } else {
                         addToast('error', res.error || 'فشل تطبيق التغييرات');
@@ -116,9 +169,24 @@
                 if (domain.startsWith('http')) return domain;
                 return `${sslEnabled ? 'https' : 'http'}://${domain}`;
         }
+
+        // Port status helpers
+        let hasPortChanges = $derived.by(() => {
+                if (!settings) return false;
+                return (
+                        nginxHttpPort !== (settings.ports?.nginx_http_port || '80') ||
+                        nginxHttpsPort !== (settings.ports?.nginx_https_port || '443') ||
+                        backendInternalPort !== (settings.ports?.backend_internal_port || '3000') ||
+                        frontendInternalPort !== (settings.ports?.frontend_internal_port || '3000') ||
+                        adminInternalPort !== (settings.ports?.admin_internal_port || '3000') ||
+                        backendHostPort !== (settings.ports?.backend_host_port || '3000') ||
+                        frontendHostPort !== (settings.ports?.frontend_host_port || '3001') ||
+                        adminHostPort !== (settings.ports?.admin_host_port || '3002')
+                );
+        });
 </script>
 
-<PageHeader title="إعدادات النظام" subtitle="التحكم الكامل في النطاقات والشهادات وميزات المنصة" />
+<PageHeader title="إعدادات النظام" subtitle="التحكم الكامل في النطاقات والمنافذ والشهادات وميزات المنصة" />
 
 {#if loading}
         <div class="panel p-4"><div class="skeleton h-96"></div></div>
@@ -222,6 +290,221 @@
                                                 <div>
                                                         <p class="text-xs font-medium text-[var(--gold)] mb-1">ملاحظة مهمة</p>
                                                         <p class="text-xs text-[var(--ink-secondary)]">بعد تغيير النطاقات، يجب حفظ الإعدادات ثم الضغط على "تطبيق على الإنتاج" ليتم تحديث إعدادات nginx وشهادات SSL. تأكد من أن DNS يشير إلى الخادم قبل التطبيق.</p>
+                                                </div>
+                                        </div>
+                                </div>
+                        </div>
+
+                {:else if activeTab === 'ports'}
+                        <!-- Ports Section -->
+                        <div class="space-y-5">
+                                <!-- Nginx Ports -->
+                                <div class="panel p-6">
+                                        <div class="flex items-center gap-3 mb-6">
+                                                <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: rgba(59,130,246,0.1);">
+                                                        <Wifi size={20} style="color: var(--azure)" />
+                                                </div>
+                                                <div>
+                                                        <h3 class="text-sm font-bold">منافذ Nginx</h3>
+                                                        <p class="text-xs text-[var(--ink-muted)]">المنافذ التي يستمع عليها خادم Nginx — تُطبق فوراً عند التفعيل</p>
+                                                </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-2 gap-5">
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                منفذ HTTP
+                                                                <span class="text-[var(--ink-faint)]">— الاتصال العادي (الافتراضي: 80)</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="80"
+                                                                bind:value={nginxHttpPort}
+                                                        />
+                                                </div>
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                منفذ HTTPS
+                                                                <span class="text-[var(--ink-faint)]">— الاتصال الآمن (الافتراضي: 443)</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="443"
+                                                                bind:value={nginxHttpsPort}
+                                                        />
+                                                </div>
+                                        </div>
+
+                                        <div class="mt-4 p-3 rounded-lg" style="background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.1);">
+                                                <div class="flex items-start gap-2">
+                                                        <Wifi size={14} class="text-[var(--azure)] flex-shrink-0 mt-0.5" />
+                                                        <p class="text-xs text-[var(--ink-secondary)]">تغيير منافذ Nginx يُطبق فوراً عند "تطبيق على الإنتاج" — يتم إعادة توليد إعدادات Nginx تلقائياً.</p>
+                                                </div>
+                                        </div>
+                                </div>
+
+                                <!-- Internal Service Ports -->
+                                <div class="panel p-6">
+                                        <div class="flex items-center gap-3 mb-6">
+                                                <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: rgba(168,85,247,0.1);">
+                                                        <Cpu size={20} style="color: var(--violet)" />
+                                                </div>
+                                                <div>
+                                                        <h3 class="text-sm font-bold">منافذ الخدمات الداخلية</h3>
+                                                        <p class="text-xs text-[var(--ink-muted)]">المنافذ التي تستمع عليها الخدمات داخل Docker — تُحدّث في إعدادات Nginx upstream</p>
+                                                </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                Backend (Go API)
+                                                                <span class="text-[var(--ink-faint)]">— الافتراضي: 3000</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="3000"
+                                                                bind:value={backendInternalPort}
+                                                        />
+                                                </div>
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                Frontend (SvelteKit)
+                                                                <span class="text-[var(--ink-faint)]">— الافتراضي: 3000</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="3000"
+                                                                bind:value={frontendInternalPort}
+                                                        />
+                                                </div>
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                Admin (SvelteKit)
+                                                                <span class="text-[var(--ink-faint)]">— الافتراضي: 3000</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="3000"
+                                                                bind:value={adminInternalPort}
+                                                        />
+                                                </div>
+                                        </div>
+
+                                        <div class="mt-4 p-3 rounded-lg" style="background: rgba(168,85,247,0.05); border: 1px solid rgba(168,85,247,0.1);">
+                                                <div class="flex items-start gap-2">
+                                                        <Cpu size={14} class="text-[var(--violet)] flex-shrink-0 mt-0.5" />
+                                                        <p class="text-xs text-[var(--ink-secondary)]">هذه المنافذ تُستخدم داخل Docker. تغييرها يُحدّث إعدادات Nginx upstream تلقائياً. تأكد من أن الخدمة تستمع فعلاً على المنفذ الجديد.</p>
+                                                </div>
+                                        </div>
+                                </div>
+
+                                <!-- Host Access Ports -->
+                                <div class="panel p-6">
+                                        <div class="flex items-center gap-3 mb-6">
+                                                <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: rgba(34,211,164,0.1);">
+                                                        <Server size={20} style="color: var(--mint)" />
+                                                </div>
+                                                <div>
+                                                        <h3 class="text-sm font-bold">منافذ الوصول الخارجية</h3>
+                                                        <p class="text-xs text-[var(--ink-muted)]">المنافذ المعروضة على الجهاز المضيف — تحتاج إعادة تشغيل Docker لتطبيقها</p>
+                                                </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                Backend API
+                                                                <span class="text-[var(--ink-faint)]">— الافتراضي: 3000</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="3000"
+                                                                bind:value={backendHostPort}
+                                                        />
+                                                </div>
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                Frontend واجهة
+                                                                <span class="text-[var(--ink-faint)]">— الافتراضي: 3001</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="3001"
+                                                                bind:value={frontendHostPort}
+                                                        />
+                                                </div>
+                                                <div>
+                                                        <label class="text-xs font-medium text-[var(--ink-secondary)] block mb-1.5">
+                                                                Admin لوحة الإدارة
+                                                                <span class="text-[var(--ink-faint)]">— الافتراضي: 3002</span>
+                                                        </label>
+                                                        <input
+                                                                class="input-field"
+                                                                type="number"
+                                                                min="1"
+                                                                max="65535"
+                                                                placeholder="3002"
+                                                                bind:value={adminHostPort}
+                                                        />
+                                                </div>
+                                        </div>
+
+                                        <div class="mt-4 p-4 rounded-lg" style="background: rgba(251,113,133,0.05); border: 1px solid rgba(251,113,133,0.1);">
+                                                <div class="flex items-start gap-3">
+                                                        <AlertTriangle size={16} class="text-[var(--rose)] flex-shrink-0 mt-0.5" />
+                                                        <div>
+                                                                <p class="text-xs font-medium text-[var(--rose)] mb-1">تغيير المنافذ الخارجية يتطلب إعادة التشغيل</p>
+                                                                <p class="text-xs text-[var(--ink-secondary)]">منافذ الوصول الخارجية مرتبطة بتعيينات Docker (port mapping). بعد الحفظ والتفعيل، يجب تشغيل: <code class="text-[var(--mint)] bg-[rgba(34,211,164,0.1)] px-1.5 py-0.5 rounded text-xs">docker compose up -d</code> ليتم تطبيق المنافذ الجديدة على مستوى المضيف.</p>
+                                                        </div>
+                                                </div>
+                                        </div>
+                                </div>
+
+                                <!-- Port Summary -->
+                                <div class="panel p-5">
+                                        <h4 class="text-xs font-bold text-[var(--ink-muted)] mb-4">ملخص المنافذ الحالية</h4>
+                                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                <div class="p-3 rounded-lg text-center" style="background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.1);">
+                                                        <Wifi size={16} class="text-[var(--azure)] mx-auto mb-1" />
+                                                        <p class="text-[10px] text-[var(--ink-muted)]">HTTP</p>
+                                                        <p class="text-lg font-bold">{nginxHttpPort}</p>
+                                                </div>
+                                                <div class="p-3 rounded-lg text-center" style="background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.1);">
+                                                        <Lock size={16} class="text-[var(--azure)] mx-auto mb-1" />
+                                                        <p class="text-[10px] text-[var(--ink-muted)]">HTTPS</p>
+                                                        <p class="text-lg font-bold">{nginxHttpsPort}</p>
+                                                </div>
+                                                <div class="p-3 rounded-lg text-center" style="background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.1);">
+                                                        <Cpu size={16} class="text-[var(--violet)] mx-auto mb-1" />
+                                                        <p class="text-[10px] text-[var(--ink-muted)]">Backend</p>
+                                                        <p class="text-lg font-bold">{backendHostPort}<span class="text-[10px] text-[var(--ink-muted)]">:{backendInternalPort}</span></p>
+                                                </div>
+                                                <div class="p-3 rounded-lg text-center" style="background: rgba(34,211,164,0.06); border: 1px solid rgba(34,211,164,0.1);">
+                                                        <Globe size={16} class="text-[var(--mint)] mx-auto mb-1" />
+                                                        <p class="text-[10px] text-[var(--ink-muted)]">Frontend / Admin</p>
+                                                        <p class="text-lg font-bold">{frontendHostPort}<span class="text-[10px] text-[var(--ink-muted)]"> / {adminHostPort}</span></p>
                                                 </div>
                                         </div>
                                 </div>
@@ -410,6 +693,32 @@
                                         </div>
 
                                         <div class="p-4 rounded-lg" style="background: rgba(10,14,26,0.6);">
+                                                <h4 class="text-xs font-bold text-[var(--ink-muted)] mb-3">المنافذ الحالية</h4>
+                                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                        <div class="flex items-center gap-2">
+                                                                <Wifi size={14} class="text-[var(--azure)]" />
+                                                                <span class="text-xs text-[var(--ink-muted)]">HTTP:</span>
+                                                                <span class="text-sm font-medium">{nginxHttpPort}</span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2">
+                                                                <Lock size={14} class="text-[var(--azure)]" />
+                                                                <span class="text-xs text-[var(--ink-muted)]">HTTPS:</span>
+                                                                <span class="text-sm font-medium">{nginxHttpsPort}</span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2">
+                                                                <Server size={14} class="text-[var(--violet)]" />
+                                                                <span class="text-xs text-[var(--ink-muted)]">Backend:</span>
+                                                                <span class="text-sm font-medium">{backendHostPort}:{backendInternalPort}</span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2">
+                                                                <Cpu size={14} class="text-[var(--mint)]" />
+                                                                <span class="text-xs text-[var(--ink-muted)]">Front/Admin:</span>
+                                                                <span class="text-sm font-medium">{frontendHostPort}/{adminHostPort}</span>
+                                                        </div>
+                                                </div>
+                                        </div>
+
+                                        <div class="p-4 rounded-lg" style="background: rgba(10,14,26,0.6);">
                                                 <h4 class="text-xs font-bold text-[var(--ink-muted)] mb-3">حالة SSL</h4>
                                                 <div class="flex items-center gap-2">
                                                         <Lock size={14} style="color: {sslEnabled ? 'var(--mint)' : 'var(--ink-muted)'}" />
@@ -422,7 +731,7 @@
                                 <div class="p-5 rounded-xl text-center" style="background: linear-gradient(135deg, rgba(245,181,68,0.08), rgba(168,85,247,0.05)); border: 1px solid rgba(245,181,68,0.12);">
                                         <Rocket size={32} class="mx-auto mb-3" style="color: var(--gold)" />
                                         <h3 class="text-base font-bold mb-2">تطبيق التغييرات على الإنتاج</h3>
-                                        <p class="text-xs text-[var(--ink-secondary)] mb-4">سيتم إعادة توليد إعدادات nginx وتحديث النطاقات وشهادات SSL</p>
+                                        <p class="text-xs text-[var(--ink-secondary)] mb-4">سيتم إعادة توليد إعدادات nginx وتحديث النطاقات والمنافذ وشهادات SSL</p>
                                         <button
                                                 class="btn-primary text-sm px-8 py-3"
                                                 onclick={applyToProduction}
@@ -436,6 +745,7 @@
                                                         تطبيق على الإنتاج
                                                 {/if}
                                         </button>
+                                        <p class="text-[10px] text-[var(--ink-faint)] mt-3">ملاحظة: تغيير منافذ الوصول الخارجية يتطلب تشغيل docker compose up -d بعد التفعيل</p>
                                 </div>
 
                                 {#if applyResult}

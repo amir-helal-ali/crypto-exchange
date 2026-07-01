@@ -26,16 +26,16 @@ http {
   }
 
   # ===========================================
-  # Upstream definitions
+  # Upstream definitions (dynamic ports)
   # ===========================================
   upstream backend_upstream {
-    server backend:3000;
+    server backend:${BACKEND_INTERNAL_PORT};
   }
   upstream frontend_upstream {
-    server frontend:3000;
+    server frontend:${FRONTEND_INTERNAL_PORT};
   }
   upstream admin_upstream {
-    server admin:3000;
+    server admin:${ADMIN_INTERNAL_PORT};
   }
 
   # ===========================================
@@ -49,10 +49,10 @@ http {
   }
 
   # ===========================================
-  # HTTP server (port 80)
+  # HTTP server (dynamic port)
   # ===========================================
   server {
-    listen 80;
+    listen ${NGINX_HTTP_PORT};
     server_name ${ALL_DOMAINS};
 
     # Let's Encrypt ACME challenge
@@ -67,7 +67,7 @@ http {
   }
 
   # ===========================================
-  # HTTPS server (port 443) — only when SSL is enabled
+  # HTTPS server (dynamic port) — only when SSL is enabled
   # ===========================================
   ${HTTPS_SERVER_BLOCK}
 }

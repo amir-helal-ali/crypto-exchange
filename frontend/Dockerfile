@@ -22,10 +22,10 @@ RUN apk add --no-cache wget
 WORKDIR /app
 
 ENV NODE_ENV=production
-# adapter-node defaults to PORT=3000 — keep it that way to match docker-compose
-# port mapping "3001:3000" and healthcheck on :3000.
+# PORT is the internal container port — overridden by docker-compose env
 ENV PORT=3000
 ENV HOST=0.0.0.0
+# ORIGIN is the public-facing URL — overridden by docker-compose env
 ENV ORIGIN=http://localhost:3001
 
 COPY --from=builder /app/build ./build

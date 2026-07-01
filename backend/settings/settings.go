@@ -134,6 +134,7 @@ func ByCategory(cat string) map[string]string {
 // current domain settings + any extra origins configured by admin.
 // Always includes localhost variants for dev compatibility.
 // Includes both HTTP and HTTPS variants of configured domains.
+// Also includes host port variants for direct access without nginx.
 func AllowedOrigins() []string {
         origins := []string{}
         fd := GetDefault("frontend_domain", "localhost")
@@ -148,14 +149,19 @@ func AllowedOrigins() []string {
                 )
         }
 
+        // Get current port settings for dynamic localhost origins
+        backendHostPort := GetDefault("backend_host_port", "3000")
+        frontendHostPort := GetDefault("frontend_host_port", "3001")
+        adminHostPort := GetDefault("admin_host_port", "3002")
+
         // Always allow localhost for dev / direct port access
         origins = append(origins,
-                "http://localhost:3000",
-                "http://localhost:3001",
-                "http://localhost:3002",
-                "http://127.0.0.1:3000",
-                "http://127.0.0.1:3001",
-                "http://127.0.0.1:3002",
+                "http://localhost:"+backendHostPort,
+                "http://localhost:"+frontendHostPort,
+                "http://localhost:"+adminHostPort,
+                "http://127.0.0.1:"+backendHostPort,
+                "http://127.0.0.1:"+frontendHostPort,
+                "http://127.0.0.1:"+adminHostPort,
         )
         return origins
 }
