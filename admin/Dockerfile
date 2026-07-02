@@ -14,19 +14,29 @@ RUN npm run build
 # ── Stage 2: Run ────────────────────────────────────────
 FROM node:20-alpine AS runner
 
+# Install GNU wget — busybox wget in alpine sometimes mishandles HEAD
+# requests on SvelteKit adapter-node, causing false-negative health checks.
+RUN apk add --no-cache wget
+
 WORKDIR /app
+
 COPY --from=builder /app/build ./build
-COPY --from=builder /app/package.json .
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
 
 ENV NODE_ENV=production
 # PORT is the internal container port — overridden by docker-compose env
 ENV PORT=3000
+# HOST must be 0.0.0.0 so adapter-node listens on all interfaces inside Docker
+ENV HOST=0.0.0.0
 # ORIGIN is the public-facing URL — overridden by docker-compose env
 ENV ORIGIN=http://localhost:3002
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3000}/ || exit 1
+# Healthcheck: GNU wget (installed above) handles HEAD correctly on adapter-node.
+# Start period 40s gives V8 time to warm up on cold starts.
+HEALTHCHECK --interval=15s --timeout=10s --start-period=40s --retries=5 \
+  CMD wget --quiet --tries=1 --spider http://localhost:${PORT:-3000}/ || exit 1
 
 CMD ["node", "build"]
