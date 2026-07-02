@@ -268,6 +268,12 @@ func main() {
                         admin.PUT("/settings", handlers.UpdateSystemSettings)
                         admin.POST("/nginx/reload", handlers.ReloadNginx)
 
+                        // Domain verification — checks DNS + HTTP reachability
+                        admin.POST("/domains/verify", handlers.VerifyDomain)
+
+                        // Write current settings to .env override file (for docker compose)
+                        admin.POST("/settings/write-env", handlers.WriteEnvSettings)
+
                         // SSL certificate management — one-click cert generation
                         // (local self-signed OR Let's Encrypt production certs),
                         // status inspection, renewal, and custom PEM upload.

@@ -7,7 +7,7 @@
         import {
                 Settings, Globe, Shield, Lock, ToggleLeft, MessageSquare,
                 Save, RotateCw, Rocket, AlertTriangle, CheckCircle, Server, ExternalLink,
-                Network, Cpu, Wifi
+                Network, Cpu, Wifi, FileText, Search, CheckCheck
         } from 'lucide-svelte';
         import type { SystemSettings, PublicConfig } from '$lib/api/types';
 
@@ -47,6 +47,15 @@
         let registrationOpen = $state(true);
         let maintenanceMode = $state(false);
         let maintenanceMessage = $state('');
+
+        // Domain verification state
+        let verifyingDomain = $state('');
+        let verifying = $state(false);
+        let verifyResults: Record<string, any> = $state({});
+
+        // Write env state
+        let writingEnv = $state(false);
+        let envWriteResult = $state<any>(null);
 
         const tabs = [
                 { id: 'domains', label: 'النطاقات', icon: Globe },
@@ -152,16 +161,60 @@
         async function applyToProduction() {
                 if (!confirm('هل تريد تطبيق التغييرات على بيئة التشغيل؟ سيتم إعادة تحميل إعدادات nginx والشهادات والمنافذ.')) return;
                 reloading = true; applyResult = null;
+                // Step 1: Write env settings (for docker compose port mapping)
+                const envRes = await authPost('/api/v1/admin/settings/write-env', {});
+                // Step 2: Reload nginx
                 const res = await authPost('/api/v1/admin/nginx/reload', {});
                 if (res.success) {
                         addToast('success', 'تم تطبيق التغييرات على بيئة التشغيل بنجاح');
-                        applyResult = { success: true, message: 'تم إعادة تحميل nginx وتحديث الإعدادات. النطاقات والمنافذ والشهادات الجديدة تعمل الآن.' };
+                        let msg = 'تم إعادة تحميل nginx وتحديث الإعدادات. النطاقات والمنافذ الداخلية والشهادات تعمل الآن.';
+                        if (envRes.success && !envRes.warning) {
+                                msg += ' تم تحديث ملف .env — شغّل docker compose up -d لتطبيق المنافذ الخارجية.';
+                        }
+                        applyResult = { success: true, message: msg };
                         await loadSettings();
                 } else {
                         addToast('error', res.error || 'فشل تطبيق التغييرات');
                         applyResult = { success: false, message: res.error || 'فشل إعادة تحميل nginx' };
                 }
                 reloading = false;
+        }
+
+        async function verifyDomain(domain: string) {
+                if (!domain) return;
+                verifying = true;
+                verifyingDomain = domain;
+                const res = await authPost('/api/v1/admin/domains/verify', { domain });
+                if (res.success && res.data) {
+                        verifyResults[domain] = res.data;
+                        if (res.data.status === 'verified') {
+                                addToast('success', res.data.message);
+                        } else if (res.data.status === 'not_pointing') {
+                                addToast('warning', res.data.message);
+                        } else {
+                                addToast('error', res.data.message);
+                        }
+                } else {
+                        addToast('error', 'فشل التحقق من النطاق');
+                }
+                verifying = false;
+                verifyingDomain = '';
+        }
+
+        async function writeEnvFile() {
+                writingEnv = true;
+                const res = await authPost('/api/v1/admin/settings/write-env', {});
+                if (res.success) {
+                        if (res.warning) {
+                                addToast('warning', 'تم حفظ الإعدادات لكن لم يتم كتابة ملف .env (وضع تطوير). عدّل .env يدوياً.');
+                        } else {
+                                addToast('success', res.message || 'تم كتابة ملف .env بنجاح');
+                        }
+                        envWriteResult = res;
+                } else {
+                        addToast('error', res.error || 'فشل كتابة ملف .env');
+                }
+                writingEnv = false;
         }
 
         function getDomainUrl(domain: string): string {
@@ -291,6 +344,59 @@
                                                         <p class="text-xs font-medium text-[var(--gold)] mb-1">ملاحظة مهمة</p>
                                                         <p class="text-xs text-[var(--ink-secondary)]">بعد تغيير النطاقات، يجب حفظ الإعدادات ثم الضغط على "تطبيق على الإنتاج" ليتم تحديث إعدادات nginx وشهادات SSL. تأكد من أن DNS يشير إلى الخادم قبل التطبيق.</p>
                                                 </div>
+                                        </div>
+                                </div>
+
+                                <!-- Domain Verification -->
+                                <div class="mt-6 p-5 rounded-lg" style="background: rgba(10,14,26,0.6); border: 1px solid rgba(34,211,164,0.1);">
+                                        <div class="flex items-center gap-3 mb-4">
+                                                <CheckCheck size={18} style="color: var(--mint)" />
+                                                <div>
+                                                        <p class="text-sm font-bold">توثيق النطاقات</p>
+                                                        <p class="text-xs text-[var(--ink-muted)]">تحقق من أن كل نطاق يشير لهذا الخادم ويعمل بشكل صحيح</p>
+                                                </div>
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                                {#each [
+                                                        { label: 'الرئيسي', domain: mainDomain, color: 'var(--gold)' },
+                                                        { label: 'الواجهة', domain: frontendDomain, color: 'var(--mint)' },
+                                                        { label: 'API', domain: backendDomain, color: 'var(--azure)' },
+                                                        { label: 'الأدمن', domain: adminDomain, color: 'var(--violet)' }
+                                                ] as item}
+                                                        {#if item.domain}
+                                                                <div class="flex items-center justify-between p-3 rounded-lg" style="background: rgba(10,14,26,0.8);">
+                                                                        <div class="flex items-center gap-2">
+                                                                                <Globe size={12} style="color: {item.color}" />
+                                                                                <span class="text-xs text-[var(--ink-muted)]">{item.label}:</span>
+                                                                                <span class="text-sm font-medium">{item.domain}</span>
+                                                                        </div>
+                                                                        <div class="flex items-center gap-2">
+                                                                                {#if verifyResults[item.domain]}
+                                                                                        {#if verifyResults[item.domain].status === 'verified'}
+                                                                                                <span class="text-[10px] px-2 py-0.5 rounded-full" style="background: rgba(34,211,164,0.15); color: var(--mint);">موثّق ✓</span>
+                                                                                        {:else if verifyResults[item.domain].status === 'not_pointing'}
+                                                                                                <span class="text-[10px] px-2 py-0.5 rounded-full" style="background: rgba(251,113,133,0.15); color: var(--rose);">لا يشير هنا</span>
+                                                                                        {:else}
+                                                                                                <span class="text-[10px] px-2 py-0.5 rounded-full" style="background: rgba(245,181,68,0.15); color: var(--gold);">غير متاح</span>
+                                                                                        {/if}
+                                                                                {/if}
+                                                                                <button
+                                                                                        class="text-xs px-2 py-1 rounded transition-colors"
+                                                                                        style="background: rgba(34,211,164,0.1); color: var(--mint);"
+                                                                                        onclick={() => verifyDomain(item.domain)}
+                                                                                        disabled={verifying && verifyingDomain === item.domain}
+                                                                                >
+                                                                                        {#if verifying && verifyingDomain === item.domain}
+                                                                                                <RotateCw size={10} class="animate-spin" />
+                                                                                        {:else}
+                                                                                                <Search size={10} />
+                                                                                        {/if}
+                                                                                        تحقق
+                                                                                </button>
+                                                                        </div>
+                                                                </div>
+                                                        {/if}
+                                                {/each}
                                         </div>
                                 </div>
                         </div>
@@ -746,6 +852,31 @@
                                                 {/if}
                                         </button>
                                         <p class="text-[10px] text-[var(--ink-faint)] mt-3">ملاحظة: تغيير منافذ الوصول الخارجية يتطلب تشغيل docker compose up -d بعد التفعيل</p>
+                                </div>
+
+                                <!-- Write .env Button -->
+                                <div class="mt-4 p-4 rounded-lg text-center" style="background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.1);">
+                                        <div class="flex items-center justify-center gap-2 mb-2">
+                                                <FileText size={16} style="color: var(--azure)" />
+                                                <p class="text-sm font-bold">كتابة ملف .env</p>
+                                        </div>
+                                        <p class="text-xs text-[var(--ink-secondary)] mb-3">يكتب إعدادات المنافذ والنطاقات الحالية في ملف .env ليتحمّلها docker compose عند إعادة التشغيل</p>
+                                        <button
+                                                class="px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                                                style="background: rgba(59,130,246,0.1); color: var(--azure); border: 1px solid rgba(59,130,246,0.2);"
+                                                onclick={writeEnvFile}
+                                                disabled={writingEnv}
+                                        >
+                                                {#if writingEnv}
+                                                        <RotateCw size={14} class="animate-spin" />
+                                                {:else}
+                                                        <FileText size={14} />
+                                                {/if}
+                                                كتابة .env
+                                        </button>
+                                        {#if envWriteResult}
+                                                <p class="text-xs mt-2" style="color: var(--mint);">{envWriteResult.message || 'تم بنجاح'}</p>
+                                        {/if}
                                 </div>
 
                                 {#if applyResult}

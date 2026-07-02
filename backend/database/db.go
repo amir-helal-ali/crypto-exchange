@@ -141,6 +141,16 @@ var defaultSettings = []models.SystemSetting{
         {Key: "admin_domain", Value: envOrDefault("ADMIN_DOMAIN", "localhost"), Category: "domains"},
         {Key: "main_domain", Value: envOrDefault("MAIN_DOMAIN", "localhost"), Category: "domains"},
 
+        // Ports — nginx listen ports, internal service ports, host access ports
+        {Key: "nginx_http_port", Value: envOrDefault("NGINX_HTTP_PORT", "80"), Category: "ports"},
+        {Key: "nginx_https_port", Value: envOrDefault("NGINX_HTTPS_PORT", "443"), Category: "ports"},
+        {Key: "backend_internal_port", Value: envOrDefault("BACKEND_INTERNAL_PORT", "3000"), Category: "ports"},
+        {Key: "frontend_internal_port", Value: envOrDefault("FRONTEND_INTERNAL_PORT", "3000"), Category: "ports"},
+        {Key: "admin_internal_port", Value: envOrDefault("ADMIN_INTERNAL_PORT", "3000"), Category: "ports"},
+        {Key: "backend_host_port", Value: envOrDefault("BACKEND_HOST_PORT", "3000"), Category: "ports"},
+        {Key: "frontend_host_port", Value: envOrDefault("FRONTEND_HOST_PORT", "3001"), Category: "ports"},
+        {Key: "admin_host_port", Value: envOrDefault("ADMIN_HOST_PORT", "3002"), Category: "ports"},
+
         // SSL configuration — defaults to off for local dev
         {Key: "ssl_enabled", Value: envOrDefault("SSL_ENABLED", "false"), Category: "ssl"},
         {Key: "ssl_cert_path", Value: "/etc/nginx/certs/local.pem", Category: "ssl"},
