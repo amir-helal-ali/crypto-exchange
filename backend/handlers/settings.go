@@ -431,9 +431,9 @@ func WriteEnvSettings(c *gin.Context) {
         })
 }
 
-// generateVerificationToken creates a unique token for domain ownership verification.
+// generateDomainVerificationToken creates a unique token for domain ownership verification.
 // The token is derived from the domain name + a server secret, so it's deterministic.
-func generateVerificationToken(domain string) string {
+func generateDomainVerificationToken(domain string) string {
         secret := os.Getenv("JWT_SECRET")
         if secret == "" {
                 secret = "default-verification-secret"
